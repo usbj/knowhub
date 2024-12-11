@@ -1,0 +1,17 @@
+#服务开启所用接口
+server:
+  port: 8080
+
+#数据库的配置
+spring:
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    username: root
+    #    password: Ll3193115363@
+    password: 07571Xwyt
+    #    url: jdbc:mysql://192.168.88.132:3306/big_event
+    url: jdbc:mysql://localhost:3306/rookie
+  data:
+    redis:
+      #      host: 192.168.88.132
+      port: 6379
