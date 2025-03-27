@@ -3,7 +3,9 @@ package com.rookie.common.enums;
 public enum ResultEnum {
 
     COMMON_ERROR(500,"请求失败"),
-    LOGIN_ERROR(401,"用户名或密码错误");
+    LOGIN_ERROR(401,"用户名或密码错误"),
+
+    INCREASE_ERROR(409,"数据添加失败，有重复数据");
 
 
     private int code;

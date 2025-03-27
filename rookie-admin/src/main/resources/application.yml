@@ -15,7 +15,10 @@ spring:
     redis:
       #      host: 192.168.88.132
       port: 6379
-
+logging:
+  level:
+    com.rookie: debug
+    org.springframework: warn
 # springdoc-openapi项目配置
 springdoc:
   swagger-ui:

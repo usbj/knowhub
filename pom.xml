@@ -25,6 +25,7 @@
         <java.version>17</java.version>
         <rookie.version>0.0.1-SNAPSHOT</rookie.version>
         <mybatis-starter.version>3.0.4</mybatis-starter.version>
+        <pagehelper-start>2.1.0</pagehelper-start>
         <hutool.version>5.8.34</hutool.version>
         <knife4j.version>4.4.0</knife4j.version>
         <lombok.version>1.18.34</lombok.version>
@@ -63,6 +64,12 @@
                 <artifactId>mybatis-spring-boot-starter-test</artifactId>
                 <version>${mybatis-starter.version}</version>
                 <scope>test</scope>
+            </dependency>
+
+            <dependency>
+                <groupId>com.github.pagehelper</groupId>
+                <artifactId>pagehelper-spring-boot-starter</artifactId>
+                <version>${pagehelper-start}</version>
             </dependency>
 
             <dependency>

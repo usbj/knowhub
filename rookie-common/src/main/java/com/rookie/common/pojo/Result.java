@@ -63,4 +63,12 @@ public class Result<T> {
         return new Result<>(200,"请求成功",data);
     }
 
+    @Override
+    public String toString() {
+        return "Result{" +
+                "code=" + code +
+                ", msg='" + msg + '\'' +
+                ", data=" + data +
+                '}';
+    }
 }

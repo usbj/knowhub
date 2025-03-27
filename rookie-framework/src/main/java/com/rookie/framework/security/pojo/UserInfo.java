@@ -107,4 +107,8 @@ public class UserInfo implements UserDetails {
         return username;
     }
 
+    @Override
+    public boolean isEnabled() {
+        return status == 1;
+    }
 }

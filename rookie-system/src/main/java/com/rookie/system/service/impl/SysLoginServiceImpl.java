@@ -26,6 +26,7 @@ public class SysLoginServiceImpl implements SysLoginService {
 
     @Override
     public Result<String> loginVerification(LoginBody loginBody) {
+        //根据用户输入的账号密码来获取验证以及身份信息
         UsernamePasswordAuthenticationToken authenticationToken =
                 new UsernamePasswordAuthenticationToken
                         (loginBody.getUsername(),loginBody.getPassword());
@@ -33,8 +34,9 @@ public class SysLoginServiceImpl implements SysLoginService {
         if (authenticate == null){
             return Result.error();
         }
+        //获取用户信息
         UserInfo userInfo = (UserInfo) authenticate.getPrincipal();
-
+        //生成JWT
         String token = tokenService.createJwt(userInfo);
         return Result.success(token);
     }
