@@ -31,13 +31,16 @@
         select * from sys_user
         where `delete`=0
         <if test="username != null and username != ''">
-            and username=#{username}
+            and username=concat("%",#{username},"%")
         </if>
         <if test="nickName!=null and nickName != ''">
-            and nick_name = #{nick_name}
+            and nick_name like concat("%",#{nick_name},"%")
         </if>
         <if test="phoneNumber!=null and phoneNumber!=''">
             and phone_number like concat('%',#{phoneNumber},'%')
+        </if>
+        <if test="status!=null">
+            and status =#{status}
         </if>
         <if test="beginTime != null and beginTime != ''"><!-- 开始时间检索 -->
             AND date_format(u.create_time,'%Y%m%d') &gt;= date_format(#{beginTime},'%Y%m%d')

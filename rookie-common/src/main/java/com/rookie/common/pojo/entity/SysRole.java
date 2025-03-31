@@ -10,8 +10,9 @@ public class SysRole extends BaseEntity {
 
     private String roleName;
 
-
     private Integer roleLevel;
+
+    private String roleKey;
 
     private Integer status;
 
@@ -22,11 +23,12 @@ public class SysRole extends BaseEntity {
     public SysRole() {
     }
 
-    public SysRole(Date createTime, Date updateTime, String createBy, String updateBy, Long roleId, String roleName, Integer roleLevel, Integer status, Integer isDefault, Integer delete) {
+    public SysRole(Date createTime, Date updateTime, String createBy, String updateBy, Long roleId, String roleName, Integer roleLevel, String roleKey, Integer status, Integer isDefault, Integer delete) {
         super(createTime, updateTime, createBy, updateBy);
         this.roleId = roleId;
         this.roleName = roleName;
         this.roleLevel = roleLevel;
+        this.roleKey = roleKey;
         this.status = status;
         this.isDefault = isDefault;
         this.delete = delete;
@@ -57,6 +59,14 @@ public class SysRole extends BaseEntity {
         this.roleLevel = roleLevel;
     }
 
+    public String getRoleKey() {
+        return roleKey;
+    }
+
+    public void setRoleKey(String roleKey) {
+        this.roleKey = roleKey;
+    }
+
     public Integer getStatus() {
         return status;
     }
@@ -65,6 +75,13 @@ public class SysRole extends BaseEntity {
         this.status = status;
     }
 
+    public Integer getIsDefault() {
+        return isDefault;
+    }
+
+    public void setIsDefault(Integer isDefault) {
+        this.isDefault = isDefault;
+    }
     public Integer getDelete() {
         return delete;
     }
@@ -75,10 +92,11 @@ public class SysRole extends BaseEntity {
 
     @Override
     public String toString() {
-        return "RoleEntity{" +
+        return "SysRole{" +
                 "roleId=" + roleId +
                 ", roleName='" + roleName + '\'' +
                 ", roleLevel=" + roleLevel +
+                ", roleKey='" + roleKey + '\'' +
                 ", status=" + status +
                 ", isDefault=" + isDefault +
                 ", createTime=" + getCreateTime() +

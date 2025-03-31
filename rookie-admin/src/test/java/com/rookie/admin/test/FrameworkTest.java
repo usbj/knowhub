@@ -9,8 +9,11 @@ import com.rookie.common.pojo.Result;
 import com.rookie.framework.security.service.TokenService;
 import com.rookie.framework.security.mapper.UserInfoMapper;
 import com.rookie.framework.security.pojo.UserInfo;
+import com.rookie.system.pojo.quarry.RoleQuarry;
 import com.rookie.system.pojo.quarry.UserQuarry;
+import com.rookie.system.pojo.vo.SysRoleVo;
 import com.rookie.system.pojo.vo.SysUserVo;
+import com.rookie.system.service.SysRoleService;
 import com.rookie.system.service.SysUserService;
 import jakarta.annotation.Resource;
 import org.junit.jupiter.api.Test;
@@ -51,6 +54,9 @@ public class FrameworkTest {
     @Autowired
     SysUserService sysUserService;
 
+    @Autowired
+    SysRoleService sysRoleService;
+
     @Test
     void createAdminPassword(){
 //        System.out.println(passwordEncoder.encode("ios507"));
@@ -59,11 +65,11 @@ public class FrameworkTest {
 
     @Test
     void testUserInfoMapper() {
-        UserInfo admin = userInfoMapper.selectUserByUsername("admin");
-        ArrayList<Integer> roles = userInfoMapper.selectRoleIdByUserId(admin.getUserId());
-        ArrayList<Integer> menus = userInfoMapper.selectMenuIdByRoleId(roles);
-        ArrayList<String> permKeyById = userInfoMapper.getPermKeyById(menus);
-        System.out.println(permKeyById);
+//        UserInfo admin = userInfoMapper.selectUserByUsername("admin");
+//        ArrayList<Integer> roles = userInfoMapper.selectRoleIdByUserId(admin.getUserId());
+//        ArrayList<Integer> menus = userInfoMapper.selectMenuIdByRoleId(roles);
+//        ArrayList<String> permKeyById = userInfoMapper.getPermKeyById(menus);
+//        System.out.println(permKeyById);
     }
 
     @Test
@@ -131,6 +137,14 @@ public class FrameworkTest {
 //        sysUserService.chargeSysUserStatus(2L,0);
 
         sysUserService.resetSysUserPassword(11L,"123456789");
+    }
+
+    @Test
+    void testRoleService(){
+//        Result<PageInfo<SysRoleVo>> pageInfoResult = sysRoleService.quarrySysRole(new RoleQuarry());
+//        System.out.println(pageInfoResult.getData().getList());
+
+        System.out.println(sysRoleService.getSysRoleInfo(1L).getData());
     }
 
 

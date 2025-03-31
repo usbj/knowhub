@@ -4,9 +4,102 @@
         "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.rookie.system.mapper.SysRoleMapper">
 
+    <resultMap id="SysRoleVo" type="com.rookie.system.pojo.vo.SysRoleVo">
+        <result property="roleId" column="role_id"/>
+        <result property="roleName" column="role_name"/>
+        <result property="roleLevel" column="role_level"/>
+        <result property="roleKey" column="role_key"/>
+        <result property="status" column="status"/>
+        <result property="isDefault" column="is_default"/>
+        <result property="createTime" column="creat_time"/>
+        <collection property="rolePerm" javaType="java.util.List" resultMap="SysMenu"/>
+        <collection property="permId" javaType="java.util.List" resultMap="MenuId"/>
+    </resultMap>
+
+    <resultMap id="SysMenu" type="com.rookie.common.pojo.entity.SysMenu">
+        <result property="menuId" column="menu_id"/>
+        <result property="menuName" column="menu_name"/>
+        <result property="status" column="status"/>
+    </resultMap>
+
+    <!--如果不用resultMap指定列的话则返回空-->
+    <resultMap id="MenuId" type="long">
+        <result column="menu_id"/>
+    </resultMap>
+
     <select id="getDefaultRole" resultType="com.rookie.common.pojo.entity.SysRole">
         select * from sys_role where is_default = 1
     </select>
 
+    <select id="quarrySysRole" parameterType="com.rookie.system.pojo.quarry.RoleQuarry" resultType="com.rookie.common.pojo.entity.SysRole">
+        select * from sys_role
+        where `delete`=0
+        <if test="roleName!=null and roleName!=''">
+            and role_name like concat("%",#{roleName},"%")
+        </if>
+        <if test="status!=null">
+            and status =#{status}
+        </if>
+        <if test="beginTime != null and beginTime != ''"><!-- 开始时间检索 -->
+            AND date_format(u.create_time,'%Y%m%d') &gt;= date_format(#{beginTime},'%Y%m%d')
+        </if>
+        <if test="endTime != null and endTime != ''"><!-- 结束时间检索 -->
+            AND date_format(u.create_time,'%Y%m%d') &lt;= date_format(#{endTime},'%Y%m%d')
+        </if>
+
+    </select>
+
+    <select id="getSysRoleInfo" resultMap="SysRoleVo" parameterType="long">
+        select r.role_id ,r.role_name,r.role_level,r.role_key,r.status,r.is_default,r.create_time,
+        m.menu_id,m.menu_name,m.status
+        from sys_role r
+        join sys_role_menu rm on r.role_id=rm.role_id
+        join sys_menu m on rm.menu_id=m.menu_id
+        where r.role_id=#{roleId}
+    </select>
+
+    <update id="editSysRoleInfo" parameterType="com.rookie.common.pojo.entity.SysRole">
+        update sys_role
+        set
+        <if test="roleName!=null and roleName!=''">
+            role_name =#{roleName},
+        </if>
+        <if test="roleLevel!=null">
+            role_level=#{roleLevel},
+        </if>
+        <if test="roleKey!=null and roleKey!=''">
+            role_key =#{roleKey},
+        </if>
+        <if test="status!= null">
+            status = #{status},
+        </if>
+        <if test="isDefault!=null and isDefault!=''">
+            is_default=#{isDefault},
+        </if>
+        update_by = #{updateBy},
+        update_time = now()
+        where role_id=#{roleId}
+    </update>
+
+    <insert id="addSysRoleInfo" parameterType="com.rookie.common.pojo.entity.SysRole" keyProperty="roleId" useGeneratedKeys="true">
+        insert into sys_role(role_name, role_level, role_key, create_by, create_time, update_by, update_time)
+        values (#{roleName},#{roleLevel},#{roleKey},#{createBy},now(),#{updateBy},now())
+    </insert>
+
+    <delete id="deleteSysRoleInfo" parameterType="long">
+        delete from sys_role where role_id=#{roleId}
+    </delete>
+
+    <update id="changeSysRoleStatus">
+        update sys_role set status=#{status} where role_id=#{roleId}
+    </update>
+
+    <update id="cancelTheDefaultRole">
+        update sys_role set is_default=0 where is_default=1
+    </update>
+
+    <update id="setTheDefaultRole" parameterType="long">
+        update sys_role set is_default=1 where role_id=#{roleId}
+    </update>
 
 </mapper>

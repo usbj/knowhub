@@ -1,5 +1,6 @@
 package com.rookie.framework.security.service;
 
+import com.rookie.common.pojo.entity.SysRole;
 import com.rookie.framework.security.mapper.UserInfoMapper;
 import com.rookie.framework.security.pojo.Permission;
 import com.rookie.framework.security.pojo.UserInfo;
@@ -29,12 +30,17 @@ public class UserDetailServiceImpl implements UserDetailsService {
             return null;
         }
 
+        /*
+        * TODO 改写用户权限的记录方式，并设置管理员admin获取全部的权限
+        * */
 
         //获取用户权限
         ArrayList<String> permKeyById = null;
         try {
-            ArrayList<Integer> roles = userInfoMapper.selectRoleIdByUserId(userInfo.getUserId());
-            ArrayList<Integer> menus = userInfoMapper.selectMenuIdByRoleId(roles);
+            ArrayList<SysRole> roles = userInfoMapper.selectRoleByUserId(userInfo.getUserId());
+            //如果角色状态为未启用则无法获取相应权限
+            List<Long> roleIds = roles.stream().filter(sysRole -> sysRole.getStatus() != 0).map(SysRole::getRoleId).toList();
+            ArrayList<Integer> menus = userInfoMapper.selectMenuIdByRoleId(roleIds);
             permKeyById = userInfoMapper.getPermKeyById(menus);
         } catch (Exception e) {
             throw new RuntimeException(e);
