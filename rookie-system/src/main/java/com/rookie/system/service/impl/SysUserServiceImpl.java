@@ -93,8 +93,8 @@ public class SysUserServiceImpl implements SysUserService {
         encryptPasswords(sysUser);
         //获取创建者
         UserInfo creator = (UserInfo) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
-        sysUser.setCreateBy(creator.getNickName());
-        sysUser.setUpdateBy(creator.getNickName());
+        sysUser.setCreateBy(creator.getUsername());
+        sysUser.setUpdateBy(creator.getUsername());
         //存入用户
         sysUserMapper.addSysUser(sysUser);
         //设置用户id

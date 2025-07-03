@@ -13,6 +13,7 @@ import com.rookie.system.pojo.quarry.RoleQuarry;
 import com.rookie.system.pojo.quarry.UserQuarry;
 import com.rookie.system.pojo.vo.SysRoleVo;
 import com.rookie.system.pojo.vo.SysUserVo;
+import com.rookie.system.service.SysMenuService;
 import com.rookie.system.service.SysRoleService;
 import com.rookie.system.service.SysUserService;
 import jakarta.annotation.Resource;
@@ -56,6 +57,9 @@ public class FrameworkTest {
 
     @Autowired
     SysRoleService sysRoleService;
+
+    @Autowired
+    SysMenuService sysMenuService;
 
     @Test
     void createAdminPassword(){
@@ -144,7 +148,12 @@ public class FrameworkTest {
 //        Result<PageInfo<SysRoleVo>> pageInfoResult = sysRoleService.quarrySysRole(new RoleQuarry());
 //        System.out.println(pageInfoResult.getData().getList());
 
-        System.out.println(sysRoleService.getSysRoleInfo(1L).getData());
+//        System.out.println(sysRoleService.getSysRoleInfo(1L).getData());
+    }
+
+    @Test
+    void testMenuService(){
+        System.out.println(sysMenuService.quarrySysMenu(null).getData());
     }
 
 

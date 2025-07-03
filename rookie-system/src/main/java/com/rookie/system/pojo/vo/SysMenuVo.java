@@ -1,10 +1,9 @@
-package com.rookie.common.pojo.entity;
-
-import com.rookie.common.pojo.BaseEntity;
+package com.rookie.system.pojo.vo;
 
 import java.util.Date;
+import java.util.List;
 
-public class SysMenu extends BaseEntity {
+public class SysMenuVo {
 
     private Long menuId;
 
@@ -24,15 +23,16 @@ public class SysMenu extends BaseEntity {
 
     private String icon;
 
+    private List<SysMenuVo> sonMenus;
+
     private Integer status;
 
-    private Integer delete;
+    private Date createTime;
 
-    public SysMenu() {
+    public SysMenuVo() {
     }
 
-    public SysMenu(Date createTime, Date updateTime, String createBy, String updateBy, Long menuId, String menuName, String permKey, Long parentId, Integer menuType, String route, Integer backlinks, String path, String icon, Integer status, Integer delete) {
-        super(createTime, updateTime, createBy, updateBy);
+    public SysMenuVo(Long menuId, String menuName, String permKey, Long parentId, Integer menuType, String route, Integer backlinks, String path, String icon, List<SysMenuVo> sonMenus, Integer status, Date createTime) {
         this.menuId = menuId;
         this.menuName = menuName;
         this.permKey = permKey;
@@ -42,8 +42,9 @@ public class SysMenu extends BaseEntity {
         this.backlinks = backlinks;
         this.path = path;
         this.icon = icon;
+        this.sonMenus = sonMenus;
         this.status = status;
-        this.delete = delete;
+        this.createTime = createTime;
     }
 
     public Long getMenuId() {
@@ -70,52 +71,20 @@ public class SysMenu extends BaseEntity {
         this.permKey = permKey;
     }
 
-    public Integer getMenuType() {
-        return menuType;
-    }
-
-    public void setMenuType(Integer menuType) {
-        this.menuType = menuType;
-    }
-
-    public String getPath() {
-        return path;
-    }
-
-    public void setPath(String path) {
-        this.path = path;
-    }
-
-    public String getIcon() {
-        return icon;
-    }
-
-    public void setIcon(String icon) {
-        this.icon = icon;
-    }
-
-    public Integer getStatus() {
-        return status;
-    }
-
-    public void setStatus(Integer status) {
-        this.status = status;
-    }
-
-    public Integer getDelete() {
-        return delete;
-    }
-
-    public void setDelete(Integer delete) {
-        this.delete = delete;
-    }
-
     public Long getParentId() {
         return parentId;
     }
 
     public void setParentId(Long parentId) {
         this.parentId = parentId;
+    }
+
+    public Integer getMenuType() {
+        return menuType;
+    }
+
+    public void setMenuType(Integer menuType) {
+        this.menuType = menuType;
     }
 
     public String getRoute() {
@@ -134,9 +103,49 @@ public class SysMenu extends BaseEntity {
         this.backlinks = backlinks;
     }
 
+    public String getPath() {
+        return path;
+    }
+
+    public void setPath(String path) {
+        this.path = path;
+    }
+
+    public String getIcon() {
+        return icon;
+    }
+
+    public void setIcon(String icon) {
+        this.icon = icon;
+    }
+
+    public List<SysMenuVo> getSonMenus() {
+        return sonMenus;
+    }
+
+    public void setSonMenus(List<SysMenuVo> sonMenus) {
+        this.sonMenus = sonMenus;
+    }
+
+    public Integer getStatus() {
+        return status;
+    }
+
+    public void setStatus(Integer status) {
+        this.status = status;
+    }
+
+    public Date getCreateTime() {
+        return createTime;
+    }
+
+    public void setCreateTime(Date createTime) {
+        this.createTime = createTime;
+    }
+
     @Override
     public String toString() {
-        return "SysMenu{" +
+        return "SysMenuVo{" +
                 "menuId=" + menuId +
                 ", menuName='" + menuName + '\'' +
                 ", permKey='" + permKey + '\'' +
@@ -146,8 +155,9 @@ public class SysMenu extends BaseEntity {
                 ", backlinks=" + backlinks +
                 ", path='" + path + '\'' +
                 ", icon='" + icon + '\'' +
+                ", sonMenus=" + sonMenus +
                 ", status=" + status +
-                ", delete=" + delete +
+                ", createTime=" + createTime +
                 '}';
     }
 }

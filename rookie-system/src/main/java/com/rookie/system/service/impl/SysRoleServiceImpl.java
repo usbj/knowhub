@@ -58,7 +58,7 @@ public class SysRoleServiceImpl implements SysRoleService {
         //转换为SysRole并添加上更新的人
         SysRole sysRole = BeanUtil.toBean(sysRoleVo, SysRole.class);
         UserInfo updateBy  = (UserInfo)SecurityContextHolder.getContext().getAuthentication().getPrincipal();
-        sysRole.setUpdateBy(updateBy.getNickName());
+        sysRole.setUpdateBy(updateBy.getUsername());
         sysRoleMapper.editSysRoleInfo(sysRole);
 
         return Result.success(true);
@@ -69,8 +69,8 @@ public class SysRoleServiceImpl implements SysRoleService {
         //转换成entity实体，记录创建者，并存入数据库
         SysRole sysRole = BeanUtil.toBean(sysRoleVo, SysRole.class);
         UserInfo userInfo = (UserInfo)SecurityContextHolder.getContext().getAuthentication().getPrincipal();
-        sysRole.setUpdateBy(userInfo.getNickName());
-        sysRole.setCreateBy(userInfo.getNickName());
+        sysRole.setUpdateBy(userInfo.getUsername());
+        sysRole.setCreateBy(userInfo.getUsername());
         sysRoleMapper.addSysRoleInfo(sysRole);
 
         //存入之后获取角色id，存入对应权限
