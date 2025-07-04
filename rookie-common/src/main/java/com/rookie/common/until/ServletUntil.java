@@ -23,4 +23,8 @@ public class ServletUntil {
         return getRequest().getParameter(key);
     }
 
+    public static String getRequestCompleteURL(){
+        return "["+getRequest().getMethod()+"] "+getRequest().getRequestURI();
+    }
+
 }

@@ -55,7 +55,8 @@ public class TokenService {
     }
 
     public UserInfo getUserInfoByToken(String token) {
-        if (token==null) {
+//        System.out.println(token.isEmpty());
+        if (token==null|| token.isEmpty()) {
             return null;
         }
         return redisCache.getObjectCache(getUsernameByJwt(token), UserInfo.class);

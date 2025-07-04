@@ -2,6 +2,7 @@ package com.rookie.system.service.impl;
 
 import cn.hutool.core.bean.BeanUtil;
 import com.github.pagehelper.PageInfo;
+import com.rookie.common.exception.ServiceException;
 import com.rookie.common.pojo.Result;
 import com.rookie.common.pojo.entity.SysMenu;
 import com.rookie.common.pojo.entity.SysRole;
@@ -59,7 +60,11 @@ public class SysRoleServiceImpl implements SysRoleService {
         SysRole sysRole = BeanUtil.toBean(sysRoleVo, SysRole.class);
         UserInfo updateBy  = (UserInfo)SecurityContextHolder.getContext().getAuthentication().getPrincipal();
         sysRole.setUpdateBy(updateBy.getUsername());
-        sysRoleMapper.editSysRoleInfo(sysRole);
+        try {
+            sysRoleMapper.editSysRoleInfo(sysRole);
+        } catch (Exception e) {
+            throw new ServiceException(500,"角色更改失败");
+        }
 
         return Result.success(true);
     }
@@ -71,7 +76,11 @@ public class SysRoleServiceImpl implements SysRoleService {
         UserInfo userInfo = (UserInfo)SecurityContextHolder.getContext().getAuthentication().getPrincipal();
         sysRole.setUpdateBy(userInfo.getUsername());
         sysRole.setCreateBy(userInfo.getUsername());
-        sysRoleMapper.addSysRoleInfo(sysRole);
+        try {
+            sysRoleMapper.addSysRoleInfo(sysRole);
+        } catch (Exception e) {
+            throw new ServiceException(500,"角色基本信息添加失败");
+        }
 
         //存入之后获取角色id，存入对应权限
         sysRoleVo.setRoleId(sysRole.getRoleId());
@@ -83,9 +92,13 @@ public class SysRoleServiceImpl implements SysRoleService {
     @Override
     public Result<Boolean> deleteSysRoleInfo(Long[] roleId) {
 
-        for (Long id : roleId) {
-            sysRoleMenuMapper.deleteSyeRoleMenu(id);
-            sysRoleMapper.deleteSysRoleInfo(id);
+        try {
+            for (Long id : roleId) {
+                sysRoleMenuMapper.deleteSyeRoleMenu(id);
+                sysRoleMapper.deleteSysRoleInfo(id);
+            }
+        } catch (Exception e) {
+            throw new ServiceException(500,"角色删除失败");
         }
 
         return Result.success(true);
@@ -98,8 +111,12 @@ public class SysRoleServiceImpl implements SysRoleService {
 
     @Override
     public Result<Boolean> setTheDefaultRole(Long roleId) {
-        sysRoleMapper.cancelTheDefaultRole();
-        sysRoleMapper.setTheDefaultRole(roleId);
+        try {
+            sysRoleMapper.cancelTheDefaultRole();
+            sysRoleMapper.setTheDefaultRole(roleId);
+        } catch (Exception e) {
+            throw new ServiceException(500,"默认角色更改失败");
+        }
         return Result.success(true);
     }
 
@@ -112,7 +129,11 @@ public class SysRoleServiceImpl implements SysRoleService {
         for (Long id : permId) {
             sysRoleMenus.add(new SysRoleMenu(sysRoleVo.getRoleId(),id));
         }
-        sysRoleMenuMapper.insertSysRoleMenu(sysRoleMenus);
+        try {
+            sysRoleMenuMapper.insertSysRoleMenu(sysRoleMenus);
+        } catch (Exception e) {
+            throw new ServiceException(500,"角色的权限插入失败");
+        }
     }
 
     private void addMenuIfMenuIsNotNull(SysRoleVo sysRoleVo){

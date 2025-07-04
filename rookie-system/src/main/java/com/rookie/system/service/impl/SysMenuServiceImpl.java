@@ -1,6 +1,7 @@
 package com.rookie.system.service.impl;
 
 import cn.hutool.core.bean.BeanUtil;
+import com.rookie.common.exception.ServiceException;
 import com.rookie.common.pojo.Result;
 import com.rookie.common.pojo.entity.SysMenu;
 import com.rookie.framework.security.pojo.UserInfo;
@@ -56,7 +57,11 @@ public class SysMenuServiceImpl implements SysMenuService {
         SysMenu sysMenu = BeanUtil.toBean(sysMenuVo, SysMenu.class);
         sysMenu.setCreateBy(userInfo.getUsername());
         sysMenu.setUpdateBy(userInfo.getUsername());
-        sysMenuMapper.addSysMenu(sysMenu);
+        try {
+            sysMenuMapper.addSysMenu(sysMenu);
+        } catch (Exception e) {
+            throw new ServiceException(500,"菜单添加失败");
+        }
 
         return Result.success(true);
     }
@@ -66,7 +71,11 @@ public class SysMenuServiceImpl implements SysMenuService {
         SysMenu sysMenu = BeanUtil.toBean(sysMenuVo, SysMenu.class);
         UserInfo userInfo = (UserInfo) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
         sysMenu.setUpdateBy(userInfo.getUsername());
-        sysMenuMapper.editSysMenu(sysMenu);
+        try {
+            sysMenuMapper.editSysMenu(sysMenu);
+        } catch (Exception e) {
+            throw new ServiceException(500,"菜单更改失败");
+        }
         return Result.success(true);
     }
 
@@ -79,15 +88,23 @@ public class SysMenuServiceImpl implements SysMenuService {
 
     @Override
     public Result<Boolean> deleteSysMenuInfo(Integer[] menuIds) {
-        for (Integer i : menuIds){
-            sysMenuMapper.deleteSysMenuInfo(i);
+        try {
+            for (Integer i : menuIds){
+                sysMenuMapper.deleteSysMenuInfo(i);
+            }
+        } catch (Exception e) {
+            throw new ServiceException(500,"菜单删除失败");
         }
         return Result.success(true);
     }
 
     @Override
     public Result<Boolean> changeSysMenuStatus(Integer menuId, Integer status) {
-        sysMenuMapper.changeSysMenuStatus(menuId, status);
+        try {
+            sysMenuMapper.changeSysMenuStatus(menuId, status);
+        } catch (Exception e) {
+            throw new ServiceException(500,"菜单状态更改失败");
+        }
         return Result.success(true);
     }
 }

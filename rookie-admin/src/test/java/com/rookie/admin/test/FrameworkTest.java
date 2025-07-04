@@ -5,6 +5,7 @@ package com.rookie.admin.test;
 import cn.hutool.json.JSONUtil;
 import com.github.pagehelper.PageInfo;
 import com.rookie.common.cache.RedisCache;
+import com.rookie.common.exception.ServiceException;
 import com.rookie.common.pojo.Result;
 import com.rookie.framework.security.service.TokenService;
 import com.rookie.framework.security.mapper.UserInfoMapper;
@@ -156,5 +157,9 @@ public class FrameworkTest {
         System.out.println(sysMenuService.quarrySysMenu(null).getData());
     }
 
+    @Test
+    void testException(){
+        throw new ServiceException(501,"服务器测试错误信息");
+    }
 
 }

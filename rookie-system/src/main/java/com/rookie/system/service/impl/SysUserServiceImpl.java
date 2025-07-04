@@ -4,6 +4,7 @@ import cn.hutool.core.bean.BeanUtil;
 import cn.hutool.core.collection.CollUtil;
 import com.github.pagehelper.PageInfo;
 import com.rookie.common.enums.ResultEnum;
+import com.rookie.common.exception.ServiceException;
 import com.rookie.common.pojo.Result;
 import com.rookie.common.pojo.entity.SysRole;
 import com.rookie.common.pojo.entity.SysUser;
@@ -125,7 +126,11 @@ public class SysUserServiceImpl implements SysUserService {
     @Override
     public Result<Boolean> modifyPersonalDetails(SysUserVo sysUserVo) {
         SysUser sysUser = BeanUtil.toBean(sysUserVo, SysUser.class);
-        sysUserMapper.editUserInfo(sysUser);
+        try {
+            sysUserMapper.editUserInfo(sysUser);
+        } catch (Exception e) {
+            throw new ServiceException(500,"用户信息更改失败");
+        }
         return Result.success(true);
     }
 
@@ -142,7 +147,11 @@ public class SysUserServiceImpl implements SysUserService {
         sysUser.setPassword(password);
         sysUser.setUserId(userId);
         encryptPasswords(sysUser);
-        sysUserMapper.resetSysUserPassword(sysUser);
+        try {
+            sysUserMapper.resetSysUserPassword(sysUser);
+        } catch (Exception e) {
+            throw new ServiceException(500,"密码重置失败");
+        }
         return Result.success(true);
     }
 
@@ -158,7 +167,11 @@ public class SysUserServiceImpl implements SysUserService {
         for (Long id : roleId) {
             sysUserRoles.add(new SysUserRole(userVo.getUserId(),id));
         }
-        sysUserRoleMapper.addUserRoleInfo(sysUserRoles);
+        try {
+            sysUserRoleMapper.addUserRoleInfo(sysUserRoles);
+        } catch (Exception e) {
+            throw new ServiceException(500,"用户角色信息添加失败");
+        }
     }
 
     /**
