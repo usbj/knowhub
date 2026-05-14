@@ -23,7 +23,8 @@ public class SysLoginController {
     @PostMapping
     @Operation(summary = "登录")
     public Result<String> login(@RequestBody LoginBody loginBody){
-        return sysLoginService.loginVerification(loginBody);
+        String token = sysLoginService.loginVerification(loginBody);
+        return Result.success(token);
     }
 
 }

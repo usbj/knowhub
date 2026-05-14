@@ -31,3 +31,24 @@ build/
 
 ### VS Code ###
 .vscode/
+
+### Local analysis artifacts ###
+**/graphify-out/
+
+### Frontend / Vue ###
+node_modules/
+dist/
+coverage/
+.vite/
+.nuxt/
+.output/
+.cache/
+.parcel-cache/
+.npm/
+.pnpm-store/
+.yarn/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+/AGENTS.md

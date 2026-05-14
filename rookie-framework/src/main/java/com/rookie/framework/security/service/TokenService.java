@@ -13,7 +13,9 @@ import org.springframework.stereotype.Component;
 
 
 
-
+/**
+ * TODO：user需要设置专门的key，生成临时ID组成
+ * */
 @Component
 public class TokenService {
 

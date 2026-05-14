@@ -154,12 +154,22 @@ public class FrameworkTest {
 
     @Test
     void testMenuService(){
-        System.out.println(sysMenuService.quarrySysMenu(null).getData());
+        System.out.println(sysMenuService.quarrySysMenu(null));
     }
 
     @Test
     void testException(){
         throw new ServiceException(501,"服务器测试错误信息");
+    }
+
+    @Test
+    void testJsonList(){
+        PageInfo<SysUserVo> pageInfo = sysUserService.quarrySysUser(null);
+        List<SysUserVo> list = pageInfo.getList();
+        String jsonStr = JSONUtil.toJsonStr(list);
+        System.out.println(jsonStr);
+        List<SysUserVo> jsonToList = JSONUtil.toList(jsonStr, SysUserVo.class);
+        System.out.println(jsonToList.size());
     }
 
 }

@@ -28,50 +28,58 @@ public class SysUserController  {
     @GetMapping("/list")
     @Operation(summary = "获取用户列表")
     public Result<PageInfo<SysUserVo>> quarrySysUserList(UserQuarry userQuarry) {
-        return sysUserService.quarrySysUser(userQuarry);
+        PageInfo<SysUserVo> pageInfo = sysUserService.quarrySysUser(userQuarry);
+        return Result.success(pageInfo);
     }
 
     @PutMapping()
     @Operation(summary = "更改用户信息")
     public Result<Boolean> editSysUserInfo(@RequestBody SysUserVo userVo) {
-        return sysUserService.editSysUserInfo(userVo);
+        Boolean b = sysUserService.editSysUserInfo(userVo);
+        return Result.success(b);
     }
 
     @GetMapping("/{userId}")
     @Operation(summary = "获取用户详细信息")
     public Result<SysUserVo> getSysUserInfo(@PathVariable Long userId ) {
-        return sysUserService.selectSysUserVoById(userId);
+        SysUserVo userVo = sysUserService.selectSysUserVoById(userId);
+        return Result.success(userVo);
     }
 
     @PostMapping()
     @Operation(summary = "添加用户")
     public Result<Boolean> addSysUser(@RequestBody SysUserVo userVo) {
-        return sysUserService.addSysUserInfo(userVo);
+        Boolean b = sysUserService.addSysUserInfo(userVo);
+        return Result.success(b);
     }
 
     @DeleteMapping("/{userIds}")
     @Operation(summary = "删除用户（可批量）")
     public Result<Boolean> deleteSysUsers(@PathVariable Long[] userIds) {
-        return sysUserService.deleteSysUser(userIds);
+        Boolean b = sysUserService.deleteSysUser(userIds);
+        return Result.success(b);
     }
 
     @PutMapping("/status")
     @Operation(summary = "更改用户状态")
     public Result<Boolean> changeSysUserStatus(Long userId, Integer status) {
-        return sysUserService.chargeSysUserStatus(userId,status);
+        Boolean b = sysUserService.chargeSysUserStatus(userId, status);
+        return Result.success(b);
     }
 
     @GetMapping("/person")
     @Operation(summary = "获取个人数据")
     public Result<SysUserVo> getPersonalDetail() {
         UserInfo userInfo = (UserInfo)SecurityContextHolder.getContext().getAuthentication().getPrincipal();
-        return sysUserService.getPersonalDetails(userInfo.getUserId());
+        SysUserVo personalDetails = sysUserService.getPersonalDetails(userInfo.getUserId());
+        return Result.success(personalDetails);
     }
 
     @PutMapping("/person")
     @Operation(summary = "更改个人数据")
     public Result<Boolean> modifyPersonalDetails(@RequestBody SysUserVo sysUserVo) {
-        return sysUserService.modifyPersonalDetails(sysUserVo);
+        Boolean b = sysUserService.modifyPersonalDetails(sysUserVo);
+        return Result.success(b);
     }
 
 

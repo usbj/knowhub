@@ -29,43 +29,50 @@ public class SysRoleController {
     @GetMapping("/list")
     @Operation(summary = "获取角色列表")
     public Result<PageInfo<SysRoleVo>> quarrySysRoleVo(RoleQuarry roleQuarry){
-        return sysRoleService.quarrySysRole(roleQuarry);
+        PageInfo<SysRoleVo> roleVoPageInfo = sysRoleService.quarrySysRole(roleQuarry);
+        return Result.success(roleVoPageInfo);
     }
 
     @GetMapping("/{roleId}")
     @Operation(summary = "获取角色详细信息")
     public Result<SysRoleVo> getSysRoleInfo(@PathVariable Long roleId) {
-        return sysRoleService.getSysRoleInfo(roleId);
+        SysRoleVo sysRoleInfo = sysRoleService.getSysRoleInfo(roleId);
+        return Result.success(sysRoleInfo);
     }
 
     @PutMapping()
     @Operation(summary = "更改角色信息")
     public Result<Boolean> editSysRoleInfo(@RequestBody SysRoleVo sysRoleVo){
-        return sysRoleService.editSysRoleInfo(sysRoleVo);
+        Boolean b = sysRoleService.editSysRoleInfo(sysRoleVo);
+        return Result.success(b);
     }
 
 
     @PostMapping()
     @Operation(summary = "添加角色")
     public Result<Boolean> addSysRoleInfo(@RequestBody SysRoleVo sysRoleVo){
-        return sysRoleService.addSysRoleInfo(sysRoleVo);
+        Boolean b = sysRoleService.addSysRoleInfo(sysRoleVo);
+        return Result.success(b);
     }
 
     @DeleteMapping("/{roleIds}")
     @Operation(summary = "批量删除角色")
     public Result<Boolean> deleteSysRoleInfo(@PathVariable Long[] roleIds) {
-        return sysRoleService.deleteSysRoleInfo(roleIds);
+        Boolean b = sysRoleService.deleteSysRoleInfo(roleIds);
+        return Result.success(b);
     }
 
     @PutMapping("/status")
     @Operation(summary = "更改角色状态")
     public Result<Boolean> changeSysRoleStatus(Long roleId,Integer status){
-        return sysRoleService.changeSysRoleStatus(roleId,status);
+        Boolean b = sysRoleService.changeSysRoleStatus(roleId, status);
+        return Result.success(b);
     }
 
     @PutMapping("/default/{roleId}")
     @Operation(summary = "设置默认角色")
     public Result<Boolean> setTheDefaultRole(@PathVariable Long roleId){
-        return sysRoleService.setTheDefaultRole(roleId);
+        Boolean b = sysRoleService.setTheDefaultRole(roleId);
+        return Result.success(b);
     }
 }

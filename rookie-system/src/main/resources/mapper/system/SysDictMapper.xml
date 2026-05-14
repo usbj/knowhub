@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.rookie.system.mapper.SysDictMapper">
+
+    <resultMap id="SysDictResultMap" type="com.rookie.common.pojo.entity.SysDict">
+        <id property="dictId" column="dict_id"/>
+        <result property="dictName" column="dict_name"/>
+        <result property="dictKey" column="dict_key"/>
+        <result property="status" column="status"/>
+        <result property="remake" column="remake"/>
+        <result property="createTime" column="create_time"/>
+        <result property="createBy" column="create_by"/>
+        <result property="updateTime" column="update_time"/>
+        <result property="updateBy" column="update_by"/>
+    </resultMap>
+
+    <select id="quarrySysDict" parameterType="com.rookie.system.pojo.quarry.DictQuarry" resultMap="SysDictResultMap">
+        select * from sys_dict where 1
+        <if test="dictName!=null and dictName!=''">and dict_name = #{dictName}</if>
+        <if test="dictKey!=null and dictKey!=''">and dict_key = #{dictKey}</if>
+        <if test="status!=null">and status = #{status}</if>
+        <if test="beginTime!=null">and create_time &gt;= #{beginTime}</if>
+        <if test="endTime!=null">and create_time &lt;= #{endTime}</if>
+    </select>
+
+    <insert id="addSysDict" parameterType="com.rookie.common.pojo.entity.SysDict">
+        insert into sys_dict(dict_name, dict_key, status, remake, create_time, create_by, update_time, update_by)
+        values (#{dictName}, #{dictKey}, #{status}, #{remake}, now(), #{createBy}, now(), #{updateBy})
+    </insert>
+
+    <update id="editSysDictInfo" parameterType="com.rookie.common.pojo.entity.SysDict">
+        update sys_dict
+        <set>
+            <if test="dictName!=null and dictName!=''">dict_name = #{dictName},</if>
+            <if test="dictKey!=null and dictKey!=''">dict_key = #{dictKey},</if>
+            <if test="status!=null">status = #{status},</if>
+            <if test="remake!=null and remake!=''">remake = #{remake},</if>
+            update_by = #{updateBy},
+            update_time = now()
+        </set>
+        where dict_id = #{dictId}
+    </update>
+
+    <delete id="deleteSysDictById" parameterType="long">
+        delete from sys_dict where dict_id = #{dictId}
+    </delete>
+
+    <select id="getSysDictInfoById" parameterType="long" resultMap="SysDictResultMap">
+        select * from sys_dict where dict_id = #{dictId}
+    </select>
+
+</mapper>

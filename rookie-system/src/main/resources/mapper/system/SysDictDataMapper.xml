@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.rookie.system.mapper.SysDictDataMapper">
+
+
+    <select id="quarrySysDictData" parameterType="com.rookie.system.pojo.quarry.DictDataQuarry" resultType="com.rookie.common.pojo.entity.SysDictData">
+        select * from sys_dict_data where 1
+        <if test="dictId!=null">and dict_id = #{dictId}</if>
+        <if test="dictKey!=null and dictKey!=''">and dict_key=#{dictKey}</if>
+        <if test="dictDataLabel!=null and dictDataLabel!=''">and dict_data_label=#{dictDataLabel}</if>
+        order by dict_data_sort
+    </select>
+
+
+    <insert id="addSysDictData" parameterType="com.rookie.common.pojo.entity.SysDictData">
+        insert into sys_dict_data(dict_id, dict_key, dict_data_label, dict_data_value, remark, dict_data_sort, create_time, create_by, update_time, update_by)
+        VALUES (#{dictId}, #{dictKey}, #{dictDataLabel}, #{dictDataValue}, #{remark}, #{dictDataSort},
+                now(), #{createBy},now(), #{updateBy})
+    </insert>
+
+    <update id="editSysDictDataInfo" parameterType="com.rookie.common.pojo.entity.SysDictData">
+        update sys_dict_data 
+        set 
+        <if test="dictKey!=null and dictKey!=''"> dict_key = #{dictKey},</if>
+        <if test="dictDataLabel!=null and dictDataLabel!=''">dict_data_label = #{dictDataLabel},</if>
+        <if test="dictDataValue!=null and dictDataValue!=''">dict_data_value = #{dictDataValue},</if>
+        <if test="remark!=null and remark!=''">remark = #{remark},</if>
+        <if test="dictDataSort!=null and dictDataSort!=''"> dict_data_sort = #{dictDataSort},</if>
+        <if test="isDefault!=null and isDefault!=''">is_default = #{isDefault},</if>
+        update_by = #{updateBy}, update_time = now()
+        where dict_data_id =#{dictDataId}
+    </update>
+
+    <delete id="deleteSysDictDataByDataId" parameterType="long">
+        delete from sys_dict_data where dict_data_id = #{dictDataId}
+    </delete>
+
+    <select id="getSysDictDataInfoByDataId" parameterType="long" resultType="com.rookie.common.pojo.entity.SysDictData">
+        select * from sys_dict_data where dict_data_id = #{dictDataId}
+    </select>
+
+    <select id="getSysDictDataByDictKey" parameterType="string" resultType="com.rookie.common.pojo.entity.SysDictData">
+        select * from sys_dict_data where dict_key = #{dictKey}
+    </select>
+
+
+</mapper>

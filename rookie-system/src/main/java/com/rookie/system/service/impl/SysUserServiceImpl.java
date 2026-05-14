@@ -5,10 +5,9 @@ import cn.hutool.core.collection.CollUtil;
 import com.github.pagehelper.PageInfo;
 import com.rookie.common.enums.ResultEnum;
 import com.rookie.common.exception.ServiceException;
-import com.rookie.common.pojo.Result;
 import com.rookie.common.pojo.entity.SysRole;
 import com.rookie.common.pojo.entity.SysUser;
-import com.rookie.common.until.PageUntil;
+import com.rookie.common.util.PageUtil;
 import com.rookie.framework.security.pojo.UserInfo;
 import com.rookie.system.mapper.SysRoleMapper;
 import com.rookie.system.mapper.SysUserMapper;
@@ -46,23 +45,23 @@ public class SysUserServiceImpl implements SysUserService {
 
 
     @Override
-    public Result<PageInfo<SysUserVo>> quarrySysUser(UserQuarry userQuarry) {
+    public PageInfo<SysUserVo> quarrySysUser(UserQuarry userQuarry) {
         //启动分页工具
-        PageUntil.startPage();
+        PageUtil.startPage();
         //获取用户数据并转化为分页的VO数据返回
         List<SysUser> userEntities = sysUserMapper.quarryUser(userQuarry);
-        List<SysUserVo> sysUserVos = BeanUtil.copyToList(userEntities, SysUserVo.class);
-        return Result.success(PageUntil.packagedPageInfo(sysUserVos));
+        PageInfo<SysUser> sysUserPageInfo = PageUtil.packagedPageInfo(userEntities);
+        return PageUtil.copyPageInfo(sysUserPageInfo, SysUserVo.class);
     }
 
     @Override
-    public Result<SysUserVo> selectSysUserVoById(Long userId) {
-        return Result.success(sysUserMapper.selectSysUserById(userId));
+    public SysUserVo selectSysUserVoById(Long userId) {
+        return sysUserMapper.selectSysUserById(userId);
     }
 
     @Override
     @Transactional
-    public Result<Boolean> editSysUserInfo(SysUserVo userVo) {
+    public Boolean editSysUserInfo(SysUserVo userVo) {
         //清楚用户原先的角色
         sysUserRoleMapper.deleteUserRoleInfo(userVo.getUserId());
         //批量增加用户被分配的角色
@@ -73,19 +72,18 @@ public class SysUserServiceImpl implements SysUserService {
         UserInfo updateBy = (UserInfo)SecurityContextHolder.getContext().getAuthentication().getPrincipal();
         sysUser.setUpdateBy(updateBy.getNickName());
 
-        return Result.success(sysUserMapper.editUserInfo(sysUser));
+        return sysUserMapper.editUserInfo(sysUser);
     }
 
 
 
     @Override
     @Transactional
-    public Result<Boolean> addSysUserInfo(SysUserVo sysUserVo) {
+    public Boolean addSysUserInfo(SysUserVo sysUserVo) {
         DEFAULT_ROLE=sysRoleMapper.getDefaultRole();
 
-        //TODO 改为异常返回
         if (accountIsOnlyOrNot(sysUserVo)) {
-            return Result.error(ResultEnum.INCREASE_ERROR);
+            throw new ServiceException(ResultEnum.INCREASE_ERROR);
         }
 
         //将vo转化为entity
@@ -104,45 +102,45 @@ public class SysUserServiceImpl implements SysUserService {
         roleIsNUll(sysUserVo);
         //添加用户的角色信息
         addRolesInBulk(sysUserVo);
-        return Result.success(true);
+        return true;
     }
 
     @Override
     @Transactional
-    public Result<Boolean> deleteSysUser(Long[] userId) {
+    public Boolean deleteSysUser(Long[] userId) {
         for (Long l : userId) {
             sysUserMapper.deleteSysUserById(l);
             sysUserRoleMapper.deleteUserRoleInfo(l);
         }
-        return Result.success(true);
+        return true;
     }
 
     @Override
-    public Result<Boolean> chargeSysUserStatus(Long userId, Integer status) {
+    public Boolean chargeSysUserStatus(Long userId, Integer status) {
         sysUserMapper.changeSysUserStatus(userId,status);
-        return Result.success(true);
+        return true;
     }
 
     @Override
-    public Result<Boolean> modifyPersonalDetails(SysUserVo sysUserVo) {
+    public Boolean modifyPersonalDetails(SysUserVo sysUserVo) {
         SysUser sysUser = BeanUtil.toBean(sysUserVo, SysUser.class);
         try {
             sysUserMapper.editUserInfo(sysUser);
         } catch (Exception e) {
             throw new ServiceException(500,"用户信息更改失败");
         }
-        return Result.success(true);
+        return true;
     }
 
     @Override
-    public Result<SysUserVo> getPersonalDetails(Long userId) {
+    public SysUserVo getPersonalDetails(Long userId) {
         SysUser sysUser = sysUserMapper.getSysUserInfoById(userId);
         SysUserVo userVo = BeanUtil.toBean(sysUser, SysUserVo.class);
-        return Result.success(userVo);
+        return userVo;
     }
 
     @Override
-    public Result<Boolean> resetSysUserPassword(Long userId, String password) {
+    public Boolean resetSysUserPassword(Long userId, String password) {
         SysUser sysUser = new SysUser();
         sysUser.setPassword(password);
         sysUser.setUserId(userId);
@@ -152,7 +150,7 @@ public class SysUserServiceImpl implements SysUserService {
         } catch (Exception e) {
             throw new ServiceException(500,"密码重置失败");
         }
-        return Result.success(true);
+        return true;
     }
 
     /**

@@ -1,5 +1,7 @@
 package com.rookie.common.exception;
 
+import com.rookie.common.enums.ResultEnum;
+
 public class ServiceException extends RuntimeException{
 
 
@@ -19,7 +21,10 @@ public class ServiceException extends RuntimeException{
         this.message = message;
     }
 
-
+    public ServiceException(ResultEnum resultEnum){
+        this.code = resultEnum.getCode();
+        this.message = resultEnum.getMsg();
+    }
 
     public Integer getCode() {
         return code;

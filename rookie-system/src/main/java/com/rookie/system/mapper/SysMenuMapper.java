@@ -15,7 +15,7 @@ public interface SysMenuMapper {
 
     boolean addSysMenu(SysMenu sysMenu);
 
-    boolean editSysMenu(SysMenu sysMenu);
+    boolean editSysMenuInfo(SysMenu sysMenu);
 
     SysMenu getSysMenuInfo(Integer menuId);
 

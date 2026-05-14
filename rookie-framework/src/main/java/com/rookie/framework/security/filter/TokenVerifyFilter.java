@@ -16,6 +16,10 @@ import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
 
+/**
+ * TODO:验证成功后增加token时长，可以尝试双token
+ * */
+
 @Component
 public class TokenVerifyFilter extends OncePerRequestFilter {
 
@@ -28,7 +32,10 @@ public class TokenVerifyFilter extends OncePerRequestFilter {
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain) throws ServletException, IOException {
         UserInfo userInfo = tokenService.getUserInfoByToken(request.getHeader("Token"));
-        if (userInfo!=null) {
+        /**
+         * TODO:【文档说明】userInfo!=null在前的原因
+         * */
+        if (userInfo!=null && userInfo.getExpireTime()!=null && userInfo.getUserId()!=null && userInfo.getUsername()!=null  ) {
             tokenService.jwtVerification(userInfo);
             UsernamePasswordAuthenticationToken authenticationToken =
                     new UsernamePasswordAuthenticationToken(userInfo,null,userInfo.getAuthorities());

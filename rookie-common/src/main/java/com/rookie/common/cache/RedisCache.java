@@ -7,8 +7,15 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
 
+import java.util.Collection;
+import java.util.List;
 import java.util.concurrent.TimeUnit;
 
+
+/**
+ *
+ * redis的key集中管制
+ * */
 
 @Component
 public class RedisCache {
@@ -83,5 +90,18 @@ public class RedisCache {
         }
         String integrity = BASE_KEY+key;
         return redisTemplate.delete(integrity);
+    }
+
+    public boolean deleteCaches(Collection<String> keys){
+        return redisTemplate.delete(keys) > 0;
+    }
+
+    public <T> List<T> getListCache(String key, Class<T> tClass){
+        String json = getCacheJson(key);
+        return JSONUtil.toList(json, tClass);
+    }
+
+    public Collection<String> keys(String pattern){
+        return redisTemplate.keys(BASE_KEY+pattern);
     }
 }

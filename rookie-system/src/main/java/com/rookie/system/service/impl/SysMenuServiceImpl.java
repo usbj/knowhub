@@ -27,7 +27,7 @@ public class SysMenuServiceImpl implements SysMenuService {
 
 
     @Override
-    public Result<List<SysMenuVo>> quarrySysMenu(MenuQuarry menuQuarry) {
+    public List<SysMenuVo> quarrySysMenu(MenuQuarry menuQuarry) {
         //获取数据
         List<SysMenuVo> sysMenuVos = sysMenuMapper.quarrySysMenu(menuQuarry);
         HashMap<Long,SysMenuVo> hashMap = new HashMap<>();
@@ -48,11 +48,11 @@ public class SysMenuServiceImpl implements SysMenuService {
             hashMap.get(sysMenuVo.getParentId()).getSonMenus().add(sysMenuVo);
         }
 
-        return Result.success(menuVos);
+        return menuVos;
     }
 
     @Override
-    public Result<Boolean> addSysMenu(SysMenuVo sysMenuVo) {
+    public Boolean addSysMenu(SysMenuVo sysMenuVo) {
         UserInfo userInfo = (UserInfo) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
         SysMenu sysMenu = BeanUtil.toBean(sysMenuVo, SysMenu.class);
         sysMenu.setCreateBy(userInfo.getUsername());
@@ -63,31 +63,30 @@ public class SysMenuServiceImpl implements SysMenuService {
             throw new ServiceException(500,"菜单添加失败");
         }
 
-        return Result.success(true);
+        return true;
     }
 
     @Override
-    public Result<Boolean> editSysMenu(SysMenuVo sysMenuVo) {
+    public Boolean editSysMenu(SysMenuVo sysMenuVo) {
         SysMenu sysMenu = BeanUtil.toBean(sysMenuVo, SysMenu.class);
         UserInfo userInfo = (UserInfo) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
         sysMenu.setUpdateBy(userInfo.getUsername());
         try {
-            sysMenuMapper.editSysMenu(sysMenu);
+            sysMenuMapper.editSysMenuInfo(sysMenu);
         } catch (Exception e) {
             throw new ServiceException(500,"菜单更改失败");
         }
-        return Result.success(true);
+        return true;
     }
 
     @Override
-    public Result<SysMenuVo> getSysMenuInfo(Integer menuId) {
+    public SysMenuVo getSysMenuInfo(Integer menuId) {
         SysMenu sysMenuInfo = sysMenuMapper.getSysMenuInfo(menuId);
-        SysMenuVo sysMenuVo = BeanUtil.toBean(sysMenuInfo, SysMenuVo.class);
-        return Result.success(sysMenuVo);
+        return BeanUtil.toBean(sysMenuInfo, SysMenuVo.class);
     }
 
     @Override
-    public Result<Boolean> deleteSysMenuInfo(Integer[] menuIds) {
+    public Boolean deleteSysMenuInfo(Integer[] menuIds) {
         try {
             for (Integer i : menuIds){
                 sysMenuMapper.deleteSysMenuInfo(i);
@@ -95,16 +94,16 @@ public class SysMenuServiceImpl implements SysMenuService {
         } catch (Exception e) {
             throw new ServiceException(500,"菜单删除失败");
         }
-        return Result.success(true);
+        return true;
     }
 
     @Override
-    public Result<Boolean> changeSysMenuStatus(Integer menuId, Integer status) {
+    public Boolean changeSysMenuStatus(Integer menuId, Integer status) {
         try {
             sysMenuMapper.changeSysMenuStatus(menuId, status);
         } catch (Exception e) {
             throw new ServiceException(500,"菜单状态更改失败");
         }
-        return Result.success(true);
+        return true;
     }
 }

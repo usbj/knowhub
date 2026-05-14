@@ -1,6 +1,8 @@
 package com.rookie.system.service.impl;
 
 
+import com.rookie.common.enums.ResultEnum;
+import com.rookie.common.exception.ServiceException;
 import com.rookie.common.pojo.Result;
 import com.rookie.framework.security.service.TokenService;
 import com.rookie.framework.security.pojo.UserInfo;
@@ -25,19 +27,19 @@ public class SysLoginServiceImpl implements SysLoginService {
 
 
     @Override
-    public Result<String> loginVerification(LoginBody loginBody) {
+    public String loginVerification(LoginBody loginBody) {
         //根据用户输入的账号密码来获取验证以及身份信息
         UsernamePasswordAuthenticationToken authenticationToken =
                 new UsernamePasswordAuthenticationToken
                         (loginBody.getUsername(),loginBody.getPassword());
         Authentication authenticate = authenticationManager.authenticate(authenticationToken);
         if (authenticate == null){
-            return Result.error();
+            throw new ServiceException(ResultEnum.COMMON_ERROR);
         }
         //获取用户信息
         UserInfo userInfo = (UserInfo) authenticate.getPrincipal();
         //生成JWT
         String token = tokenService.createJwt(userInfo);
-        return Result.success(token);
+        return token;
     }
 }

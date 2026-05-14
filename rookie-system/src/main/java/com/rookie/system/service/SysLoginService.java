@@ -8,5 +8,5 @@ import com.rookie.system.pojo.LoginBody;
 
 public interface SysLoginService {
 
-    Result<String> loginVerification(LoginBody loginBody);
+    String loginVerification(LoginBody loginBody);
 }
