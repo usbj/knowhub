@@ -34,10 +34,5 @@ public interface SysUserService {
 
     Boolean chargeSysUserStatus(Long userId,Integer status);
 
-    Boolean modifyPersonalDetails(SysUserVo sysUserVo);
-
-    SysUserVo getPersonalDetails(Long userId);
-
-    Boolean resetSysUserPassword(Long userId,String password);
 
 }

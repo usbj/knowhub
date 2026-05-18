@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Rookie Admin - Dict</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="brand-mark">R</div>
+          <div><p class="brand-name">Rookie Admin</p><p class="brand-subtitle">后台设计稿</p></div>
+        </div>
+        <nav class="nav-group">
+          <p class="nav-label">总览</p>
+          <a class="nav-item" href="./dashboard.html">工作台</a>
+          <a class="nav-item" href="./users.html">用户管理</a>
+          <a class="nav-item" href="./roles.html">角色与权限</a>
+          <a class="nav-item" href="./menus.html">菜单配置</a>
+          <a class="nav-item active" href="./dict.html">字典配置</a>
+        </nav>
+        <nav class="nav-group">
+          <p class="nav-label">系统</p>
+          <a class="nav-item" href="./settings.html">界面设置</a>
+          <a class="nav-item" href="./index.html">设计目录</a>
+        </nav>
+      </aside>
+
+      <main class="main-area">
+        <div class="shell-header">
+          <header class="topbar">
+            <div class="topbar-left">
+              <div class="crumbs">
+                <p class="section-kicker">System / Dict</p>
+                <h1>字典配置</h1>
+                <p>这里更适合“主从结构”：左边分类，右边字典项，不要让维护动作分散。</p>
+              </div>
+              <div class="search-shell">搜索字典类型、键值、标签名</div>
+            </div>
+            <div class="topbar-right">
+              <button class="ghost-button">刷新缓存</button>
+              <div class="profile-chip">
+                <span class="avatar">WY</span>
+                <div class="profile-meta"><strong>王宇</strong><span>超级管理员</span></div>
+              </div>
+            </div>
+          </header>
+
+          <div class="tabs-bar">
+            <span class="tab-chip">工作台</span>
+            <span class="tab-chip active">字典配置</span>
+            <span class="tab-chip">缓存策略</span>
+          </div>
+        </div>
+
+        <div class="content-wrap">
+        <section class="page-section split-layout">
+          <article class="panel">
+            <div class="panel-head">
+              <div>
+                <h3>字典分类</h3>
+                <p class="subtle">分类区适合显示用途和最近更新时间</p>
+              </div>
+              <button class="primary-button">新增分类</button>
+            </div>
+            <div class="stack-list">
+              <div class="stack-item active"><strong>sys_user_status</strong><span class="list-meta">用户状态 · 6 项</span></div>
+              <div class="stack-item"><strong>sys_menu_visible</strong><span class="list-meta">菜单显隐 · 2 项</span></div>
+              <div class="stack-item"><strong>sys_job_group</strong><span class="list-meta">任务分组 · 4 项</span></div>
+            </div>
+          </article>
+
+          <article class="panel">
+            <div class="panel-head">
+              <div>
+                <h3>字典项维护</h3>
+                <p class="subtle">批量排序、状态色、备注在这里一起处理</p>
+              </div>
+              <div class="toolbar">
+                <button class="ghost-button">批量排序</button>
+                <button class="primary-button">新增字典项</button>
+              </div>
+            </div>
+            <div class="mini-table">
+              <div class="mini-row header">
+                <span>标签</span>
+                <span>键值</span>
+                <span>状态</span>
+                <span>颜色</span>
+              </div>
+              <div class="mini-row">
+                <span>启用</span>
+                <span>0</span>
+                <span class="status success">生效</span>
+                <span class="swatch green"></span>
+              </div>
+              <div class="mini-row">
+                <span>停用</span>
+                <span>1</span>
+                <span class="status neutral">生效</span>
+                <span class="swatch gray"></span>
+              </div>
+              <div class="mini-row">
+                <span>冻结</span>
+                <span>2</span>
+                <span class="status warning">审核中</span>
+                <span class="swatch amber"></span>
+              </div>
+            </div>
+            <div class="drawer-preview">
+              <div class="drawer-head">
+                <div>
+                  <h3>当前分类说明</h3>
+                  <p class="subtle">用户状态与登录、权限、导入流程有关</p>
+                </div>
+                <button class="ghost-button">编辑分类</button>
+              </div>
+              <div class="form-grid">
+                <div class="form-item">分类编码<strong>sys_user_status</strong></div>
+                <div class="form-item">状态<strong>启用中</strong></div>
+                <div class="form-item">缓存策略<strong>实时刷新</strong></div>
+                <div class="form-item">备注<strong>用户生命周期关键枚举</strong></div>
+              </div>
+            </div>
+          </article>
+        </section>
+        </div>
+      </main>
+    </div>
+  </body>
+</html>

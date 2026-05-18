@@ -13,6 +13,7 @@ public interface SysUserRoleMapper {
 
     boolean addUserRoleInfo(List<SysUserRole> sysUserRoles);
 
+    List<SysUserRole> getUserRoleByUserId(Long userId);
 
 
 }

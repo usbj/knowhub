@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Rookie Admin - Roles</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="brand-mark">R</div>
+          <div><p class="brand-name">Rookie Admin</p><p class="brand-subtitle">后台设计稿</p></div>
+        </div>
+        <nav class="nav-group">
+          <p class="nav-label">总览</p>
+          <a class="nav-item" href="./dashboard.html">工作台</a>
+          <a class="nav-item" href="./users.html">用户管理</a>
+          <a class="nav-item active" href="./roles.html">角色与权限</a>
+          <a class="nav-item" href="./menus.html">菜单配置</a>
+          <a class="nav-item" href="./dict.html">字典配置</a>
+        </nav>
+        <nav class="nav-group">
+          <p class="nav-label">系统</p>
+          <a class="nav-item" href="./settings.html">界面设置</a>
+          <a class="nav-item" href="./index.html">设计目录</a>
+        </nav>
+      </aside>
+
+      <main class="main-area">
+        <div class="shell-header">
+          <header class="topbar">
+            <div class="topbar-left">
+              <div class="crumbs">
+                <p class="section-kicker">System / Role</p>
+                <h1>角色与权限</h1>
+                <p>角色列表、菜单权限、操作权限、数据范围最好共处一个工作流里，不要四处跳。</p>
+              </div>
+              <div class="search-shell">搜索角色名称、权限模版、成员数量</div>
+            </div>
+            <div class="topbar-right">
+              <button class="ghost-button">权限模版</button>
+              <div class="profile-chip">
+                <span class="avatar">WY</span>
+                <div class="profile-meta"><strong>王宇</strong><span>超级管理员</span></div>
+              </div>
+            </div>
+          </header>
+
+          <div class="tabs-bar">
+            <span class="tab-chip">工作台</span>
+            <span class="tab-chip active">角色管理</span>
+            <span class="tab-chip">权限配置</span>
+          </div>
+        </div>
+
+        <div class="content-wrap">
+        <section class="page-section split-layout">
+          <article class="panel">
+            <div class="panel-head">
+              <div>
+                <h3>角色列表</h3>
+                <p class="subtle">左侧列表用于快速切换上下文</p>
+              </div>
+              <button class="primary-button">新建角色</button>
+            </div>
+            <div class="stack-list">
+              <div class="stack-item active"><strong>超级管理员</strong><span class="list-meta">全部权限 · 12 人</span></div>
+              <div class="stack-item"><strong>运营经理</strong><span class="list-meta">用户、菜单、字典 · 8 人</span></div>
+              <div class="stack-item"><strong>审计员</strong><span class="list-meta">只读与导出 · 3 人</span></div>
+              <div class="stack-item"><strong>访客角色</strong><span class="list-meta">受限首页访问 · 15 人</span></div>
+            </div>
+          </article>
+
+          <article class="panel">
+            <div class="panel-head">
+              <div>
+                <h3>权限分配面板</h3>
+                <p class="subtle">菜单、操作、数据范围用标签切换，不分散页面</p>
+              </div>
+              <div class="toolbar">
+                <button class="filter-pill active">菜单权限</button>
+                <button class="filter-pill">操作权限</button>
+                <button class="filter-pill">数据范围</button>
+              </div>
+            </div>
+
+            <div class="tree-shell">
+              <div class="tree-row active">
+                <span class="tree-label">系统管理</span>
+                <span class="toggle on">已选 4 / 4</span>
+              </div>
+              <div class="tree-row">
+                <span class="tree-label">用户管理</span>
+                <span class="toggle on">查看 / 新增 / 编辑 / 删除</span>
+              </div>
+              <div class="tree-row">
+                <span class="tree-label">角色管理</span>
+                <span class="toggle on">查看 / 分配权限</span>
+              </div>
+              <div class="tree-row">
+                <span class="tree-label">菜单管理</span>
+                <span class="toggle on">查看 / 排序 / 发布</span>
+              </div>
+              <div class="tree-row">
+                <span class="tree-label">字典管理</span>
+                <span class="toggle off">仅查看</span>
+              </div>
+            </div>
+
+            <div class="three-col">
+              <div class="setting-card active"><p>数据范围</p><strong>全部数据</strong></div>
+              <div class="setting-card"><p>成员数量</p><strong>12 人</strong></div>
+              <div class="setting-card"><p>角色状态</p><strong>启用中</strong></div>
+            </div>
+          </article>
+        </section>
+        </div>
+      </main>
+    </div>
+  </body>
+</html>

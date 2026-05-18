@@ -9,7 +9,9 @@ import com.rookie.common.util.PageUtil;
 import com.rookie.framework.security.pojo.UserInfo;
 import com.rookie.system.mapper.SysRoleMapper;
 import com.rookie.system.mapper.SysRoleMenuMapper;
+import com.rookie.system.mapper.SysUserRoleMapper;
 import com.rookie.system.pojo.SysRoleMenu;
+import com.rookie.system.pojo.SysUserRole;
 import com.rookie.system.pojo.quarry.RoleQuarry;
 import com.rookie.system.pojo.vo.SysRoleVo;
 import com.rookie.system.service.SysRoleService;
@@ -29,6 +31,9 @@ public class SysRoleServiceImpl implements SysRoleService {
 
     @Autowired
     SysRoleMenuMapper sysRoleMenuMapper;
+
+    @Autowired
+    SysUserRoleMapper sysUserRoleMapper;
 
     @Override
     public PageInfo<SysRoleVo> quarrySysRole(RoleQuarry roleQuarry) {
@@ -117,6 +122,16 @@ public class SysRoleServiceImpl implements SysRoleService {
             throw new ServiceException(500,"默认角色更改失败");
         }
         return true;
+    }
+
+    @Override
+    public List<SysRole> getSysRoleByUserId(Long userId) {
+        List<SysUserRole> userRoles = sysUserRoleMapper.getUserRoleByUserId(userId);
+        if (userRoles == null || userRoles.isEmpty()) {
+            return new ArrayList<>();
+        }
+        List<Long> roleIds = userRoles.stream().map(SysUserRole::getRoleId).distinct().toList();
+        return sysRoleMapper.getSysRoleByRoleIds(roleIds);
     }
 
     private void addMenuBulk(SysRoleVo sysRoleVo){

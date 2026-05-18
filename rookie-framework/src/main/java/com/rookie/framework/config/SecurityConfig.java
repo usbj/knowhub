@@ -57,7 +57,7 @@ public class SecurityConfig {
                 .sessionManagement(session->session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(authorization -> authorization
                         .requestMatchers("/hello").authenticated()
-                        .requestMatchers("/sys/login").permitAll()
+                        .requestMatchers("/login").permitAll()
                         //swagger相关配置
                         .requestMatchers("/doc.html/**").permitAll()
                         .requestMatchers("/swagger-ui.html/**").permitAll()

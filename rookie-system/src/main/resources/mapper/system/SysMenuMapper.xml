@@ -4,19 +4,51 @@
         "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.rookie.system.mapper.SysMenuMapper">
 
-    <select id="quarrySysMenu" parameterType="com.rookie.system.pojo.quarry.MenuQuarry" resultType="com.rookie.system.pojo.vo.SysMenuVo">
+    <resultMap id="sysMenuVo" type="com.rookie.system.pojo.vo.SysMenuVo">
+        <id property="menuId" column="menu_id"/>
+        <result property="menuName" column="menu_name"/>
+        <result property="permKey" column="perm_key"/>
+        <result property="parentId" column="parent_id"/>
+        <result property="menuType" column="menu_type"/>
+        <result property="route" column="route"/>
+        <result property="backlinks" column="backlinks"/>
+        <result property="path" column="path"/>
+        <result property="icon" column="icon"/>
+        <result property="status" column="status"/>
+        <result property="createTime" column="create_time"/>
+    </resultMap>
+
+    <resultMap id="sysMenuEntity" type="com.rookie.common.pojo.entity.SysMenu">
+        <id property="menuId" column="menu_id"/>
+        <result property="menuName" column="menu_name"/>
+        <result property="permKey" column="perm_key"/>
+        <result property="parentId" column="parent_id"/>
+        <result property="menuType" column="menu_type"/>
+        <result property="route" column="route"/>
+        <result property="backlinks" column="backlinks"/>
+        <result property="path" column="path"/>
+        <result property="icon" column="icon"/>
+        <result property="status" column="status"/>
+        <result property="delete" column="delete"/>
+        <result property="createTime" column="create_time"/>
+        <result property="createBy" column="create_by"/>
+        <result property="updateTime" column="update_time"/>
+        <result property="updateBy" column="update_by"/>
+    </resultMap>
+
+    <select id="quarrySysMenu" parameterType="com.rookie.system.pojo.quarry.MenuQuarry" resultMap="sysMenuVo">
         select * from sys_menu
         where `delete` = 0
-            <if test="MenuName!=null and MenuName!=''">and menu_name like concat('%',#{permKey},'%')</if>
+            <if test="menuName!=null and menuName!=''">and menu_name like concat('%',#{menuName},'%')</if>
             <if test="permKey!=null and permKey!=''">and perm_key like concat('%',#{permKey},'%')</if>
             <if test="status!=null">
                 and status =#{status}
             </if>
             <if test="beginTime != null and beginTime != ''"><!-- 开始时间检索 -->
-                AND date_format(u.create_time,'%Y%m%d') &gt;= date_format(#{beginTime},'%Y%m%d')
+                AND date_format(create_time,'%Y%m%d') &gt;= date_format(#{beginTime},'%Y%m%d')
             </if>
             <if test="endTime != null and endTime != ''"><!-- 结束时间检索 -->
-                AND date_format(u.create_time,'%Y%m%d') &lt;= date_format(#{endTime},'%Y%m%d')
+                AND date_format(create_time,'%Y%m%d') &lt;= date_format(#{endTime},'%Y%m%d')
             </if>
 
     </select>
@@ -43,7 +75,7 @@
         where menu_id =#{menuId}
     </update>
 
-    <select id="getSysMenuInfo" parameterType="integer" resultType="com.rookie.common.pojo.entity.SysMenu">
+    <select id="getSysMenuInfo" parameterType="integer" resultMap="sysMenuEntity">
         select * from sys_menu where menu_id=#{menuId}
     </select>
 
@@ -54,5 +86,16 @@
     <update id="changeSysMenuStatus" parameterType="integer">
         update sys_menu set status = #{status} where menu_id = #{menuId}
     </update>
+
+    <select id="getSysMenuByMenuIds" resultMap="sysMenuVo">
+        select * from sys_menu
+        where `delete` = 0
+          and status = 1
+          and menu_id in
+        <foreach collection="list" item="menuId" open="(" close=")" separator=",">
+            #{menuId}
+        </foreach>
+        order by parent_id, menu_id
+    </select>
     
 </mapper>

@@ -1,9 +1,12 @@
 package com.rookie.system.service;
 
 import com.github.pagehelper.PageInfo;
+import com.rookie.common.pojo.entity.SysRole;
 import com.rookie.common.pojo.Result;
 import com.rookie.system.pojo.quarry.RoleQuarry;
 import com.rookie.system.pojo.vo.SysRoleVo;
+
+import java.util.List;
 
 public interface SysRoleService {
 
@@ -23,5 +26,7 @@ public interface SysRoleService {
     Boolean changeSysRoleStatus(Long roleId,Integer status);
 
     Boolean setTheDefaultRole(Long roleId);
+
+    List<SysRole> getSysRoleByUserId(Long userId);
 
 }

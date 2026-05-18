@@ -1,6 +1,7 @@
 package com.rookie.system.service;
 
 import com.rookie.common.pojo.Result;
+import com.rookie.common.pojo.entity.SysRole;
 import com.rookie.system.pojo.quarry.MenuQuarry;
 import com.rookie.system.pojo.vo.SysMenuVo;
 
@@ -19,5 +20,7 @@ public interface SysMenuService {
     Boolean deleteSysMenuInfo(Integer[] menuId);
 
     Boolean changeSysMenuStatus(Integer menuId, Integer status);
+
+    List<SysMenuVo> getSysMenuByRoleList(List<SysRole> roles);
 
 }

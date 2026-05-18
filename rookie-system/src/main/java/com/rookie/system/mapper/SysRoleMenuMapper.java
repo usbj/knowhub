@@ -12,4 +12,6 @@ public interface SysRoleMenuMapper {
 
     Boolean insertSysRoleMenu(List<SysRoleMenu> sysRoleMenus);
 
+    List<SysRoleMenu> getRoleMenuByRoleIds(List<Long> roleIds);
+
 }

@@ -4,8 +4,11 @@ import cn.hutool.core.bean.BeanUtil;
 import com.rookie.common.exception.ServiceException;
 import com.rookie.common.pojo.Result;
 import com.rookie.common.pojo.entity.SysMenu;
+import com.rookie.common.pojo.entity.SysRole;
 import com.rookie.framework.security.pojo.UserInfo;
 import com.rookie.system.mapper.SysMenuMapper;
+import com.rookie.system.mapper.SysRoleMenuMapper;
+import com.rookie.system.pojo.SysRoleMenu;
 import com.rookie.system.pojo.quarry.MenuQuarry;
 import com.rookie.system.pojo.vo.SysMenuVo;
 import com.rookie.system.service.SysMenuService;
@@ -25,30 +28,15 @@ public class SysMenuServiceImpl implements SysMenuService {
     @Autowired
     SysMenuMapper sysMenuMapper;
 
+    @Autowired
+    SysRoleMenuMapper sysRoleMenuMapper;
+
 
     @Override
     public List<SysMenuVo> quarrySysMenu(MenuQuarry menuQuarry) {
         //获取数据
         List<SysMenuVo> sysMenuVos = sysMenuMapper.quarrySysMenu(menuQuarry);
-        HashMap<Long,SysMenuVo> hashMap = new HashMap<>();
-        for (SysMenuVo sysMenuVo : sysMenuVos) {
-            if(sysMenuVo.getSonMenus()==null){
-                sysMenuVo.setSonMenus(new ArrayList<>());
-            }
-            hashMap.put(sysMenuVo.getMenuId(),sysMenuVo);
-
-        }
-        List<SysMenuVo> menuVos = new ArrayList<>();
-        for (SysMenuVo sysMenuVo : sysMenuVos) {
-            Long id = sysMenuVo.getParentId();
-            if (id ==-1){
-                menuVos.add(sysMenuVo);
-                continue;
-            }
-            hashMap.get(sysMenuVo.getParentId()).getSonMenus().add(sysMenuVo);
-        }
-
-        return menuVos;
+        return buildMenuTree(sysMenuVos);
     }
 
     @Override
@@ -105,5 +93,43 @@ public class SysMenuServiceImpl implements SysMenuService {
             throw new ServiceException(500,"菜单状态更改失败");
         }
         return true;
+    }
+
+    @Override
+    public List<SysMenuVo> getSysMenuByRoleList(List<SysRole> roles) {
+        if (roles == null || roles.isEmpty()) {
+            return new ArrayList<>();
+        }
+        List<Long> roleIds = roles.stream().map(SysRole::getRoleId).distinct().toList();
+        List<SysRoleMenu> roleMenus = sysRoleMenuMapper.getRoleMenuByRoleIds(roleIds);
+        if (roleMenus == null || roleMenus.isEmpty()) {
+            return new ArrayList<>();
+        }
+        List<Long> menuIds = roleMenus.stream().map(SysRoleMenu::getMenuId).distinct().toList();
+        return sysMenuMapper.getSysMenuByMenuIds(menuIds);
+    }
+
+    private List<SysMenuVo> buildMenuTree(List<SysMenuVo> sysMenuVos) {
+        HashMap<Long,SysMenuVo> hashMap = new HashMap<>();
+        for (SysMenuVo sysMenuVo : sysMenuVos) {
+            if(sysMenuVo.getSonMenus()==null){
+                sysMenuVo.setSonMenus(new ArrayList<>());
+            }
+            hashMap.put(sysMenuVo.getMenuId(),sysMenuVo);
+        }
+        List<SysMenuVo> menuVos = new ArrayList<>();
+        for (SysMenuVo sysMenuVo : sysMenuVos) {
+            Long id = sysMenuVo.getParentId();
+            if (id == null || id == -1L){
+                menuVos.add(sysMenuVo);
+                continue;
+            }
+            SysMenuVo parentMenu = hashMap.get(sysMenuVo.getParentId());
+            if (parentMenu != null) {
+                parentMenu.getSonMenus().add(sysMenuVo);
+            }
+        }
+
+        return menuVos;
     }
 }

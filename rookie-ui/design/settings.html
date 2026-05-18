@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Rookie Admin - Settings</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="brand-mark">R</div>
+          <div><p class="brand-name">Rookie Admin</p><p class="brand-subtitle">后台设计稿</p></div>
+        </div>
+        <nav class="nav-group">
+          <p class="nav-label">总览</p>
+          <a class="nav-item" href="./dashboard.html">工作台</a>
+          <a class="nav-item" href="./users.html">用户管理</a>
+          <a class="nav-item" href="./roles.html">角色与权限</a>
+          <a class="nav-item" href="./menus.html">菜单配置</a>
+          <a class="nav-item" href="./dict.html">字典配置</a>
+        </nav>
+        <nav class="nav-group">
+          <p class="nav-label">系统</p>
+          <a class="nav-item active" href="./settings.html">界面设置</a>
+          <a class="nav-item" href="./login.html">登录页</a>
+          <a class="nav-item" href="./index.html">设计目录</a>
+        </nav>
+      </aside>
+
+      <main class="main-area">
+        <div class="shell-header">
+          <header class="topbar">
+            <div class="topbar-left">
+              <div class="crumbs">
+                <p class="section-kicker">System / Settings</p>
+                <h1>系统界面设置</h1>
+                <p>你点到的这块我单独做成页面，因为后台系统通常真的需要一个清晰的界面设置中心。</p>
+              </div>
+              <div class="search-shell">搜索布局、主题、标签栏、导航模式</div>
+            </div>
+            <div class="topbar-right">
+              <button class="ghost-button">恢复默认</button>
+              <button class="primary-button">保存配置</button>
+              <div class="profile-chip">
+                <span class="avatar">WY</span>
+                <div class="profile-meta"><strong>王宇</strong><span>超级管理员</span></div>
+              </div>
+            </div>
+          </header>
+
+          <div class="tabs-bar">
+            <span class="tab-chip">工作台</span>
+            <span class="tab-chip active">界面设置</span>
+            <span class="tab-chip">个性偏好</span>
+          </div>
+        </div>
+
+        <div class="content-wrap">
+        <section class="page-section settings-layout">
+          <aside class="settings-group">
+            <p class="section-kicker">设置分组</p>
+            <ul class="settings-list">
+              <li>布局模式</li>
+              <li>主题与主色</li>
+              <li>侧边导航</li>
+              <li>顶部标签栏</li>
+              <li>个人偏好</li>
+            </ul>
+          </aside>
+
+          <div>
+            <section class="settings-group">
+              <div class="setting-head">
+                <div>
+                  <h3>布局模式</h3>
+                  <p class="setting-hint">后台建议预置几种稳定布局，不让用户从零自己拼。</p>
+                </div>
+              </div>
+              <div class="setting-grid">
+                <div class="setting-card active"><p>经典侧栏</p><strong>左侧导航 + 顶部工具栏</strong></div>
+                <div class="setting-card"><p>分栏模式</p><strong>一级导航与二级菜单分离</strong></div>
+                <div class="setting-card"><p>顶部导航</p><strong>适合一级栏目较少场景</strong></div>
+              </div>
+            </section>
+
+            <section class="settings-group" style="margin-top:16px;">
+              <div class="setting-head">
+                <div>
+                  <h3>主题与主色</h3>
+                  <p class="setting-hint">当前稿偏中性色和功能蓝，适合后台系统长期使用。</p>
+                </div>
+              </div>
+              <div class="setting-grid">
+                <div class="setting-card active"><p>标准蓝</p><strong>#2563EB</strong></div>
+                <div class="setting-card"><p>深海蓝</p><strong>#0369A1</strong></div>
+                <div class="setting-card"><p>青绿色</p><strong>#0F766E</strong></div>
+              </div>
+            </section>
+
+            <section class="settings-group" style="margin-top:16px;">
+              <div class="setting-head">
+                <div>
+                  <h3>功能开关</h3>
+                  <p class="setting-hint">这些正是头导航、个人区、标签栏那套全局体验的控制项。</p>
+                </div>
+              </div>
+              <div class="settings-list">
+                <div class="setting-row">
+                  <span>显示顶部搜索</span><span class="switch on"></span><span>支持全局菜单检索</span><span>推荐开启</span>
+                </div>
+                <div class="setting-row">
+                  <span>显示通知中心</span><span class="switch on"></span><span>右上角铃铛入口</span><span>推荐开启</span>
+                </div>
+                <div class="setting-row">
+                  <span>显示标签页导航</span><span class="switch on"></span><span>保留多页操作上下文</span><span>推荐开启</span>
+                </div>
+                <div class="setting-row">
+                  <span>固定侧边栏</span><span class="switch on"></span><span>保持模块定位稳定</span><span>推荐开启</span>
+                </div>
+              </div>
+            </section>
+          </div>
+        </section>
+        </div>
+      </main>
+    </div>
+  </body>
+</html>

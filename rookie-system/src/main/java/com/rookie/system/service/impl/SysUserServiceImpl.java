@@ -121,37 +121,6 @@ public class SysUserServiceImpl implements SysUserService {
         return true;
     }
 
-    @Override
-    public Boolean modifyPersonalDetails(SysUserVo sysUserVo) {
-        SysUser sysUser = BeanUtil.toBean(sysUserVo, SysUser.class);
-        try {
-            sysUserMapper.editUserInfo(sysUser);
-        } catch (Exception e) {
-            throw new ServiceException(500,"用户信息更改失败");
-        }
-        return true;
-    }
-
-    @Override
-    public SysUserVo getPersonalDetails(Long userId) {
-        SysUser sysUser = sysUserMapper.getSysUserInfoById(userId);
-        SysUserVo userVo = BeanUtil.toBean(sysUser, SysUserVo.class);
-        return userVo;
-    }
-
-    @Override
-    public Boolean resetSysUserPassword(Long userId, String password) {
-        SysUser sysUser = new SysUser();
-        sysUser.setPassword(password);
-        sysUser.setUserId(userId);
-        encryptPasswords(sysUser);
-        try {
-            sysUserMapper.resetSysUserPassword(sysUser);
-        } catch (Exception e) {
-            throw new ServiceException(500,"密码重置失败");
-        }
-        return true;
-    }
 
     /**
     * 批量添加用户的角色

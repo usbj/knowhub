@@ -23,4 +23,6 @@ public interface SysMenuMapper {
 
     boolean changeSysMenuStatus(Integer menuId,Integer status);
 
+    List<SysMenuVo> getSysMenuByMenuIds(List<Long> menuIds);
+
 }

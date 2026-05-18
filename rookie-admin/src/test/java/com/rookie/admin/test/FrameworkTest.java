@@ -141,7 +141,7 @@ public class FrameworkTest {
 
 //        sysUserService.chargeSysUserStatus(2L,0);
 
-        sysUserService.resetSysUserPassword(11L,"123456789");
+//        sysUserService.resetSysUserPassword(11L,"123456789");
     }
 
     @Test

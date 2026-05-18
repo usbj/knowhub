@@ -27,7 +27,23 @@
         <result column="role_id"/>
     </resultMap>
 
-    <select id="quarryUser" parameterType="com.rookie.system.pojo.quarry.UserQuarry" resultType="com.rookie.common.pojo.entity.SysUser">
+    <resultMap id="sysUserEntity" type="com.rookie.common.pojo.entity.SysUser">
+        <id property="userId" column="user_id"/>
+        <result property="username" column="username"/>
+        <result property="password" column="password"/>
+        <result property="nickName" column="nick_name"/>
+        <result property="sex" column="sex"/>
+        <result property="phoneNumber" column="phone_number"/>
+        <result property="avatar" column="avatar"/>
+        <result property="status" column="status"/>
+        <result property="delete" column="delete"/>
+        <result property="createTime" column="create_time"/>
+        <result property="createBy" column="create_by"/>
+        <result property="updateTime" column="update_time"/>
+        <result property="updateBy" column="update_by"/>
+    </resultMap>
+
+    <select id="quarryUser" parameterType="com.rookie.system.pojo.quarry.UserQuarry" resultMap="sysUserEntity">
         select * from sys_user
         where `delete`=0
         <if test="username != null and username != ''">
@@ -43,10 +59,10 @@
             and status =#{status}
         </if>
         <if test="beginTime != null and beginTime != ''"><!-- 开始时间检索 -->
-            AND date_format(u.create_time,'%Y%m%d') &gt;= date_format(#{beginTime},'%Y%m%d')
+            AND date_format(create_time,'%Y%m%d') &gt;= date_format(#{beginTime},'%Y%m%d')
         </if>
         <if test="endTime != null and endTime != ''"><!-- 结束时间检索 -->
-            AND date_format(u.create_time,'%Y%m%d') &lt;= date_format(#{endTime},'%Y%m%d')
+            AND date_format(create_time,'%Y%m%d') &lt;= date_format(#{endTime},'%Y%m%d')
         </if>
     </select>
 
@@ -95,7 +111,7 @@
         update sys_user set status = #{status} where user_id =#{userId}
     </update>
 
-    <select id="getSysUserInfoById" parameterType="long" resultType="com.rookie.common.pojo.entity.SysUser">
+    <select id="getSysUserInfoById" parameterType="long" resultMap="sysUserEntity">
         select * from sys_user where user_id=#{userId}
     </select>
 

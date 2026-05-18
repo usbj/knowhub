@@ -67,20 +67,4 @@ public class SysUserController  {
         return Result.success(b);
     }
 
-    @GetMapping("/person")
-    @Operation(summary = "获取个人数据")
-    public Result<SysUserVo> getPersonalDetail() {
-        UserInfo userInfo = (UserInfo)SecurityContextHolder.getContext().getAuthentication().getPrincipal();
-        SysUserVo personalDetails = sysUserService.getPersonalDetails(userInfo.getUserId());
-        return Result.success(personalDetails);
-    }
-
-    @PutMapping("/person")
-    @Operation(summary = "更改个人数据")
-    public Result<Boolean> modifyPersonalDetails(@RequestBody SysUserVo sysUserVo) {
-        Boolean b = sysUserService.modifyPersonalDetails(sysUserVo);
-        return Result.success(b);
-    }
-
-
 }

@@ -29,4 +29,6 @@ public interface SysRoleMapper {
 
     Boolean setTheDefaultRole(Long roleId);
 
+    List<SysRole> getSysRoleByRoleIds(List<Long> roleIds);
+
 }

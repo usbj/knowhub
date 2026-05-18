@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Rookie Admin - Dashboard</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="brand-mark">R</div>
+          <div>
+            <p class="brand-name">Rookie Admin</p>
+            <p class="brand-subtitle">后台设计稿</p>
+          </div>
+        </div>
+        <nav class="nav-group">
+          <p class="nav-label">总览</p>
+          <a class="nav-item active" href="./dashboard.html">工作台</a>
+          <a class="nav-item" href="./users.html">用户管理</a>
+          <a class="nav-item" href="./roles.html">角色与权限</a>
+          <a class="nav-item" href="./menus.html">菜单配置</a>
+          <a class="nav-item" href="./dict.html">字典配置</a>
+        </nav>
+        <nav class="nav-group">
+          <p class="nav-label">系统</p>
+          <a class="nav-item" href="./settings.html">界面设置</a>
+          <a class="nav-item" href="./login.html">登录页</a>
+          <a class="nav-item" href="./index.html">设计目录</a>
+        </nav>
+        <div class="sidebar-footer">
+          <p class="shell-note">当前壳子</p>
+          <p>侧边导航 + 顶部导航 + 标签栏 + 个人区 + 通知入口</p>
+        </div>
+      </aside>
+
+      <main class="main-area">
+        <div class="shell-header">
+          <header class="topbar">
+            <div class="topbar-left">
+              <div class="crumbs">
+                <p class="section-kicker">Dashboard</p>
+                <h1>工作台总览</h1>
+                <p>欢迎回来，今天系统状态稳定，权限与配置模块有少量待处理事项。</p>
+              </div>
+              <div class="search-shell">搜索菜单、用户、角色、字典项</div>
+            </div>
+            <div class="topbar-right">
+              <button class="icon-button">?</button>
+              <button class="icon-button">8</button>
+              <button class="ghost-button">快捷操作</button>
+              <div class="profile-chip">
+                <span class="avatar">WY</span>
+                <div class="profile-meta">
+                  <strong>王宇</strong>
+                  <span>超级管理员</span>
+                </div>
+              </div>
+            </div>
+          </header>
+
+          <div class="tabs-bar">
+            <span class="tab-chip active">工作台</span>
+            <span class="tab-chip">用户管理</span>
+            <span class="tab-chip">角色管理</span>
+            <span class="tab-chip">界面设置</span>
+          </div>
+        </div>
+
+        <div class="content-wrap">
+        <section class="page-section hero-strip">
+          <article class="content-card">
+            <p class="section-kicker">系统方向</p>
+            <h2>偏运营效率的后台框架，不做过度装饰</h2>
+            <p class="subtle">
+              首页强调状态感、导航感和下一步动作，而不是堆过多图表。图表有，但要服务管理决策。
+            </p>
+            <div class="metric-grid">
+              <div class="metric-card">
+                <p>在线用户</p>
+                <strong>2,148</strong>
+                <span class="good">较昨日 +5.8%</span>
+              </div>
+              <div class="metric-card">
+                <p>菜单节点</p>
+                <strong>148</strong>
+                <span>树结构健康</span>
+              </div>
+              <div class="metric-card">
+                <p>角色数量</p>
+                <strong>36</strong>
+                <span class="warn">3 个待审核</span>
+              </div>
+              <div class="metric-card">
+                <p>字典项变更</p>
+                <strong>12</strong>
+                <span>今日新增 4 项</span>
+              </div>
+            </div>
+          </article>
+
+          <article class="content-card">
+            <div class="panel-head">
+              <div>
+                <p class="section-kicker">快捷入口</p>
+                <h3>常用操作</h3>
+              </div>
+              <button class="ghost-button">编辑</button>
+            </div>
+            <div class="quick-grid">
+              <a class="quick-link" href="./users.html"><strong>新增用户</strong><span class="mini-copy">用户开通与初始化</span></a>
+              <a class="quick-link" href="./roles.html"><strong>创建角色</strong><span class="mini-copy">分配菜单与数据权限</span></a>
+              <a class="quick-link" href="./menus.html"><strong>调整菜单</strong><span class="mini-copy">更新导航与路由</span></a>
+              <a class="quick-link" href="./settings.html"><strong>界面设置</strong><span class="mini-copy">主题、标签栏、导航模式</span></a>
+            </div>
+          </article>
+        </section>
+
+        <section class="page-section two-col">
+          <article class="panel">
+            <div class="panel-head">
+              <div>
+                <h3>访问趋势</h3>
+                <p class="subtle">近 7 天登录、访问与权限校验请求</p>
+              </div>
+              <div class="toolbar">
+                <button class="filter-pill">今日</button>
+                <button class="filter-pill active">近 7 天</button>
+                <button class="filter-pill">近 30 天</button>
+              </div>
+            </div>
+            <div class="line-chart">
+              <span class="line one"></span>
+              <span class="line two"></span>
+              <span class="line three"></span>
+            </div>
+          </article>
+
+          <article class="panel">
+            <div class="panel-head">
+              <div>
+                <h3>通知中心</h3>
+                <p class="subtle">顶部铃铛下拉可展开的内容草稿</p>
+              </div>
+              <button class="ghost-button">全部已读</button>
+            </div>
+            <div class="notification-list">
+              <div class="notification-item"><span class="priority p1">P1</span> 菜单权限配置缺失，影响 3 个角色访问</div>
+              <div class="notification-item"><span class="priority p2">P2</span> 用户导入任务延迟 8 分钟，建议检查队列</div>
+              <div class="notification-item"><span class="priority p3">P3</span> 字典缓存今日刷新次数高于近 7 天平均值</div>
+            </div>
+          </article>
+        </section>
+
+        <section class="page-section three-col">
+          <article class="panel">
+            <div class="panel-head">
+              <div>
+                <h3>待办事项</h3>
+                <p class="subtle">适合首页停留的实际任务</p>
+              </div>
+            </div>
+            <div class="activity-list">
+              <div class="activity-item"><strong>审核新角色</strong><p>运营经理申请了 2 个新权限范围</p></div>
+              <div class="activity-item"><strong>清理菜单冗余</strong><p>发现 4 个历史菜单节点未使用</p></div>
+              <div class="activity-item"><strong>同步字典文案</strong><p>前后端状态枚举文案待统一</p></div>
+            </div>
+          </article>
+
+          <article class="panel">
+            <div class="panel-head">
+              <div>
+                <h3>版本动态</h3>
+                <p class="subtle">发布、配置和协作更新</p>
+              </div>
+            </div>
+            <div class="activity-list">
+              <div class="activity-item"><strong>v0.9.2 草稿</strong><p>新增界面设置中心与标签页策略</p></div>
+              <div class="activity-item"><strong>权限策略调整</strong><p>增加“只读审计员”默认模版</p></div>
+              <div class="activity-item"><strong>菜单重组建议</strong><p>系统管理二级导航准备收敛</p></div>
+            </div>
+          </article>
+
+          <article class="panel">
+            <div class="panel-head">
+              <div>
+                <h3>模块健康度</h3>
+                <p class="subtle">用柱图强调结构复杂度</p>
+              </div>
+            </div>
+            <div class="bar-chart">
+              <div class="bar h82"></div>
+              <div class="bar h68"></div>
+              <div class="bar h58"></div>
+              <div class="bar h40"></div>
+            </div>
+            <div class="legend-row">
+              <span class="chip">用户</span>
+              <span class="chip">角色</span>
+              <span class="chip">菜单</span>
+              <span class="chip">字典</span>
+            </div>
+          </article>
+        </section>
+        </div>
+      </main>
+    </div>
+  </body>
+</html>
