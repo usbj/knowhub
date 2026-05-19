@@ -40,7 +40,7 @@ const pageTransition = usePageTransition()
   border-radius: 0 999px 999px 0;
   background: linear-gradient(
     90deg,
-    color-mix(in srgb, var(--rookie-primary) 88%, white),
+    color-mix(in srgb, var(--rookie-primary) 88%, var(--rookie-text-inverse)),
     var(--rookie-primary),
     var(--rookie-primary-strong)
   );

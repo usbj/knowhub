@@ -1,7 +1,10 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import { ElScrollbar } from 'element-plus'
+import { House } from '@element-plus/icons-vue'
 import appLogo from '@/assets/logo.svg'
 import { useLayoutNavigationStore } from '@/stores/navigation'
+import type { NavigationMenuItem } from '@/types/components/navigation'
 import SideBarSection from './components/SideBarSection.vue'
 
 defineProps<{
@@ -9,6 +12,24 @@ defineProps<{
 }>()
 
 const layoutNavigationStore = useLayoutNavigationStore()
+
+const staticEntries = computed<NavigationMenuItem[]>(() => [
+  {
+    menuId: -1,
+    menuName: '系统首页',
+    permKey: '',
+    parentId: 0,
+    menuType: 2,
+    routeSegment: '',
+    route: '/',
+    path: 'dashboard/index',
+    backlinks: 0,
+    icon: 'House',
+    iconComponent: House,
+    status: 1,
+    children: [],
+  },
+])
 </script>
 
 <template>
@@ -25,6 +46,17 @@ const layoutNavigationStore = useLayoutNavigationStore()
 
     <ElScrollbar class="side-bar__scroll">
       <nav class="side-bar__nav" aria-label="主导航">
+        <SideBarSection
+          v-for="section in staticEntries"
+          :key="section.menuId"
+          :item="section"
+          :collapsed="collapsed"
+          :current-path="layoutNavigationStore.currentPath"
+          :expanded="false"
+          :expanded-directory-ids="layoutNavigationStore.expandedDirectoryIds"
+          @toggle="layoutNavigationStore.toggleDirectory"
+        />
+
         <SideBarSection
           v-for="section in layoutNavigationStore.menuTree"
           :key="section.menuId"
@@ -43,7 +75,7 @@ const layoutNavigationStore = useLayoutNavigationStore()
 <style scoped>
 .side-bar {
   width: var(--rookie-sidebar-width);
-  min-height: 100vh;
+  height: 100vh;
   display: flex;
   flex-direction: column;
   padding: 1.125rem 1rem;
@@ -51,8 +83,8 @@ const layoutNavigationStore = useLayoutNavigationStore()
   border-right: 1px solid var(--rookie-border);
   box-shadow: var(--rookie-shadow);
   transition: width 0.24s ease;
-  position: sticky;
-  top: 0;
+  overflow: hidden;
+  flex: none;
 }
 
 .side-bar.is-collapsed {

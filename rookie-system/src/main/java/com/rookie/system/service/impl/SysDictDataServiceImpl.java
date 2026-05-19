@@ -1,7 +1,6 @@
 package com.rookie.system.service.impl;
 
 import cn.hutool.core.bean.BeanUtil;
-import cn.hutool.json.JSONUtil;
 import com.github.pagehelper.PageInfo;
 import com.rookie.common.cache.RedisCache;
 import com.rookie.common.pojo.entity.SysDictData;
@@ -16,6 +15,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
 import java.util.List;
 
 
@@ -33,12 +33,14 @@ public class SysDictDataServiceImpl implements SysDictDataService {
         PageUtil.startPage();
         List<SysDictData> sysDictData = sysDictDataMapper.quarrySysDictData(quarry);
         PageInfo<SysDictData> sysDictDataPageInfo = PageUtil.packagedPageInfo(sysDictData);
-        return PageUtil.copyPageInfo(sysDictDataPageInfo,SysDictDataVo.class);
+        PageInfo<SysDictDataVo> dictDataVoPageInfo = PageUtil.copyPageInfo(sysDictDataPageInfo,SysDictDataVo.class);
+        dictDataVoPageInfo.setList(toDictDataVoList(sysDictData));
+        return dictDataVoPageInfo;
     }
 
     @Override
     public Boolean addSysDictData(SysDictDataVo dictDataVo) {
-        SysDictData dictDataEntity = BeanUtil.toBean(dictDataVo, SysDictData.class);
+        SysDictData dictDataEntity = toDictDataEntity(dictDataVo);
         UserInfo userInfo = (UserInfo) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
         dictDataEntity.setCreateBy(userInfo.getUsername());
         dictDataEntity.setUpdateBy(userInfo.getUsername());
@@ -47,7 +49,7 @@ public class SysDictDataServiceImpl implements SysDictDataService {
 
     @Override
     public Boolean editSysDictDataInfo(SysDictDataVo dictDataVo) {
-        SysDictData dictDataEntity = BeanUtil.toBean(dictDataVo, SysDictData.class);
+        SysDictData dictDataEntity = toDictDataEntity(dictDataVo);
         UserInfo userInfo = (UserInfo) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
         dictDataEntity.setCreateBy(userInfo.getUsername());
         dictDataEntity.setUpdateBy(userInfo.getUsername());
@@ -67,20 +69,37 @@ public class SysDictDataServiceImpl implements SysDictDataService {
     @Override
     public SysDictDataVo getSysDictDataByDataId(Long dictDataId) {
         SysDictData sysDictData = sysDictDataMapper.getSysDictDataInfoByDataId(dictDataId);
-        SysDictDataVo sysDictDataVo = BeanUtil.toBean(sysDictData, SysDictDataVo.class);
-        return sysDictDataVo;
+        return toDictDataVo(sysDictData);
     }
 
     @Override
     public List<SysDictDataVo> getSysDictDataByDictKey(String dictKey) {
         List<SysDictData> listCacheEntity = DictUtil.getDictData(dictKey);
-        List<SysDictDataVo> listCache = BeanUtil.copyToList(listCacheEntity, SysDictDataVo.class);
+        List<SysDictDataVo> listCache = toDictDataVoList(listCacheEntity);
         if (!listCache.isEmpty()){
             return listCache;
         }
         List<SysDictData> sysDictDataByDictKey = sysDictDataMapper.getSysDictDataByDictKey(dictKey);
         DictUtil.setDictData(dictKey,sysDictDataByDictKey);
-        listCache = BeanUtil.copyToList(sysDictDataByDictKey,SysDictDataVo.class);
-        return listCache;
+        return toDictDataVoList(sysDictDataByDictKey);
+    }
+
+    private SysDictData toDictDataEntity(SysDictDataVo dictDataVo) {
+        return BeanUtil.toBean(dictDataVo, SysDictData.class);
+    }
+
+    private SysDictDataVo toDictDataVo(SysDictData dictDataEntity) {
+        return BeanUtil.toBean(dictDataEntity, SysDictDataVo.class);
+    }
+
+    private List<SysDictDataVo> toDictDataVoList(List<SysDictData> dictDataEntities) {
+        List<SysDictDataVo> dictDataVos = new ArrayList<>();
+        if (dictDataEntities == null || dictDataEntities.isEmpty()) {
+            return dictDataVos;
+        }
+        for (SysDictData dictDataEntity : dictDataEntities) {
+            dictDataVos.add(toDictDataVo(dictDataEntity));
+        }
+        return dictDataVos;
     }
 }

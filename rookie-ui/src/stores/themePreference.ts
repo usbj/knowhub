@@ -109,7 +109,20 @@ export const useThemePreferenceStore = defineStore('theme-preference', () => {
       root.style.setProperty('--rookie-text', '#e5edf8')
       root.style.setProperty('--rookie-text-secondary', '#b4c2d3')
       root.style.setProperty('--rookie-text-tertiary', '#7f90a8')
+      root.style.setProperty('--rookie-danger', '#f87171')
       root.style.setProperty('--rookie-shadow', '0 18px 40px rgba(2, 6, 23, 0.38)')
+      root.style.setProperty(
+        '--rookie-danger-soft',
+        'color-mix(in srgb, var(--rookie-danger) 14%, var(--rookie-card-bg))',
+      )
+      root.style.setProperty(
+        '--rookie-danger-border',
+        'color-mix(in srgb, var(--rookie-danger) 36%, var(--rookie-border))',
+      )
+      root.style.setProperty(
+        '--rookie-login-gradient-end',
+        'color-mix(in srgb, var(--rookie-bg) 84%, var(--rookie-surface-muted))',
+      )
       root.style.setProperty('--el-mask-color', 'rgba(2, 6, 23, 0.42)')
       root.style.setProperty('--el-mask-color-extra-light', 'rgba(2, 6, 23, 0.12)')
       root.style.setProperty('--el-overlay-color-light', 'rgba(2, 6, 23, 0.42)')
@@ -125,7 +138,20 @@ export const useThemePreferenceStore = defineStore('theme-preference', () => {
       root.style.setProperty('--rookie-text', '#172033')
       root.style.setProperty('--rookie-text-secondary', '#5b6780')
       root.style.setProperty('--rookie-text-tertiary', '#8a94a8')
+      root.style.setProperty('--rookie-danger', '#d14343')
       root.style.setProperty('--rookie-shadow', '0 16px 40px rgba(23, 32, 51, 0.08)')
+      root.style.setProperty(
+        '--rookie-danger-soft',
+        'color-mix(in srgb, var(--rookie-danger) 12%, var(--rookie-card-bg))',
+      )
+      root.style.setProperty(
+        '--rookie-danger-border',
+        'color-mix(in srgb, var(--rookie-danger) 32%, var(--rookie-border))',
+      )
+      root.style.setProperty(
+        '--rookie-login-gradient-end',
+        'color-mix(in srgb, var(--rookie-bg) 88%, #d8e2ef)',
+      )
       root.style.setProperty('--el-mask-color', 'rgba(15, 23, 42, 0.28)')
       root.style.setProperty('--el-mask-color-extra-light', 'rgba(15, 23, 42, 0.08)')
       root.style.setProperty('--el-overlay-color-light', 'rgba(15, 23, 42, 0.28)')

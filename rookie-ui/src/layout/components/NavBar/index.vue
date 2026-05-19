@@ -95,7 +95,7 @@ const handleTabAction = async (command: string) => {
 
 /**
  * 方法效果：
- * 处理当前用户下拉菜单命令，包括跳转个人中心、跳转关于页和退出登录。
+ * 处理当前用户下拉菜单命令，包括跳转个人中心和退出登录。
  * 参数：
  * - `command`：下拉菜单返回的操作命令。
  * 返回值：
@@ -104,11 +104,6 @@ const handleTabAction = async (command: string) => {
 const handleProfileCommand = async (command: string) => {
   if (command === 'profile') {
     await router.push('/account/profile')
-    return
-  }
-
-  if (command === 'about') {
-    await router.push('/support/about')
     return
   }
 
@@ -190,7 +185,12 @@ const handleProfileCommand = async (command: string) => {
           <Setting />
         </button>
 
-        <ElDropdown trigger="click" placement="bottom-end" @command="handleProfileCommand">
+        <ElDropdown
+          trigger="click"
+          placement="bottom-end"
+          popper-class="nav-bar-profile-dropdown"
+          @command="handleProfileCommand"
+        >
           <button class="nav-bar__profile" type="button" aria-label="当前用户菜单">
             <span class="nav-bar__profile-avatar">
               {{ userStore.displayName.slice(0, 1).toUpperCase() }}
@@ -203,7 +203,6 @@ const handleProfileCommand = async (command: string) => {
           <template #dropdown>
             <ElDropdownMenu>
               <ElDropdownItem command="profile">个人中心</ElDropdownItem>
-              <ElDropdownItem command="about">关于系统</ElDropdownItem>
               <ElDropdownItem command="logout">退出登录</ElDropdownItem>
             </ElDropdownMenu>
           </template>
@@ -223,7 +222,7 @@ const handleProfileCommand = async (command: string) => {
           <Refresh />
         </button>
 
-        <ElDropdown trigger="click" placement="bottom-end" @command="handleTabAction">
+        <ElDropdown trigger="click" placement="bottom-end" popper-class="nav-bar-profile-dropdown" @command="handleTabAction">
           <button class="nav-bar__tab-button" type="button" aria-label="标签操作">
             <Close />
           </button>

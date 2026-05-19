@@ -10,10 +10,7 @@ import SharedFormPanel from '@/components/SharedFormPanel.vue'
 import { updatePersonalProfileApi } from '@/api/system/user'
 import { useUserStore } from '@/stores/user'
 import type { UpdatePersonalProfilePayload } from '@/types/api/system/user'
-import type {
-  SharedActionConfig,
-  SharedFieldSchemaMap,
-} from '@/types/components/data-display'
+import type { SharedFieldSchemaMap } from '@/types/components/data-display'
 
 const userStore = useUserStore()
 const saving = ref(false)
@@ -68,18 +65,6 @@ const profileFormSchema = computed<SharedFieldSchemaMap<UpdatePersonalProfilePay
     },
   },
 }))
-
-const profileFormActions = computed<SharedActionConfig<Record<string, unknown>>[]>(() => [
-  {
-    key: 'reset-password',
-    label: '清空密码',
-    buttonType: 'default',
-    plain: true,
-    onClick: () => {
-      form.password = ''
-    },
-  },
-])
 
 /**
  * store 中的个人资料一旦更新，就同步回表单。
@@ -164,61 +149,52 @@ const handleFormModelUpdate = (nextFormValue: Record<string, unknown>) => {
 <template>
   <!-- 个人中心页面区域 -->
   <section class="profile-view">
-    <div class="profile-view__hero">
-      <div class="profile-view__hero-main">
-        <span class="profile-view__eyebrow">个人中心</span>
-        <h1>{{ profileSummary?.nickName || profileSummary?.username || '未登录用户' }}</h1>
-        <p>这里展示当前登录账号的基础资料，并支持直接维护昵称、联系方式和登录密码。</p>
+    <header class="profile-view__header">
+      <div>
+        <h1>个人中心</h1>
+        <p>维护当前登录账号的基础资料与登录密码。</p>
       </div>
-
-      <div class="profile-view__hero-side">
-        <div class="profile-view__avatar">
-          {{ (profileSummary?.nickName || profileSummary?.username || 'U').slice(0, 1).toUpperCase() }}
-        </div>
-        <div class="profile-view__identity">
-          <strong>{{ profileSummary?.username || '--' }}</strong>
-          <span>{{ profileSummary?.roleNames.join('、') || '未分配角色' }}</span>
-        </div>
+      <div class="profile-view__avatar">
+        {{ (profileSummary?.nickName || profileSummary?.username || 'U').slice(0, 1).toUpperCase() }}
       </div>
-    </div>
+    </header>
 
     <div class="profile-view__content">
       <section class="profile-view__panel">
         <header class="profile-view__panel-head">
-          <h2>账号概览</h2>
-          <p>查看当前登录账号的身份信息与状态。</p>
+          <h2>账号信息</h2>
+          <p>只保留基础系统里真正常用的信息。</p>
         </header>
 
-        <div class="profile-view__summary-grid">
-          <div class="profile-view__summary-item">
-            <span>用户编号</span>
-            <strong>{{ profileSummary?.userId ?? '--' }}</strong>
+        <dl class="profile-view__summary-list">
+          <div class="profile-view__summary-row">
+            <dt>登录账号</dt>
+            <dd>{{ profileSummary?.username || '--' }}</dd>
           </div>
-          <div class="profile-view__summary-item">
-            <span>登录账号</span>
-            <strong>{{ profileSummary?.username || '--' }}</strong>
+          <div class="profile-view__summary-row">
+            <dt>当前昵称</dt>
+            <dd>{{ profileSummary?.nickName || '--' }}</dd>
           </div>
-          <div class="profile-view__summary-item">
-            <span>账号状态</span>
-            <strong>{{ profileSummary?.status === 1 ? '正常' : '停用' }}</strong>
+          <div class="profile-view__summary-row">
+            <dt>手机号</dt>
+            <dd>{{ profileSummary?.phoneNumber || '--' }}</dd>
           </div>
-          <div class="profile-view__summary-item">
-            <span>创建时间</span>
-            <strong>{{ profileSummary?.createTime || '--' }}</strong>
+          <div class="profile-view__summary-row">
+            <dt>角色</dt>
+            <dd>{{ profileSummary?.roleNames.join('、') || '未分配角色' }}</dd>
           </div>
-        </div>
+        </dl>
       </section>
 
       <section class="profile-view__panel">
         <header class="profile-view__panel-head">
-          <h2>资料维护</h2>
-          <p>修改后会同步更新顶部当前用户展示信息。</p>
+          <h2>资料修改</h2>
+          <p>保存后会同步更新顶部当前用户展示信息。</p>
         </header>
 
         <SharedFormPanel
           :schema="profileFormSchema"
           :model-value="form as unknown as Record<string, unknown>"
-          :actions="profileFormActions"
           :loading="saving"
           :columns="2"
           @update:model-value="handleFormModelUpdate"
@@ -235,7 +211,7 @@ const handleFormModelUpdate = (nextFormValue: Record<string, unknown>) => {
   gap: 18px;
 }
 
-.profile-view__hero,
+.profile-view__header,
 .profile-view__panel {
   border: 1px solid var(--rookie-border);
   border-radius: var(--rookie-radius-lg);
@@ -243,47 +219,29 @@ const handleFormModelUpdate = (nextFormValue: Record<string, unknown>) => {
   box-shadow: var(--rookie-shadow);
 }
 
-.profile-view__hero {
+.profile-view__header {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
-  gap: 24px;
-  padding: 24px 28px;
+  gap: 16px;
+  padding: 22px 24px;
 }
 
-.profile-view__hero-main {
-  max-width: 640px;
-  display: grid;
-  gap: 10px;
-}
-
-.profile-view__eyebrow {
-  color: var(--rookie-primary);
-  font-size: var(--rookie-font-size-sm);
-  font-weight: 700;
-}
-
-.profile-view__hero-main h1,
+.profile-view__header h1,
 .profile-view__panel-head h2 {
   margin: 0;
   color: var(--rookie-text);
 }
 
-.profile-view__hero-main p,
+.profile-view__header p,
 .profile-view__panel-head p {
   margin: 0;
   color: var(--rookie-text-secondary);
 }
 
-.profile-view__hero-side {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-}
-
 .profile-view__avatar {
-  width: 56px;
-  height: 56px;
+  width: 52px;
+  height: 52px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -295,23 +253,9 @@ const handleFormModelUpdate = (nextFormValue: Record<string, unknown>) => {
   flex: none;
 }
 
-.profile-view__identity {
-  display: grid;
-  gap: 4px;
-}
-
-.profile-view__identity strong {
-  color: var(--rookie-text);
-}
-
-.profile-view__identity span {
-  color: var(--rookie-text-secondary);
-  font-size: var(--rookie-font-size-sm);
-}
-
 .profile-view__content {
   display: grid;
-  grid-template-columns: minmax(0, 0.92fr) minmax(0, 1.08fr);
+  grid-template-columns: minmax(280px, 0.88fr) minmax(0, 1.12fr);
   gap: 18px;
 }
 
@@ -326,41 +270,45 @@ const handleFormModelUpdate = (nextFormValue: Record<string, unknown>) => {
   gap: 8px;
 }
 
-.profile-view__summary-grid {
+.profile-view__summary-list {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 14px;
+  margin: 0;
 }
 
-.profile-view__summary-item {
-  padding: 16px;
-  border: 1px solid var(--rookie-border);
-  border-radius: var(--rookie-radius-md);
-  background: var(--rookie-surface-weak);
+.profile-view__summary-row {
   display: grid;
-  gap: 8px;
+  grid-template-columns: 92px minmax(0, 1fr);
+  gap: 12px;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--rookie-border);
 }
 
-.profile-view__summary-item span {
+.profile-view__summary-row:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+.profile-view__summary-row:first-child {
+  padding-top: 0;
+}
+
+.profile-view__summary-row dt {
   color: var(--rookie-text-secondary);
   font-size: var(--rookie-font-size-sm);
+  margin: 0;
 }
 
-.profile-view__summary-item strong {
+.profile-view__summary-row dd {
   color: var(--rookie-text);
+  margin: 0;
+  word-break: break-word;
 }
 
 @media (max-width: 1024px) {
-  .profile-view__hero,
+  .profile-view__header,
   .profile-view__content {
-    grid-template-columns: 1fr;
-  }
-
-  .profile-view__hero {
-    flex-direction: column;
-  }
-
-  .profile-view__summary-grid {
+    display: grid;
     grid-template-columns: 1fr;
   }
 }

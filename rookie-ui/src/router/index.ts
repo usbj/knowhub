@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { useUserStore } from '@/stores/user'
+import { useDictStore } from '@/stores/dict'
 import { useLayoutNavigationStore } from '@/stores/navigation'
 import { finishPageTransition, startPageTransition } from '@/composables/usePageTransition'
 import Layout from '@/layout/index.vue'
@@ -9,6 +10,10 @@ import {
   registerDynamicRoutes,
   unregisterDynamicRoutes,
 } from './dynamicRoutes'
+
+const DictDataView = () => import('@/views/system/dict-data/index.vue')
+const DashboardView = () => import('@/views/dashboard/index.vue')
+const ProfileView = () => import('@/views/profile/index.vue')
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -28,7 +33,38 @@ const router = createRouter({
       meta: {
         requiresAuth: true,
       },
-      children: [],
+      children: [
+        {
+          path: '',
+          alias: ['/dashboard'],
+          name: 'dashboard-home',
+          component: DashboardView,
+          meta: {
+            requiresAuth: true,
+            title: '系统首页',
+          },
+        },
+        {
+          path: 'account/profile',
+          alias: ['/account/profile'],
+          name: 'account-profile',
+          component: ProfileView,
+          meta: {
+            requiresAuth: true,
+            title: '个人中心',
+          },
+        },
+        {
+          path: 'system/dict-data',
+          alias: ['/system/dictData'],
+          name: 'system-dict-data',
+          component: DictDataView,
+          meta: {
+            requiresAuth: true,
+            title: '字典数据',
+          },
+        },
+      ],
     },
   ],
 })
@@ -54,6 +90,7 @@ router.beforeEach(async (to) => {
    * 这里继续沿用最基础的 token 鉴权判断。
    */
   const userStore = useUserStore()
+  const dictStore = useDictStore()
   const layoutNavigationStore = useLayoutNavigationStore()
 
   if (to.meta.public) {
@@ -88,12 +125,9 @@ router.beforeEach(async (to) => {
       unregisterDynamicRoutes(router)
       registerDynamicRoutes(router, layoutNavigationStore.rawMenuTree)
       layoutNavigationStore.markDynamicRoutesReady()
+      await dictStore.initializeDictionaries().catch(() => undefined)
 
       const fallbackPath = getFirstAccessibleMenuPath(layoutNavigationStore.rawMenuTree)
-
-      if (to.path === '/') {
-        return fallbackPath
-      }
 
       /**
        * 动态路由刚注入完成时，需要重新用完整路由表解析一次目标地址。
@@ -104,6 +138,10 @@ router.beforeEach(async (to) => {
       }
 
       return to.fullPath
+    }
+
+    if (!dictStore.initialized) {
+      await dictStore.initializeDictionaries().catch(() => undefined)
     }
   } catch {
     userStore.logout()

@@ -6,7 +6,7 @@
 import axios, { AxiosError } from 'axios'
 import type { AxiosInstance, AxiosRequestConfig, AxiosResponse } from 'axios'
 import { ElMessage } from 'element-plus'
-import { USER_TOKEN_STORAGE_KEY } from '@/stores/user'
+import { USER_INFO_STORAGE_KEY, USER_TOKEN_STORAGE_KEY } from '@/stores/user'
 import type {
   ApiResult,
   NormalizedPageResult,
@@ -14,6 +14,45 @@ import type {
 } from '@/types/api/system/common'
 
 const SUCCESS_CODE = 200
+const AUTH_EXPIRED_CODE = 401
+const DICT_CACHE_STORAGE_KEY = 'rookie-dict-cache'
+let isRedirectingToLogin = false
+
+const clearLocalAuthState = () => {
+  localStorage.removeItem(USER_TOKEN_STORAGE_KEY)
+  localStorage.removeItem(USER_INFO_STORAGE_KEY)
+  localStorage.removeItem(DICT_CACHE_STORAGE_KEY)
+}
+
+const getCurrentRedirectPath = () => {
+  const baseUrl = import.meta.env.BASE_URL || '/'
+  const currentLocation = `${window.location.pathname}${window.location.search}${window.location.hash}`
+
+  if (baseUrl !== '/' && currentLocation.startsWith(baseUrl)) {
+    return currentLocation.slice(baseUrl.length - 1) || '/'
+  }
+
+  return currentLocation || '/'
+}
+
+const redirectToLogin = () => {
+  if (typeof window === 'undefined' || isRedirectingToLogin) {
+    return
+  }
+
+  isRedirectingToLogin = true
+  clearLocalAuthState()
+
+  const baseUrl = import.meta.env.BASE_URL || '/'
+  const loginUrl = new URL(`${baseUrl}login`, window.location.origin)
+  const redirectPath = getCurrentRedirectPath()
+
+  if (redirectPath && redirectPath !== '/login') {
+    loginUrl.searchParams.set('redirect', redirectPath)
+  }
+
+  window.location.replace(loginUrl.toString())
+}
 
 /**
  * 当前开发环境默认通过 /api 代理转发到后端服务，
@@ -50,6 +89,12 @@ http.interceptors.response.use(
     const payload = response.data
 
     if (typeof payload?.code === 'number' && payload.code !== SUCCESS_CODE) {
+      if (payload.code === AUTH_EXPIRED_CODE) {
+        ElMessage.error(payload.msg || '登录状态已失效，请重新登录')
+        redirectToLogin()
+        return Promise.reject(new Error(payload.msg || '登录状态已失效'))
+      }
+
       ElMessage.error(payload.msg || '请求失败')
       return Promise.reject(new Error(payload.msg || '请求失败'))
     }
@@ -57,6 +102,12 @@ http.interceptors.response.use(
     return response
   },
   (error: AxiosError) => {
+    if (error.response?.status === AUTH_EXPIRED_CODE) {
+      ElMessage.error('登录状态已失效，请重新登录')
+      redirectToLogin()
+      return Promise.reject(error)
+    }
+
     const message =
       error.response?.data && typeof error.response.data === 'object' && 'msg' in error.response.data
         ? String(error.response.data.msg)

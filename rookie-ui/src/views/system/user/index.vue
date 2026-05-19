@@ -10,6 +10,8 @@ import type { FormRules } from 'element-plus'
 import BaseCard from '@/components/BaseCard.vue'
 import SearchFilterPanel from '@/components/SearchFilterPanel.vue'
 import SharedTablePanel from '@/components/SharedTablePanel.vue'
+import { SYSTEM_PERMISSION_KEYS } from '@/constants/systemPermissions'
+import { getSysRolePageApi } from '@/api/system/role'
 import {
   changeSysUserStatusApi,
   createSysUserApi,
@@ -28,64 +30,24 @@ import type {
   SharedActionConfig,
   SharedFieldSchemaMap,
 } from '@/types/components/data-display'
-
-interface UserQueryFormState {
-  username: string
-  nickName: string
-  phoneNumber: string
-  status: number | undefined
-  dateRange: string[]
-}
+import {
+  createDefaultUserForm,
+  createDefaultUserQueryForm,
+  createUserFormRules,
+  createUserQuerySchema,
+  createUserSchema,
+  type UserQueryFormState,
+} from './config'
 
 type UserDialogMode = 'create' | 'edit'
 
-const mockRoleOptions = [
-  { label: '系统管理员', value: 1 },
-  { label: '普通角色', value: 2 },
-  { label: '访客角色', value: 3 },
-]
-
-/**
- * 方法效果：
- * 创建空白的用户查询表单模型。
- * 参数：
- * - 无。
- * 返回值：
- * - 用户查询表单默认值对象。
- */
-const createDefaultQueryForm = (): UserQueryFormState => ({
-  username: '',
-  nickName: '',
-  phoneNumber: '',
-  status: undefined,
-  dateRange: [],
-})
-
-/**
- * 方法效果：
- * 创建空白的用户编辑表单模型。
- * 参数：
- * - 无。
- * 返回值：
- * - 用户新增或编辑时使用的默认表单对象。
- */
-const createDefaultUserForm = (): SysUserFormData => ({
-  username: '',
-  password: '',
-  nickName: '',
-  phoneNumber: '',
-  sex: '1',
-  status: 1,
-  roleId: [],
-  userRole: [],
-})
-
-const queryForm = reactive<UserQueryFormState>(createDefaultQueryForm())
+const queryForm = reactive<UserQueryFormState>(createDefaultUserQueryForm())
 const listLoading = ref(false)
 const submitLoading = ref(false)
 const dialogVisible = ref(false)
 const dialogMode = ref<UserDialogMode>('create')
 const userFormModel = ref<SysUserFormData>(createDefaultUserForm())
+const roleOptions = ref<{ label: string; value: number }[]>([])
 const pageState = ref<SysUserPageResult>({
   records: [],
   pageNum: 1,
@@ -94,194 +56,17 @@ const pageState = ref<SysUserPageResult>({
   total: 0,
 })
 
-const querySchema = computed<SharedFieldSchemaMap<UserQueryFormState>>(() => ({
-  username: {
-    label: '账号',
-    inputType: 'text',
-    placeholder: '请输入账号',
-    tableVisible: false,
-    formVisible: true,
-    formOrder: 1,
-    span: 5,
-    props: {
-      style: {
-        width: '100%',
-      },
-    },
-  },
-  nickName: {
-    label: '昵称',
-    inputType: 'text',
-    placeholder: '请输入昵称',
-    tableVisible: false,
-    formVisible: true,
-    formOrder: 2,
-    span: 5,
-    props: {
-      style: {
-        width: '100%',
-      },
-    },
-  },
-  phoneNumber: {
-    label: '手机号',
-    inputType: 'text',
-    placeholder: '请输入手机号',
-    tableVisible: false,
-    formVisible: true,
-    formOrder: 3,
-    span: 5,
-    props: {
-      style: {
-        width: '100%',
-      },
-    },
-  },
-  status: {
-    label: '状态',
-    inputType: 'select',
-    placeholder: '请选择状态',
-    tableVisible: false,
-    formVisible: true,
-    formOrder: 4,
-    span: 4,
-    props: {
-      style: {
-        width: '100%',
-      },
-    },
-    options: [
-      { label: '正常', value: 1 },
-      { label: '停用', value: 0 },
-    ],
-  },
-  dateRange: {
-    label: '创建时间',
-    inputType: 'daterange',
-    tableVisible: false,
-    formVisible: true,
-    formOrder: 5,
-    span: 5,
-    props: {
-      unlinkPanels: true,
-      style: {
-        width: '100%',
-      },
-    },
-  },
-}))
+const querySchema = computed<SharedFieldSchemaMap<UserQueryFormState>>(() => createUserQuerySchema())
 
-const userSchema = computed<SharedFieldSchemaMap<SysUserFormData>>(() => ({
-  username: {
-    label: '账号',
-    inputType: 'text',
-    placeholder: '请输入账号',
-    tableVisible: true,
-    formVisible: dialogMode.value === 'create',
-    tableOrder: 2,
-    formOrder: 1,
-    span: 12,
-    tableMinWidth: 140,
-  },
-  nickName: {
-    label: '昵称',
-    inputType: 'text',
-    placeholder: '请输入昵称',
-    tableVisible: true,
-    formVisible: true,
-    tableOrder: 3,
-    formOrder: 2,
-    span: 12,
-    tableMinWidth: 140,
-  },
-  phoneNumber: {
-    label: '手机号',
-    inputType: 'text',
-    placeholder: '请输入手机号',
-    tableVisible: true,
-    formVisible: true,
-    tableOrder: 4,
-    formOrder: 3,
-    span: 12,
-    tableMinWidth: 160,
-  },
-  sex: {
-    label: '性别',
-    inputType: 'select',
-    placeholder: '请选择性别',
-    tableVisible: false,
-    formVisible: true,
-    formOrder: 4,
-    span: 12,
-    options: [
-      { label: '男', value: '1' },
-      { label: '女', value: '0' },
-    ],
-    formatter: (value) => (String(value) === '0' ? '女' : '男'),
-  },
-  status: {
-    label: '状态',
-    inputType: 'select',
-    placeholder: '请选择状态',
-    tableVisible: true,
-    formVisible: true,
-    tableOrder: 5,
-    formOrder: 5,
-    span: 12,
-    options: [
-      { label: '正常', value: 1 },
-      { label: '停用', value: 0 },
-    ],
-    formatter: (value) => (Number(value) === 1 ? '正常' : '停用'),
-  },
-  roleId: {
-    label: '角色',
-    inputType: 'select',
-    placeholder: '请选择角色',
-    tableVisible: false,
-    formVisible: true,
-    formOrder: 6,
-    span: 12,
-    options: mockRoleOptions,
-    props: {
-      multiple: true,
-      style: {
-        width: '100%',
-      },
-    },
-  },
-  password: {
-    label: '密码',
-    inputType: 'password',
-    placeholder: '不填写则默认 123456',
-    tableVisible: false,
-    formVisible: dialogMode.value === 'create',
-    formOrder: 7,
-    span: 12,
-    props: {
-      autocomplete: 'new-password',
-    },
-  },
-  userId: {
-    label: '用户编号',
-    tableVisible: true,
-    formVisible: false,
-    tableOrder: 1,
-    tableWidth: 110,
-  },
-  createTime: {
-    label: '创建时间',
-    tableVisible: true,
-    formVisible: false,
-    tableOrder: 6,
-    tableMinWidth: 180,
-  },
-}))
+const userSchema = computed<SharedFieldSchemaMap<SysUserFormData>>(() =>
+  createUserSchema(roleOptions.value, dialogMode.value),
+)
 
 const tableActions = computed<SharedActionConfig<Record<string, unknown>>[]>(() => [
   {
     key: 'edit',
     label: '编辑',
+    permKey: SYSTEM_PERMISSION_KEYS.user.edit,
     buttonType: 'primary',
     onClick: async (row) => {
       await openEditDialog(Number(row.userId))
@@ -290,6 +75,7 @@ const tableActions = computed<SharedActionConfig<Record<string, unknown>>[]>(() 
   {
     key: 'enable',
     label: '启用',
+    permKey: SYSTEM_PERMISSION_KEYS.user.status,
     buttonType: 'success',
     visible: (row) => Number(row.status) !== 1,
     onClick: async (row) => {
@@ -299,6 +85,7 @@ const tableActions = computed<SharedActionConfig<Record<string, unknown>>[]>(() 
   {
     key: 'disable',
     label: '停用',
+    permKey: SYSTEM_PERMISSION_KEYS.user.status,
     buttonType: 'warning',
     visible: (row) => Number(row.status) === 1,
     onClick: async (row) => {
@@ -308,6 +95,7 @@ const tableActions = computed<SharedActionConfig<Record<string, unknown>>[]>(() 
   {
     key: 'delete',
     label: '删除',
+    permKey: SYSTEM_PERMISSION_KEYS.user.delete,
     buttonType: 'danger',
     onClick: async (row) => {
       await handleDeleteUser(Number(row.userId))
@@ -326,47 +114,7 @@ const tablePagination = computed<NormalizedPageResult<Record<string, unknown>>>(
   total: pageState.value.total,
 }))
 
-const userFormRules = computed<FormRules>(() => ({
-  username:
-    dialogMode.value === 'create'
-      ? [
-          { required: true, message: '请输入账号', trigger: 'blur' },
-          { min: 2, max: 20, message: '账号长度需在 2 到 20 位之间', trigger: 'blur' },
-        ]
-      : [],
-  nickName: [
-    { required: true, message: '请输入昵称', trigger: 'blur' },
-    { min: 2, max: 20, message: '昵称长度需在 2 到 20 位之间', trigger: 'blur' },
-  ],
-  phoneNumber: [
-    { required: true, message: '请输入手机号', trigger: 'blur' },
-    { pattern: /^1\d{10}$/, message: '请输入正确的手机号', trigger: 'blur' },
-  ],
-  sex: [{ required: true, message: '请选择性别', trigger: 'change' }],
-  status: [{ required: true, message: '请选择状态', trigger: 'change' }],
-  roleId: [{ required: true, message: '请至少选择一个角色', trigger: 'change', type: 'array' }],
-  password:
-    dialogMode.value === 'create'
-      ? [
-          {
-            trigger: 'blur',
-            validator: (_rule, value, callback) => {
-              if (!value) {
-                callback()
-                return
-              }
-
-              if (String(value).length < 6 || String(value).length > 20) {
-                callback(new Error('密码长度需在 6 到 20 位之间'))
-                return
-              }
-
-              callback()
-            },
-          },
-        ]
-      : [],
-}))
+const userFormRules = computed<FormRules>(() => createUserFormRules(dialogMode.value))
 
 /**
  * 方法效果：
@@ -432,6 +180,26 @@ const fetchUserPage = async () => {
 
 /**
  * 方法效果：
+ * 拉取角色列表并转换成用户表单可直接使用的选项。
+ * 参数：
+ * - 无。
+ * 返回值：
+ * - 无返回值；副作用是更新角色下拉选项。
+ */
+const fetchRoleOptions = async () => {
+  const result = await getSysRolePageApi({
+    pageNum: 1,
+    pageSize: 200,
+  })
+
+  roleOptions.value = result.records.map((item) => ({
+    label: item.roleName,
+    value: Number(item.roleId),
+  }))
+}
+
+/**
+ * 方法效果：
  * 处理查询表单提交，并从第一页重新拉取用户列表。
  * 参数：
  * - 无。
@@ -452,7 +220,7 @@ const handleSearch = async () => {
  * - 无返回值；副作用是清空筛选条件并刷新列表。
  */
 const resetQueryForm = async () => {
-  Object.assign(queryForm, createDefaultQueryForm())
+  Object.assign(queryForm, createDefaultUserQueryForm())
   pageState.value.pageNum = 1
   pageState.value.pageSize = 10
   await fetchUserPage()
@@ -616,7 +384,7 @@ const handleDeleteUser = async (userId: number) => {
 }
 
 onMounted(async () => {
-  await fetchUserPage()
+  await Promise.all([fetchRoleOptions(), fetchUserPage()])
 })
 </script>
 
@@ -627,8 +395,10 @@ onMounted(async () => {
       <SearchFilterPanel
         :schema="querySchema"
         :model-value="queryForm as unknown as Record<string, unknown>"
-        :columns="5"
+        :columns="4"
         label-width="64px"
+        create-button-text="新增用户"
+        :create-permission-key="SYSTEM_PERMISSION_KEYS.user.create"
         @update:model-value="handleQueryFormUpdate"
         @search="handleSearch"
         @reset="resetQueryForm"
@@ -643,9 +413,10 @@ onMounted(async () => {
         :actions="tableActions"
         :loading="listLoading"
         :form-loading="submitLoading"
-        :show-index="true"
+        :show-selection="true"
         :pagination="tablePagination"
         :table-max-height="560"
+        row-key="userId"
         :form-visible="dialogVisible"
         :form-model-value="userFormModel as unknown as Record<string, unknown>"
         :form-title="dialogTitle"

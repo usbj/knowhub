@@ -42,6 +42,17 @@ export const useLayoutNavigationStore = defineStore('layout-navigation', () => {
 
   const flatMenuList = computed(() => flattenMenus(menuTree.value))
 
+  const flattenRawMenus = (menus: SysMenuRecord[]): SysMenuRecord[] =>
+    menus.flatMap((menu) => [menu, ...flattenRawMenus(menu.sonMenus ?? [])])
+
+  const buttonPermissionKeys = computed(() => {
+    const permissionKeys = flattenRawMenus(rawMenuTree.value)
+      .filter((menu) => menu.menuType === 3 && menu.status === 1 && menu.permKey.trim())
+      .map((menu) => menu.permKey.trim())
+
+    return new Set(permissionKeys)
+  })
+
   /**
    * 把后端菜单树写入导航 store，并顺手重置展开与标签状态。
    * 登录切换账号时，旧账号的导航痕迹不应该继续残留。
@@ -143,6 +154,34 @@ export const useLayoutNavigationStore = defineStore('layout-navigation', () => {
   }
 
   /**
+   * 固定基础页不在后端菜单里时，也需要正常进入顶部标签。
+   */
+  const syncByRoute = (route: { path: string; meta?: Record<string, unknown> }) => {
+    currentPath.value = route.path
+
+    if (currentMenu.value) {
+      syncByPath(route.path)
+      return
+    }
+
+    const staticTitle = String(route.meta?.title ?? '').trim()
+    const requiresAuth = Boolean(route.meta?.requiresAuth)
+
+    if (!requiresAuth || !staticTitle) {
+      return
+    }
+
+    const hasOpened = visitedTabs.value.some((tab) => tab.route === route.path)
+    if (!hasOpened) {
+      visitedTabs.value.push({
+        menuId: 0,
+        title: staticTitle,
+        route: route.path,
+      })
+    }
+  }
+
+  /**
    * 目录点击时只控制展开/收起，不承担选中态。
    */
   const toggleDirectory = (menuId: number) => {
@@ -182,8 +221,10 @@ export const useLayoutNavigationStore = defineStore('layout-navigation', () => {
 
   const closeAllTabs = () => {
     if (!currentMenu.value) {
-      visitedTabs.value = []
-      return null
+      const currentTab = visitedTabs.value.find((tab) => tab.route === currentPath.value) ?? null
+
+      visitedTabs.value = currentTab ? [currentTab] : []
+      return currentTab?.route ?? null
     }
 
     visitedTabs.value = [
@@ -200,6 +241,7 @@ export const useLayoutNavigationStore = defineStore('layout-navigation', () => {
   return {
     rawMenuTree,
     menuTree,
+    buttonPermissionKeys,
     menuLoaded,
     dynamicRoutesReady,
     currentPath,
@@ -213,6 +255,7 @@ export const useLayoutNavigationStore = defineStore('layout-navigation', () => {
     markDynamicRoutesReady,
     resetNavigationState,
     syncByPath,
+    syncByRoute,
     toggleDirectory,
     isDirectoryExpanded,
     closeTab,

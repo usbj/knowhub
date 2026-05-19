@@ -20,12 +20,20 @@ public class SysDictData extends BaseEntity {
 
     String dictDataSort;
 
+    String tagType;
+
+    String tagEffect;
+
+    String cssClass;
+
+    String extJson;
+
     String isDefault;
 
     public SysDictData() {
     }
 
-    public SysDictData(Date createTime, Date updateTime, String createBy, String updateBy, Long dictDataId, Long dictId, String dictKey, String dictDataLabel, String dictDataValue, String remark, String dictDataSort, String isDefault) {
+    public SysDictData(Date createTime, Date updateTime, String createBy, String updateBy, Long dictDataId, Long dictId, String dictKey, String dictDataLabel, String dictDataValue, String remark, String dictDataSort, String tagType, String tagEffect, String cssClass, String extJson, String isDefault) {
         super(createTime, updateTime, createBy, updateBy);
         this.dictDataId = dictDataId;
         this.dictId = dictId;
@@ -34,6 +42,10 @@ public class SysDictData extends BaseEntity {
         this.dictDataValue = dictDataValue;
         this.remark = remark;
         this.dictDataSort = dictDataSort;
+        this.tagType = tagType;
+        this.tagEffect = tagEffect;
+        this.cssClass = cssClass;
+        this.extJson = extJson;
         this.isDefault = isDefault;
     }
 
@@ -91,6 +103,38 @@ public class SysDictData extends BaseEntity {
 
     public void setDictDataSort(String dictDataSort) {
         this.dictDataSort = dictDataSort;
+    }
+
+    public String getTagType() {
+        return tagType;
+    }
+
+    public void setTagType(String tagType) {
+        this.tagType = tagType;
+    }
+
+    public String getTagEffect() {
+        return tagEffect;
+    }
+
+    public void setTagEffect(String tagEffect) {
+        this.tagEffect = tagEffect;
+    }
+
+    public String getCssClass() {
+        return cssClass;
+    }
+
+    public void setCssClass(String cssClass) {
+        this.cssClass = cssClass;
+    }
+
+    public String getExtJson() {
+        return extJson;
+    }
+
+    public void setExtJson(String extJson) {
+        this.extJson = extJson;
     }
 
     public String getIsDefault() {

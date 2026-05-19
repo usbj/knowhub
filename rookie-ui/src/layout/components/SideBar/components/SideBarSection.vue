@@ -1,3 +1,8 @@
+/**
+ * 文件作用：
+ * 渲染侧边栏中的单个目录或菜单节点，
+ * 负责目录展开收起、折叠态浮层和菜单跳转展示。
+ */
 <script setup lang="ts">
 import { computed } from 'vue'
 import { RouterLink } from 'vue-router'
@@ -31,7 +36,10 @@ const hasActiveDescendant = (children: NavigationMenuItem[]): boolean =>
 
 const ancestorActive = computed(() => hasActiveDescendant(props.item.children))
 
-const flattenLeafMenus = (children: NavigationMenuItem[], trail: string[] = []) =>
+const flattenLeafMenus = (
+  children: NavigationMenuItem[],
+  trail: string[] = [],
+): Array<{ menuId: number; label: string; route: string; backlinks: number }> =>
   children.flatMap((child) => {
     const nextTrail = [...trail, child.menuName]
 

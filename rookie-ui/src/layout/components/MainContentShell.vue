@@ -22,11 +22,14 @@ defineProps<{
   position: relative;
   flex: 1;
   min-width: 0;
+  min-height: 0;
   padding: 16px 24px 24px;
+  overflow: auto;
 }
 
 .main-content-shell__stage {
   min-width: 0;
+  min-height: 100%;
 }
 
 .main-content-switch-enter-active,

@@ -1,3 +1,5 @@
+import type { PageQueryParams } from '@/types/api/system/common'
+
 /**
  * 与后端菜单管理模块 `SysMenuVo` 对齐的接口类型。
  * 当前约定：
@@ -15,5 +17,14 @@ export interface SysMenuRecord {
   path: string
   icon: string
   status: number
+  createTime?: string
   sonMenus: SysMenuRecord[]
+}
+
+export interface SysMenuListQuery extends Partial<PageQueryParams> {
+  menuName?: string
+  permKey?: string
+  status?: number | undefined
+  beginTime?: string
+  endTime?: string
 }

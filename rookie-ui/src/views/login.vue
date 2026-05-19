@@ -157,7 +157,7 @@ const handleLogin = async () => {
   min-height: 100vh;
   display: grid;
   grid-template-columns: minmax(0, 1.2fr) minmax(360px, 440px);
-  background: linear-gradient(180deg, var(--rookie-bg) 0%, color-mix(in srgb, var(--rookie-bg) 88%, #d8e2ef) 100%);
+  background: linear-gradient(180deg, var(--rookie-bg) 0%, var(--rookie-login-gradient-end) 100%);
 }
 
 .login-view__hero {

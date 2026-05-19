@@ -1,39 +1,6 @@
-import type { Component } from 'vue'
-import {
-  CollectionTag,
-  DataBoard,
-  Files,
-  FolderOpened,
-  Grid,
-  InfoFilled,
-  Menu as MenuIcon,
-  Monitor,
-  Operation,
-  Setting,
-  User,
-  UserFilled,
-} from '@element-plus/icons-vue'
 import type { SysMenuRecord } from '@/types/api/system/menu'
 import type { NavigationMenuItem } from '@/types/components/navigation'
-
-/**
- * 图标映射目前仍由前端兜底维护。
- * 当后端后续统一 icon 编码规范时，只需要收口修改这里。
- */
-const menuIconMap: Record<string, Component> = {
-  dashboard: DataBoard,
-  workbench: Monitor,
-  project: FolderOpened,
-  files: Files,
-  system: Operation,
-  user: User,
-  role: UserFilled,
-  menu: MenuIcon,
-  dict: CollectionTag,
-  about: InfoFilled,
-  overview: Grid,
-  setting: Setting,
-}
+import { resolveCanonicalMenuIconCode, resolveMenuIconComponent } from '@/utils/menu-icons'
 
 /**
  * 方法效果：
@@ -115,8 +82,8 @@ export const normalizeMenuTree = (
         route: resolvedRoute,
         path: menu.path,
         backlinks: menu.backlinks,
-        icon: menu.icon,
-        iconComponent: menuIconMap[menu.icon] ?? Setting,
+        icon: resolveCanonicalMenuIconCode(menu.icon),
+        iconComponent: resolveMenuIconComponent(menu.icon),
         status: menu.status,
         children: normalizeMenuTree(menu.sonMenus ?? [], nextParentRoute),
       }

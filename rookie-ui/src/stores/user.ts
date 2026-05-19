@@ -1,6 +1,7 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 import { getPersonalProfileApi } from '@/api/system/user'
+import { useDictStore } from '@/stores/dict'
 import type { LoginResponseData } from '@/types/api/system/login'
 import type { SysUserProfile } from '@/types/api/system/user'
 
@@ -52,14 +53,6 @@ export const useUserStore = defineStore('user', () => {
   const displayName = computed(() => userInfo.value?.nickName || userInfo.value?.username || '未登录')
 
   /**
-   * 顶部导航展示的角色名称。
-   */
-  const roleName = computed(() => {
-    const roleNames = userInfo.value?.userRole?.map((role) => role.roleName).filter(Boolean) ?? []
-    return roleNames.length > 0 ? roleNames.join('、') : '未分配角色'
-  })
-
-  /**
    * 给头导航和个人中心提供一份更轻的展示数据。
    * 这样页面层不需要反复处理原始接口结构。
    */
@@ -109,11 +102,14 @@ export const useUserStore = defineStore('user', () => {
    * 退出登录时需要同时移除 token 与用户信息，避免界面残留旧数据。
    */
   const logout = () => {
+    const dictStore = useDictStore()
+
     token.value = ''
     userInfo.value = null
 
     localStorage.removeItem(USER_TOKEN_STORAGE_KEY)
     localStorage.removeItem(USER_INFO_STORAGE_KEY)
+    dictStore.clearDictCache()
   }
 
   return {
@@ -121,7 +117,6 @@ export const useUserStore = defineStore('user', () => {
     userInfo,
     isAuthenticated,
     displayName,
-    roleName,
     profileSummary,
     setLoginSession,
     setUserProfile,

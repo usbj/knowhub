@@ -215,8 +215,8 @@ const handleAction = (value: string) => {
 }
 
 .prompt-panel__button.is-danger {
-  border-color: color-mix(in srgb, #d14343 32%, var(--rookie-border));
-  background: color-mix(in srgb, #d14343 12%, var(--rookie-card-bg));
-  color: #d14343;
+  border-color: var(--rookie-danger-border);
+  background: var(--rookie-danger-soft);
+  color: var(--rookie-danger);
 }
 </style>

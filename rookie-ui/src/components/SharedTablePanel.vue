@@ -1,53 +1,67 @@
-<script setup lang="ts">
 /**
  * 文件作用：
- * 提供一套基于字段元数据驱动的公共表格组件，
- * 并可选地在组件内部挂载同一份字段配置驱动的编辑表单。
+ * 提供列表页共用的基础表格组件，
+ * 统一处理列渲染、权限操作按钮、分页和内置编辑弹窗。
+ * 关键参数：
+ * - `rows` / `schema`：表格数据与字段配置。
+ * - `actions`：行级操作按钮配置，支持权限、显隐和禁用控制。
+ * - `pagination` / `tableMaxHeight`：控制分页与表格区域高度。
+ * - `formVisible` / `formModelValue` / `formRules`：驱动内置弹窗表单。
+ * 插槽与事件：
+ * - 透传 `SharedFormPanel` 的字段插槽，方便页面注入特殊表单字段。
+ * - `paginationChange` / `rowAction` / `selectionChange` / `formSubmit` 等事件向页面回抛交互结果。
  */
+<script setup lang="ts">
 import { computed } from 'vue'
-import { ElButton, ElEmpty, ElPagination, ElTable, ElTableColumn } from 'element-plus'
+import {
+  ElButton,
+  ElDropdown,
+  ElDropdownItem,
+  ElDropdownMenu,
+  ElEmpty,
+  ElPagination,
+  ElTable,
+  ElTableColumn,
+} from 'element-plus'
 import type { FormRules } from 'element-plus'
+import DictTag from '@/components/DictTag.vue'
+import { useDict } from '@/composables/useDict'
+import { usePermission } from '@/composables/usePermission'
 import type { NormalizedPageResult } from '@/types/api/system/common'
 import type { SharedActionConfig, SharedFieldSchemaMap } from '@/types/components/data-display'
+import { formatDisplayValue } from '@/utils/format'
 import { getValueByPath } from '@/utils/object'
 import SharedFormPanel from './SharedFormPanel.vue'
 
 const props = withDefaults(
   defineProps<{
     rows: Record<string, unknown>[]
-    schema: SharedFieldSchemaMap<Record<string, unknown>>
+    schema: SharedFieldSchemaMap<any>
     actions?: SharedActionConfig<Record<string, unknown>>[]
-    title?: string
-    description?: string
     loading?: boolean
     stripe?: boolean
     rowKey?: string
-    showIndex?: boolean
+    showSelection?: boolean
     formVisible?: boolean
     formModelValue?: Record<string, unknown>
     formTitle?: string
-    formDescription?: string
-    formActions?: SharedActionConfig<Record<string, unknown>>[]
     formColumns?: number
     formSubmitText?: string
     pagination?: Partial<NormalizedPageResult<Record<string, unknown>>>
     formRules?: FormRules
     tableMaxHeight?: number | string
     formLoading?: boolean
+    maxInlineActions?: number
   }>(),
   {
     actions: () => [],
-    title: '',
-    description: '',
     loading: false,
     stripe: true,
     rowKey: 'id',
-    showIndex: false,
+    showSelection: false,
     formVisible: false,
     formModelValue: () => ({}),
     formTitle: '',
-    formDescription: '',
-    formActions: () => [],
     formColumns: 2,
     formSubmitText: '提交',
     formRules: () => ({}),
@@ -60,6 +74,7 @@ const props = withDefaults(
     }),
     tableMaxHeight: 560,
     formLoading: false,
+    maxInlineActions: 3,
   },
 )
 
@@ -70,7 +85,11 @@ const emit = defineEmits<{
   formSubmit: [value: Record<string, unknown>]
   formCancel: []
   paginationChange: [payload: { pageNum: number; pageSize: number }]
+  selectionChange: [rows: Record<string, unknown>[]]
 }>()
+
+const { hasPermission } = usePermission()
+const { resolveDictLabel } = useDict()
 
 /**
  * 方法效果：
@@ -114,11 +133,16 @@ const formatCellValue = (row: Record<string, unknown>, fieldKey: string) => {
     return fieldConfig.formatter(rawValue, row)
   }
 
+  if (fieldConfig?.dictKey) {
+    const label = resolveDictLabel(fieldConfig.dictKey, rawValue)
+    return Array.isArray(label) ? label.join(' / ') : label || '--'
+  }
+
   if (rawValue === null || rawValue === undefined || rawValue === '') {
     return '--'
   }
 
-  return String(rawValue)
+  return formatDisplayValue(rawValue)
 }
 
 /**
@@ -131,6 +155,10 @@ const formatCellValue = (row: Record<string, unknown>, fieldKey: string) => {
  * - `true` 表示渲染该操作按钮。
  */
 const isActionVisible = (action: SharedActionConfig<Record<string, unknown>>, row: Record<string, unknown>) => {
+  if (!hasPermission(action.permKey)) {
+    return false
+  }
+
   if (typeof action.visible === 'function') {
     return action.visible(row)
   }
@@ -153,6 +181,52 @@ const isActionDisabled = (action: SharedActionConfig<Record<string, unknown>>, r
   }
 
   return Boolean(action.disabled)
+}
+
+/**
+ * 方法效果：
+ * 读取当前行所有满足显示条件的操作按钮。
+ * 参数：
+ * - `row`：当前表格行。
+ * 返回值：
+ * - 当前行可展示的操作按钮数组。
+ */
+const getVisibleActions = (row: Record<string, unknown>) => props.actions.filter((action) => isActionVisible(action, row))
+
+/**
+ * 方法效果：
+ * 限制操作列直接展示的按钮数量，避免一行按钮过多导致排版混乱。
+ * 参数：
+ * - `row`：当前表格行。
+ * 返回值：
+ * - 当前行直接展示在表格中的操作按钮数组。
+ */
+const getInlineActions = (row: Record<string, unknown>) => {
+  const visibleActions = getVisibleActions(row)
+
+  if (visibleActions.length <= props.maxInlineActions) {
+    return visibleActions
+  }
+
+  return visibleActions.slice(0, Math.max(props.maxInlineActions - 1, 1))
+}
+
+/**
+ * 方法效果：
+ * 计算当前行需要放入“更多”下拉中的操作按钮。
+ * 参数：
+ * - `row`：当前表格行。
+ * 返回值：
+ * - 需要折叠展示的操作按钮数组。
+ */
+const getOverflowActions = (row: Record<string, unknown>) => {
+  const visibleActions = getVisibleActions(row)
+
+  if (visibleActions.length <= props.maxInlineActions) {
+    return []
+  }
+
+  return visibleActions.slice(Math.max(props.maxInlineActions - 1, 1))
 }
 
 /**
@@ -207,26 +281,34 @@ const handlePageSizeChange = (pageSize: number) => {
     pageSize,
   })
 }
+
+/**
+ * 方法效果：
+ * 把表格多选结果同步给外层页面。
+ * 参数：
+ * - `rows`：当前选中的数据行数组。
+ * 返回值：
+ * - 无返回值；副作用是触发 `selectionChange` 事件。
+ */
+const handleSelectionChange = (rows: Record<string, unknown>[]) => {
+  emit('selectionChange', rows)
+}
 </script>
 
 <template>
   <!-- 公共表格区域 -->
   <section class="shared-table-panel">
-    <header v-if="title || description" class="shared-table-panel__head">
-      <strong v-if="title" class="shared-table-panel__title">{{ title }}</strong>
-      <p v-if="description" class="shared-table-panel__description">{{ description }}</p>
-    </header>
-
     <ElTable
       v-if="rows.length > 0"
+      v-loading="loading"
       class="shared-table-panel__table"
       :data="rows"
       :stripe="stripe"
       :row-key="rowKey"
       :max-height="tableMaxHeight"
-      v-loading="loading"
+      @selection-change="handleSelectionChange"
     >
-      <ElTableColumn v-if="showIndex" type="index" width="64" label="#" />
+      <ElTableColumn v-if="showSelection" type="selection" width="54" reserve-selection />
 
       <ElTableColumn
         v-for="[fieldKey, fieldConfig] in tableFields"
@@ -237,20 +319,27 @@ const handlePageSizeChange = (pageSize: number) => {
         show-overflow-tooltip
       >
         <template #default="{ row }">
-          {{ formatCellValue(row, fieldKey) }}
+          <DictTag
+            v-if="fieldConfig.dictKey && !fieldConfig.formatter"
+            :dict-key="fieldConfig.dictKey"
+            :value="readCellValue(row, fieldKey)"
+          />
+          <template v-else>
+            {{ formatCellValue(row, fieldKey) }}
+          </template>
         </template>
       </ElTableColumn>
 
       <ElTableColumn
         v-if="actions.length > 0"
         label="操作"
-        :min-width="180"
+        :min-width="220"
         fixed="right"
       >
         <template #default="{ row }">
           <div class="shared-table-panel__actions">
             <ElButton
-              v-for="action in actions.filter((item) => isActionVisible(item, row))"
+              v-for="action in getInlineActions(row)"
               :key="action.key"
               :type="action.buttonType || 'primary'"
               :plain="action.plain !== false"
@@ -260,6 +349,27 @@ const handlePageSizeChange = (pageSize: number) => {
             >
               {{ action.label }}
             </ElButton>
+
+            <ElDropdown
+              v-if="getOverflowActions(row).length > 0"
+              trigger="click"
+              placement="bottom-end"
+            >
+              <ElButton text>更多</ElButton>
+
+              <template #dropdown>
+                <ElDropdownMenu>
+                  <ElDropdownItem
+                    v-for="action in getOverflowActions(row)"
+                    :key="action.key"
+                    :disabled="isActionDisabled(action, row)"
+                    @click="handleRowAction(action, row)"
+                  >
+                    {{ action.label }}
+                  </ElDropdownItem>
+                </ElDropdownMenu>
+              </template>
+            </ElDropdown>
           </div>
         </template>
       </ElTableColumn>
@@ -286,11 +396,9 @@ const handlePageSizeChange = (pageSize: number) => {
       v-if="formVisible"
       mode="dialog"
       :visible="formVisible"
-      :title="formTitle"
-      :description="formDescription"
+      :dialog-title="formTitle"
       :schema="schema"
       :model-value="formModelValue"
-      :actions="formActions"
       :columns="formColumns"
       :submit-text="formSubmitText"
       :rules="formRules"
@@ -299,7 +407,15 @@ const handlePageSizeChange = (pageSize: number) => {
       @update:model-value="emit('update:formModelValue', $event)"
       @submit="emit('formSubmit', $event)"
       @cancel="emit('formCancel')"
-    />
+    >
+      <template
+        v-for="(_, slotName) in $slots"
+        :key="slotName"
+        #[slotName]="slotProps"
+      >
+        <slot :name="slotName" v-bind="slotProps" />
+      </template>
+    </SharedFormPanel>
   </section>
 </template>
 
@@ -309,26 +425,16 @@ const handlePageSizeChange = (pageSize: number) => {
   gap: 18px;
 }
 
-.shared-table-panel__head {
-  display: grid;
-  gap: 8px;
-}
-
-.shared-table-panel__title {
-  color: var(--rookie-text);
-  font-size: var(--rookie-font-size-lg);
-}
-
-.shared-table-panel__description {
-  margin: 0;
-  color: var(--rookie-text-secondary);
-  font-size: var(--rookie-font-size-sm);
-}
-
 .shared-table-panel__actions {
   display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
+  align-items: center;
+  gap: 0 4px;
+  flex-wrap: nowrap;
+  white-space: nowrap;
+}
+
+.shared-table-panel__actions :deep(.el-button + .el-button) {
+  margin-left: 0;
 }
 
 .shared-table-panel__empty {

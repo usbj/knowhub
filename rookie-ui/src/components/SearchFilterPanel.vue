@@ -1,26 +1,40 @@
-<script setup lang="ts">
 /**
  * 文件作用：
  * 为列表页提供更紧凑的筛选条件组件，
  * 在字段配置能力上与公共表单保持一致，但默认更适合查询场景。
+ * 关键参数：
+ * - `schema` / `modelValue`：筛选字段配置与当前查询条件对象。
+ * - `columns` / `labelWidth` / `loading`：控制表单布局与查询按钮状态。
+ * - `createButtonText` / `createPermissionKey` / `showCreateButton`：控制新增入口。
+ * 关键事件：
+ * - `update:modelValue`：同步筛选条件。
+ * - `search` / `reset` / `create`：分别对应查询、重置和新增动作。
  */
+<script setup lang="ts">
 import { ElButton } from 'element-plus'
 import { computed } from 'vue'
+import { usePermission } from '@/composables/usePermission'
 import SharedFormPanel from '@/components/SharedFormPanel.vue'
-import type { SharedFieldSchemaMap } from '@/types/components/data-display'
+import type { SharedFieldSchemaItem, SharedFieldSchemaMap } from '@/types/components/data-display'
 
 const props = withDefaults(
   defineProps<{
-    schema: SharedFieldSchemaMap
+    schema: SharedFieldSchemaMap<any>
     modelValue: Record<string, unknown>
     columns?: number
     labelWidth?: string
     loading?: boolean
+    createButtonText?: string
+    createPermissionKey?: string | string[] | readonly string[]
+    showCreateButton?: boolean
   }>(),
   {
     columns: 5,
     labelWidth: '72px',
     loading: false,
+    createButtonText: '新增',
+    createPermissionKey: undefined,
+    showCreateButton: true,
   },
 )
 
@@ -64,25 +78,27 @@ const handleSearch = (formValue: Record<string, unknown>) => {
  * - 当前筛选条件对象。
  */
 const currentModelValue = computed(() => props.modelValue)
+const { hasPermission } = usePermission()
+const canShowCreateButton = computed(
+  () => props.showCreateButton && hasPermission(props.createPermissionKey),
+)
+const normalizedSchema = computed<SharedFieldSchemaMap>(() =>
+  Object.entries(props.schema).reduce<SharedFieldSchemaMap>((result, [fieldKey, fieldConfig]) => {
+    result[fieldKey] = {
+      ...(fieldConfig as SharedFieldSchemaItem),
+      span: undefined,
+    }
+    return result
+  }, {}),
+)
 
-/**
- * 方法效果：
- * 让第二行按钮和第一行输入框起始位置保持一致，避免落在标签左边显得别扭。
- * 参数：
- * - 无。
- * 返回值：
- * - 可直接绑定到按钮容器的内联样式对象。
- */
-const actionRowStyle = computed(() => ({
-  paddingLeft: `calc(${props.labelWidth} + 12px)`,
-}))
 </script>
 
 <template>
   <!-- 列表筛选条件区域 -->
   <section class="search-filter-panel">
     <SharedFormPanel
-      :schema="schema"
+      :schema="normalizedSchema"
       :model-value="modelValue"
       :columns="columns"
       :label-width="labelWidth"
@@ -93,12 +109,12 @@ const actionRowStyle = computed(() => ({
     >
     </SharedFormPanel>
 
-    <div class="search-filter-panel__actions" :style="actionRowStyle">
+    <div class="search-filter-panel__actions">
       <ElButton type="primary" :loading="loading" @click="handleSearch(currentModelValue)">
         查询
       </ElButton>
       <ElButton @click="emit('reset')">重置</ElButton>
-      <ElButton type="primary" plain @click="emit('create')">新增用户</ElButton>
+      <ElButton v-if="canShowCreateButton" type="primary" plain @click="emit('create')">{{ createButtonText }}</ElButton>
     </div>
   </section>
 </template>
@@ -115,6 +131,7 @@ const actionRowStyle = computed(() => ({
   justify-content: flex-start;
   gap: 8px;
   flex-wrap: wrap;
+  padding-left: 0;
 }
 
 .search-filter-panel :deep(.shared-form-panel) {

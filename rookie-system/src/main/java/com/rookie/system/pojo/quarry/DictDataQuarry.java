@@ -8,12 +8,12 @@ public class DictDataQuarry {
 
     String dictKey;
 
-    String dictDataName;
+    String dictDataLabel;
 
-    public DictDataQuarry(Long dictId, String dictKey, String dictDataName) {
+    public DictDataQuarry(Long dictId, String dictKey, String dictDataLabel) {
         this.dictId = dictId;
         this.dictKey = dictKey;
-        this.dictDataName = dictDataName;
+        this.dictDataLabel = dictDataLabel;
     }
 
     public DictDataQuarry() {
@@ -35,12 +35,12 @@ public class DictDataQuarry {
         this.dictKey = dictKey;
     }
 
-    public String getDictDataName() {
-        return dictDataName;
+    public String getDictDataLabel() {
+        return dictDataLabel;
     }
 
-    public void setDictDataName(String dictDataName) {
-        this.dictDataName = dictDataName;
+    public void setDictDataLabel(String dictDataLabel) {
+        this.dictDataLabel = dictDataLabel;
     }
 
     @Override
@@ -48,7 +48,7 @@ public class DictDataQuarry {
         return "DictDataQuarry{" +
                 "dictId=" + dictId +
                 ", dictKey='" + dictKey + '\'' +
-                ", dictDataName='" + dictDataName + '\'' +
+                ", dictDataLabel='" + dictDataLabel + '\'' +
                 '}';
     }
 }

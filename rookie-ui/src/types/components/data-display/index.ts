@@ -17,6 +17,7 @@ export type SharedFieldInputType =
   | 'datetime'
   | 'daterange'
   | 'switch'
+  | 'custom'
 
 /**
  * 公共按钮风格与 Element Plus 的主要类型对齐。
@@ -29,14 +30,20 @@ export type SharedActionButtonType = 'primary' | 'success' | 'warning' | 'danger
 export interface SharedFieldOptionItem {
   label: string
   value: string | number | boolean
+  children?: SharedFieldOptionItem[]
 }
 
 /**
  * 每个字段对应一条配置，既能控制表格展示，也能控制表单展示。
+ * 其中：
+ * - `dictKey` 表示该字段的数据来源于字典缓存
+ * - `dictValueType` 控制下拉值按字符串还是数字回传
  */
 export interface SharedFieldSchemaItem<RowData = Record<string, unknown>> {
   label: string
   inputType?: SharedFieldInputType
+  dictKey?: string
+  dictValueType?: 'string' | 'number'
   placeholder?: string
   tableVisible?: boolean
   formVisible?: boolean
@@ -58,7 +65,7 @@ type Arrayable<T> = T | T[]
 /**
  * 页面通过字段键值和配置对象的映射，描述一整块业务字段。
  */
-export type SharedFieldSchemaMap<RowData = Record<string, unknown>> = Record<
+export type SharedFieldSchemaMap<RowData = any> = Record<
   string,
   SharedFieldSchemaItem<RowData>
 >
@@ -69,6 +76,7 @@ export type SharedFieldSchemaMap<RowData = Record<string, unknown>> = Record<
 export interface SharedActionConfig<Payload = Record<string, unknown>> {
   key: string
   label: string
+  permKey?: string | string[] | readonly string[]
   buttonType?: SharedActionButtonType
   plain?: boolean
   text?: boolean

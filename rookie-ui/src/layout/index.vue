@@ -27,9 +27,12 @@ const promptNoticeMeta = ref<PromptNoticeMeta>()
  * 这样侧边栏、面包屑、标签页会围绕同一份 currentPath 更新。
  */
 watch(
-  () => route.path,
-  (path) => {
-    layoutNavigationStore.syncByPath(path)
+  () => route.fullPath,
+  () => {
+    layoutNavigationStore.syncByRoute({
+      path: route.path,
+      meta: route.meta as Record<string, unknown>,
+    })
   },
   { immediate: true },
 )
@@ -91,13 +94,16 @@ const handleRefreshView = () => {
 .app-layout {
   display: grid;
   grid-template-columns: auto 1fr;
-  min-height: 100vh;
+  height: 100vh;
+  overflow: hidden;
 }
 
 .app-layout__main-shell {
   min-width: 0;
+  min-height: 0;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
 
 .skip-link {

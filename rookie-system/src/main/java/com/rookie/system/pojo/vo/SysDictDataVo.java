@@ -8,7 +8,7 @@ public class SysDictDataVo {
 
     String dictKey;
 
-    String dictDataName;
+    String dictDataLabel;
 
     String dictDataValue;
 
@@ -16,19 +16,31 @@ public class SysDictDataVo {
 
     String dictDataSort;
 
+    String tagType;
+
+    String tagEffect;
+
+    String cssClass;
+
+    String extJson;
+
     String createTime;
 
     public SysDictDataVo() {
     }
 
-    public SysDictDataVo(Long dictDataId, Long dictId, String dictKey, String dictDataName, String dictDataValue, String remark, String dictDataSort, String createTime) {
+    public SysDictDataVo(Long dictDataId, Long dictId, String dictKey, String dictDataLabel, String dictDataValue, String remark, String dictDataSort, String tagType, String tagEffect, String cssClass, String extJson, String createTime) {
         this.dictDataId = dictDataId;
         this.dictId = dictId;
         this.dictKey = dictKey;
-        this.dictDataName = dictDataName;
+        this.dictDataLabel = dictDataLabel;
         this.dictDataValue = dictDataValue;
         this.remark = remark;
         this.dictDataSort = dictDataSort;
+        this.tagType = tagType;
+        this.tagEffect = tagEffect;
+        this.cssClass = cssClass;
+        this.extJson = extJson;
         this.createTime = createTime;
     }
 
@@ -64,12 +76,12 @@ public class SysDictDataVo {
         this.dictKey = dictKey;
     }
 
-    public String getDictDataName() {
-        return dictDataName;
+    public String getDictDataLabel() {
+        return dictDataLabel;
     }
 
-    public void setDictDataName(String dictDataName) {
-        this.dictDataName = dictDataName;
+    public void setDictDataLabel(String dictDataLabel) {
+        this.dictDataLabel = dictDataLabel;
     }
 
     public String getDictDataValue() {
@@ -94,5 +106,37 @@ public class SysDictDataVo {
 
     public void setDictDataSort(String dictDataSort) {
         this.dictDataSort = dictDataSort;
+    }
+
+    public String getTagType() {
+        return tagType;
+    }
+
+    public void setTagType(String tagType) {
+        this.tagType = tagType;
+    }
+
+    public String getTagEffect() {
+        return tagEffect;
+    }
+
+    public void setTagEffect(String tagEffect) {
+        this.tagEffect = tagEffect;
+    }
+
+    public String getCssClass() {
+        return cssClass;
+    }
+
+    public void setCssClass(String cssClass) {
+        this.cssClass = cssClass;
+    }
+
+    public String getExtJson() {
+        return extJson;
+    }
+
+    public void setExtJson(String extJson) {
+        this.extJson = extJson;
     }
 }

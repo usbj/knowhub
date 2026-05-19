@@ -1,10 +1,18 @@
-<script setup lang="ts">
 /**
  * 文件作用：
- * 提供一套基于字段元数据驱动的公共表单组件，
- * 支持面板模式和弹窗模式两种展示方式。
+ * 提供页面筛选表单和弹窗编辑表单共用的基础表单组件，
+ * 只负责基础字段渲染、校验和提交，特殊字段通过页面插槽扩展。
+ * 关键参数：
+ * - `schema`：字段配置映射，控制表单展示顺序、类型和占位文案。
+ * - `modelValue`：当前表单模型对象，组件内部只做字段级读写透传。
+ * - `mode` / `visible`：控制面板模式或弹窗模式及弹窗显隐。
+ * - `columns` / `labelWidth` / `rules`：控制布局列数、标签宽度与校验规则。
+ * 插槽与事件：
+ * - `field-字段名`：接管某个特殊字段的渲染。
+ * - `update:modelValue` / `submit` / `cancel`：向页面同步模型和交互动作。
  */
-import { computed, ref, toRaw } from 'vue'
+<script setup lang="ts">
+import { computed, ref, toRaw, useSlots } from 'vue'
 import {
   ElButton,
   ElCol,
@@ -20,20 +28,14 @@ import {
   ElSwitch,
 } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
-import type {
-  SharedActionConfig,
-  SharedFieldSchemaItem,
-  SharedFieldSchemaMap,
-} from '@/types/components/data-display'
+import { useDict } from '@/composables/useDict'
+import type { SharedFieldSchemaItem, SharedFieldSchemaMap } from '@/types/components/data-display'
 import { getValueByPath, setValueByPath } from '@/utils/object'
 
 const props = withDefaults(
   defineProps<{
-    schema: SharedFieldSchemaMap
+    schema: SharedFieldSchemaMap<any>
     modelValue: Record<string, unknown>
-    actions?: SharedActionConfig<Record<string, unknown>>[]
-    title?: string
-    description?: string
     mode?: 'panel' | 'dialog'
     visible?: boolean
     columns?: number
@@ -41,14 +43,12 @@ const props = withDefaults(
     loading?: boolean
     submitText?: string
     showSubmitButton?: boolean
-    size?: 'large' | 'default' | 'small'
     compact?: boolean
     rules?: FormRules
+    dialogTitle?: string
+    dialogWidth?: string
   }>(),
   {
-    actions: () => [],
-    title: '',
-    description: '',
     mode: 'panel',
     visible: false,
     columns: 2,
@@ -56,9 +56,10 @@ const props = withDefaults(
     loading: false,
     submitText: '提交',
     showSubmitButton: true,
-    size: 'default',
     compact: false,
     rules: () => ({}),
+    dialogTitle: '',
+    dialogWidth: '720px',
   },
 )
 
@@ -70,7 +71,9 @@ const emit = defineEmits<{
   invalid: []
 }>()
 
+const slots = useSlots()
 const formRef = ref<FormInstance>()
+const { resolveDictOptions } = useDict()
 
 /**
  * 方法效果：
@@ -88,7 +91,7 @@ const formFields = computed(() =>
 
 /**
  * 方法效果：
- * 根据列数设置计算每个字段默认所占的栅格宽度。
+ * 根据列数计算每个字段默认占据的栅格宽度。
  * 参数：
  * - 无，直接读取当前组件 props。
  * 返回值：
@@ -98,11 +101,11 @@ const defaultSpan = computed(() => Math.max(Math.floor(24 / props.columns), 6))
 
 /**
  * 方法效果：
- * 合并外层传入的表单规则与字段级规则，形成可直接交给 Element Plus 的校验对象。
+ * 合并外层传入的校验规则与字段配置内自带规则。
  * 参数：
  * - 无，直接读取当前组件 props 和 schema。
  * 返回值：
- * - 当前表单完整校验规则。
+ * - 可直接交给 Element Plus 表单的完整规则对象。
  */
 const mergedRules = computed<FormRules>(() => {
   const schemaRules = Object.entries(props.schema).reduce<FormRules>((rules, [fieldKey, fieldConfig]) => {
@@ -130,17 +133,47 @@ const readFieldValue = (fieldKey: string) => getValueByPath(props.modelValue, fi
 
 /**
  * 方法效果：
- * 更新指定字段对应的模型值，并通过 `v-model` 向外同步新对象。
+ * 更新指定字段的模型值，并把新对象同步回父层页面。
  * 参数：
- * - `fieldKey`：字段路径键，例如 `user.name`。
+ * - `fieldKey`：字段路径键。
  * - `value`：控件最新输入值。
  * 返回值：
- * - 无返回值；副作用是向父层触发 `update:modelValue`。
+ * - 无返回值；副作用是触发 `update:modelValue`。
  */
 const updateFieldValue = (fieldKey: string, value: unknown) => {
   const nextModel = structuredClone(toRaw(props.modelValue))
   setValueByPath(nextModel, fieldKey, value)
   emit('update:modelValue', nextModel)
+}
+
+/**
+ * 方法效果：
+ * 判断当前字段是否由外层页面通过具名插槽接管渲染。
+ * 参数：
+ * - `fieldKey`：字段路径键。
+ * 返回值：
+ * - `true` 表示该字段由页面自定义渲染。
+ */
+const hasCustomFieldSlot = (fieldKey: string) => Boolean(slots[`field-${fieldKey}`])
+
+/**
+ * 方法效果：
+ * 为选择类字段统一解析可选项，优先使用页面显式配置，未配置时回退到字典缓存。
+ * 参数：
+ * - `fieldConfig`：当前字段配置。
+ * 返回值：
+ * - 可直接用于下拉控件渲染的选项数组。
+ */
+const resolveSelectOptions = (fieldConfig: SharedFieldSchemaItem) => {
+  if (fieldConfig.options?.length) {
+    return fieldConfig.options
+  }
+
+  if (!fieldConfig.dictKey) {
+    return []
+  }
+
+  return resolveDictOptions(fieldConfig.dictKey, fieldConfig.dictValueType ?? 'string')
 }
 
 /**
@@ -151,7 +184,7 @@ const updateFieldValue = (fieldKey: string, value: unknown) => {
  * 返回值：
  * - 可直接透传给日期控件的 props 对象。
  */
-const buildDateProps = (fieldConfig: SharedFieldSchemaItem) => {
+const buildDateProps = (fieldConfig: SharedFieldSchemaItem): Record<string, unknown> => {
   const inputType = fieldConfig.inputType ?? 'date'
 
   if (inputType === 'daterange') {
@@ -181,52 +214,6 @@ const buildDateProps = (fieldConfig: SharedFieldSchemaItem) => {
 
 /**
  * 方法效果：
- * 统一判断当前操作按钮是否应该显示。
- * 参数：
- * - `action`：单个按钮配置。
- * 返回值：
- * - `true` 表示渲染该按钮。
- */
-const isActionVisible = (action: SharedActionConfig<Record<string, unknown>>) => {
-  if (typeof action.visible === 'function') {
-    return action.visible(props.modelValue)
-  }
-
-  return action.visible !== false
-}
-
-/**
- * 方法效果：
- * 统一判断当前操作按钮是否应该禁用。
- * 参数：
- * - `action`：单个按钮配置。
- * 返回值：
- * - `true` 表示按钮禁用。
- */
-const isActionDisabled = (action: SharedActionConfig<Record<string, unknown>>) => {
-  if (typeof action.disabled === 'function') {
-    return action.disabled(props.modelValue)
-  }
-
-  return Boolean(action.disabled)
-}
-
-/**
- * 方法效果：
- * 处理表单底部按钮点击，并在需要时触发外部传入的业务方法。
- * 参数：
- * - `action`：单个按钮配置。
- * 返回值：
- * - 无返回值；副作用是执行外部回调。
- */
-const handleActionClick = async (action: SharedActionConfig<Record<string, unknown>>) => {
-  if (action.onClick) {
-    await action.onClick(props.modelValue)
-  }
-}
-
-/**
- * 方法效果：
  * 关闭弹窗模式表单，并向外同步可见状态。
  * 参数：
  * - 无。
@@ -240,11 +227,11 @@ const handleCancel = () => {
 
 /**
  * 方法效果：
- * 提交当前表单模型，交给外部页面决定实际保存逻辑。
+ * 提交当前表单模型，并在校验通过后交给外层页面处理保存逻辑。
  * 参数：
  * - 无。
  * 返回值：
- * - 无返回值；副作用是触发 `submit` 事件。
+ * - 无返回值；副作用是触发 `submit` 或 `invalid` 事件。
  */
 const handleSubmit = async () => {
   if (!formRef.value) {
@@ -268,13 +255,12 @@ const handleSubmit = async () => {
   <ElDialog
     v-if="mode === 'dialog'"
     :model-value="visible"
-    :title="title"
-    width="720px"
+    :title="dialogTitle"
+    :width="dialogWidth"
     destroy-on-close
     @close="handleCancel"
     @update:model-value="emit('update:visible', $event)"
   >
-    <div v-if="description" class="shared-form-panel__description">{{ description }}</div>
     <ElForm ref="formRef" class="shared-form-panel__form" :model="modelValue" :rules="mergedRules" :label-width="labelWidth">
       <ElRow :gutter="16">
         <ElCol
@@ -283,13 +269,22 @@ const handleSubmit = async () => {
           :span="fieldConfig.span ?? defaultSpan"
         >
           <ElFormItem :label="fieldConfig.label" :prop="fieldKey">
+            <slot
+              v-if="hasCustomFieldSlot(fieldKey)"
+              :name="`field-${fieldKey}`"
+              :field-key="fieldKey"
+              :field-config="fieldConfig"
+              :model-value="readFieldValue(fieldKey)"
+              :form-model="modelValue"
+              :update-field-value="(value: unknown) => updateFieldValue(fieldKey, value)"
+            />
+
             <ElInput
-              v-if="!fieldConfig.inputType || fieldConfig.inputType === 'text'"
+              v-else-if="!fieldConfig.inputType || fieldConfig.inputType === 'text'"
               :model-value="readFieldValue(fieldKey) as string"
               :placeholder="fieldConfig.placeholder || `请输入${fieldConfig.label}`"
               :disabled="fieldConfig.disabled"
               :clearable="fieldConfig.clearable !== false"
-              :size="size"
               v-bind="fieldConfig.props"
               @update:model-value="updateFieldValue(fieldKey, $event)"
             />
@@ -302,7 +297,6 @@ const handleSubmit = async () => {
               :placeholder="fieldConfig.placeholder || `请输入${fieldConfig.label}`"
               :disabled="fieldConfig.disabled"
               :clearable="fieldConfig.clearable !== false"
-              :size="size"
               v-bind="fieldConfig.props"
               @update:model-value="updateFieldValue(fieldKey, $event)"
             />
@@ -314,7 +308,6 @@ const handleSubmit = async () => {
               :rows="4"
               :placeholder="fieldConfig.placeholder || `请输入${fieldConfig.label}`"
               :disabled="fieldConfig.disabled"
-              :size="size"
               v-bind="fieldConfig.props"
               @update:model-value="updateFieldValue(fieldKey, $event)"
             />
@@ -325,23 +318,21 @@ const handleSubmit = async () => {
               :model-value="readFieldValue(fieldKey) as number | undefined"
               :placeholder="fieldConfig.placeholder || `请输入${fieldConfig.label}`"
               :disabled="fieldConfig.disabled"
-              :size="size"
               v-bind="fieldConfig.props"
               @update:model-value="updateFieldValue(fieldKey, $event)"
             />
 
             <ElSelect
               v-else-if="fieldConfig.inputType === 'select'"
-              :model-value="readFieldValue(fieldKey)"
+              :model-value="readFieldValue(fieldKey) as any"
               :placeholder="fieldConfig.placeholder || `请选择${fieldConfig.label}`"
               :disabled="fieldConfig.disabled"
               :clearable="fieldConfig.clearable !== false"
-              :size="size"
               v-bind="fieldConfig.props"
               @update:model-value="updateFieldValue(fieldKey, $event)"
             >
               <ElOption
-                v-for="option in fieldConfig.options ?? []"
+                v-for="option in resolveSelectOptions(fieldConfig)"
                 :key="String(option.value)"
                 :label="option.label"
                 :value="option.value"
@@ -351,10 +342,9 @@ const handleSubmit = async () => {
             <ElDatePicker
               v-else-if="['date', 'datetime', 'daterange'].includes(fieldConfig.inputType)"
               class="shared-form-panel__date"
-              :model-value="readFieldValue(fieldKey)"
+              :model-value="readFieldValue(fieldKey) as any"
               :placeholder="fieldConfig.placeholder || `请选择${fieldConfig.label}`"
-              :size="size"
-              v-bind="buildDateProps(fieldConfig)"
+              v-bind="buildDateProps(fieldConfig) as any"
               @update:model-value="updateFieldValue(fieldKey, $event)"
             />
 
@@ -362,7 +352,6 @@ const handleSubmit = async () => {
               v-else-if="fieldConfig.inputType === 'switch'"
               :model-value="Boolean(readFieldValue(fieldKey))"
               :disabled="fieldConfig.disabled"
-              :size="size"
               v-bind="fieldConfig.props"
               @update:model-value="updateFieldValue(fieldKey, $event)"
             />
@@ -373,7 +362,6 @@ const handleSubmit = async () => {
               :placeholder="fieldConfig.placeholder || `请输入${fieldConfig.label}`"
               :disabled="fieldConfig.disabled"
               :clearable="fieldConfig.clearable !== false"
-              :size="size"
               v-bind="fieldConfig.props"
               @update:model-value="updateFieldValue(fieldKey, $event)"
             />
@@ -384,20 +372,8 @@ const handleSubmit = async () => {
 
     <template #footer>
       <div class="shared-form-panel__actions">
-        <ElButton :size="size" @click="handleCancel">取消</ElButton>
-        <ElButton
-          v-for="action in actions.filter((item) => isActionVisible(item))"
-          :key="action.key"
-          :type="action.buttonType || 'primary'"
-          :plain="action.plain"
-          :text="action.text"
-          :disabled="isActionDisabled(action) || loading"
-          :size="size"
-          @click="handleActionClick(action)"
-        >
-          {{ action.label }}
-        </ElButton>
-        <ElButton v-if="showSubmitButton" type="primary" :loading="loading" :size="size" @click="handleSubmit">
+        <ElButton @click="handleCancel">取消</ElButton>
+        <ElButton v-if="showSubmitButton" type="primary" :loading="loading" @click="handleSubmit">
           {{ submitText }}
         </ElButton>
       </div>
@@ -405,11 +381,6 @@ const handleSubmit = async () => {
   </ElDialog>
 
   <section v-else class="shared-form-panel" :class="{ 'is-compact': compact }">
-    <header v-if="title || description" class="shared-form-panel__head">
-      <strong v-if="title" class="shared-form-panel__title">{{ title }}</strong>
-      <p v-if="description" class="shared-form-panel__description">{{ description }}</p>
-    </header>
-
     <ElForm ref="formRef" class="shared-form-panel__form" :model="modelValue" :rules="mergedRules" :label-width="labelWidth">
       <ElRow :gutter="16">
         <ElCol
@@ -418,13 +389,22 @@ const handleSubmit = async () => {
           :span="fieldConfig.span ?? defaultSpan"
         >
           <ElFormItem :label="fieldConfig.label" :prop="fieldKey">
+            <slot
+              v-if="hasCustomFieldSlot(fieldKey)"
+              :name="`field-${fieldKey}`"
+              :field-key="fieldKey"
+              :field-config="fieldConfig"
+              :model-value="readFieldValue(fieldKey)"
+              :form-model="modelValue"
+              :update-field-value="(value: unknown) => updateFieldValue(fieldKey, value)"
+            />
+
             <ElInput
-              v-if="!fieldConfig.inputType || fieldConfig.inputType === 'text'"
+              v-else-if="!fieldConfig.inputType || fieldConfig.inputType === 'text'"
               :model-value="readFieldValue(fieldKey) as string"
               :placeholder="fieldConfig.placeholder || `请输入${fieldConfig.label}`"
               :disabled="fieldConfig.disabled"
               :clearable="fieldConfig.clearable !== false"
-              :size="size"
               v-bind="fieldConfig.props"
               @update:model-value="updateFieldValue(fieldKey, $event)"
             />
@@ -437,7 +417,6 @@ const handleSubmit = async () => {
               :placeholder="fieldConfig.placeholder || `请输入${fieldConfig.label}`"
               :disabled="fieldConfig.disabled"
               :clearable="fieldConfig.clearable !== false"
-              :size="size"
               v-bind="fieldConfig.props"
               @update:model-value="updateFieldValue(fieldKey, $event)"
             />
@@ -449,7 +428,6 @@ const handleSubmit = async () => {
               :rows="4"
               :placeholder="fieldConfig.placeholder || `请输入${fieldConfig.label}`"
               :disabled="fieldConfig.disabled"
-              :size="size"
               v-bind="fieldConfig.props"
               @update:model-value="updateFieldValue(fieldKey, $event)"
             />
@@ -460,23 +438,21 @@ const handleSubmit = async () => {
               :model-value="readFieldValue(fieldKey) as number | undefined"
               :placeholder="fieldConfig.placeholder || `请输入${fieldConfig.label}`"
               :disabled="fieldConfig.disabled"
-              :size="size"
               v-bind="fieldConfig.props"
               @update:model-value="updateFieldValue(fieldKey, $event)"
             />
 
             <ElSelect
               v-else-if="fieldConfig.inputType === 'select'"
-              :model-value="readFieldValue(fieldKey)"
+              :model-value="readFieldValue(fieldKey) as any"
               :placeholder="fieldConfig.placeholder || `请选择${fieldConfig.label}`"
               :disabled="fieldConfig.disabled"
               :clearable="fieldConfig.clearable !== false"
-              :size="size"
               v-bind="fieldConfig.props"
               @update:model-value="updateFieldValue(fieldKey, $event)"
             >
               <ElOption
-                v-for="option in fieldConfig.options ?? []"
+                v-for="option in resolveSelectOptions(fieldConfig)"
                 :key="String(option.value)"
                 :label="option.label"
                 :value="option.value"
@@ -486,10 +462,9 @@ const handleSubmit = async () => {
             <ElDatePicker
               v-else-if="['date', 'datetime', 'daterange'].includes(fieldConfig.inputType)"
               class="shared-form-panel__date"
-              :model-value="readFieldValue(fieldKey)"
+              :model-value="readFieldValue(fieldKey) as any"
               :placeholder="fieldConfig.placeholder || `请选择${fieldConfig.label}`"
-              :size="size"
-              v-bind="buildDateProps(fieldConfig)"
+              v-bind="buildDateProps(fieldConfig) as any"
               @update:model-value="updateFieldValue(fieldKey, $event)"
             />
 
@@ -497,7 +472,6 @@ const handleSubmit = async () => {
               v-else-if="fieldConfig.inputType === 'switch'"
               :model-value="Boolean(readFieldValue(fieldKey))"
               :disabled="fieldConfig.disabled"
-              :size="size"
               v-bind="fieldConfig.props"
               @update:model-value="updateFieldValue(fieldKey, $event)"
             />
@@ -508,7 +482,6 @@ const handleSubmit = async () => {
               :placeholder="fieldConfig.placeholder || `请输入${fieldConfig.label}`"
               :disabled="fieldConfig.disabled"
               :clearable="fieldConfig.clearable !== false"
-              :size="size"
               v-bind="fieldConfig.props"
               @update:model-value="updateFieldValue(fieldKey, $event)"
             />
@@ -518,19 +491,7 @@ const handleSubmit = async () => {
     </ElForm>
 
     <div class="shared-form-panel__actions">
-      <ElButton
-        v-for="action in actions.filter((item) => isActionVisible(item))"
-        :key="action.key"
-        :type="action.buttonType || 'primary'"
-        :plain="action.plain"
-        :text="action.text"
-        :disabled="isActionDisabled(action) || loading"
-        :size="size"
-        @click="handleActionClick(action)"
-      >
-        {{ action.label }}
-      </ElButton>
-      <ElButton v-if="showSubmitButton" type="primary" :loading="loading" :size="size" @click="handleSubmit">
+      <ElButton v-if="showSubmitButton" type="primary" :loading="loading" @click="handleSubmit">
         {{ submitText }}
       </ElButton>
     </div>
@@ -540,27 +501,7 @@ const handleSubmit = async () => {
 <style scoped>
 .shared-form-panel {
   display: grid;
-  gap: 18px;
-}
-
-.shared-form-panel__head {
-  display: grid;
-  gap: 8px;
-}
-
-.shared-form-panel__title {
-  color: var(--rookie-text);
-  font-size: var(--rookie-font-size-lg);
-}
-
-.shared-form-panel__description {
-  margin: 0;
-  color: var(--rookie-text-secondary);
-  font-size: var(--rookie-font-size-sm);
-}
-
-.shared-form-panel__form :deep(.el-form-item) {
-  margin-bottom: 18px;
+  gap: 12px;
 }
 
 .shared-form-panel__form {
@@ -577,6 +518,10 @@ const handleSubmit = async () => {
   padding-right: 8px !important;
 }
 
+.shared-form-panel__form :deep(.el-form-item) {
+  margin-bottom: 18px;
+}
+
 .shared-form-panel__form :deep(.el-input__wrapper),
 .shared-form-panel__form :deep(.el-textarea__inner),
 .shared-form-panel__form :deep(.el-select__wrapper),
@@ -585,15 +530,15 @@ const handleSubmit = async () => {
   width: 100%;
 }
 
+.shared-form-panel__number,
+.shared-form-panel__date {
+  width: 100%;
+}
+
 .shared-form-panel__actions {
   display: flex;
   justify-content: flex-end;
   gap: 12px;
-}
-
-.shared-form-panel__number,
-.shared-form-panel__date {
-  width: 100%;
 }
 
 .shared-form-panel.is-compact {
