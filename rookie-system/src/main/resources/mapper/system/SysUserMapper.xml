@@ -90,9 +90,26 @@
     </update>
 
     <insert id="addSysUser" parameterType="com.rookie.common.pojo.entity.SysUser" useGeneratedKeys="true" keyProperty="userId">
-        insert into sys_user(username, password, nick_name, sex, phone_number, avatar, create_by, create_time, update_by, update_time)
-        value
-        (#{username}, #{password}, #{nickName}, #{sex}, #{phoneNumber}, #{avatar}, #{createBy}, now(), #{updateBy}, now())
+        insert into sys_user
+        <trim prefix="(" suffix=")" suffixOverrides=",">
+            <if test="username!=null">username,</if>
+            <if test="password!=null">password,</if>
+            <if test="nickName!=null">nick_name,</if>
+            <if test="sex!=null">sex,</if>
+            <if test="phoneNumber!=null">phone_number,</if>
+            <if test="avatar!=null">avatar,</if>
+            create_by, create_time, update_by, update_time
+        </trim>
+        values
+        <trim prefix="(" suffix=")" suffixOverrides=",">
+            <if test="username!=null">#{username},</if>
+            <if test="password!=null">#{password},</if>
+            <if test="nickName!=null">#{nickName},</if>
+            <if test="sex!=null">#{sex},</if>
+            <if test="phoneNumber!=null">#{phoneNumber},</if>
+            <if test="avatar!=null">#{avatar},</if>
+            #{createBy}, now(), #{updateBy}, now()
+        </trim>
     </insert>
 
     <select id="usernameIsExistOrNot" parameterType="string" resultType="boolean">

@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.rookie.system.mapper.SysNoticeGroupRelMapper">
+
+    <resultMap id="SysNoticeGroupRelResultMap" type="com.rookie.system.pojo.SysNoticeGroupRel">
+        <id property="id" column="id"/>
+        <result property="noticeId" column="notice_id"/>
+        <result property="groupId" column="group_id"/>
+    </resultMap>
+
+    <insert id="addSysNoticeGroupRel" parameterType="com.rookie.system.pojo.SysNoticeGroupRel" useGeneratedKeys="true" keyProperty="id">
+        insert into sys_notice_group_rel(notice_id, group_id)
+        values (#{noticeId}, #{groupId})
+    </insert>
+
+    <insert id="insertSysNoticeGroupRel" parameterType="com.rookie.system.pojo.SysNoticeGroupRel">
+        insert into sys_notice_group_rel(notice_id, group_id)
+        values
+        <foreach collection="list" item="item" separator=",">
+            (#{item.noticeId}, #{item.groupId})
+        </foreach>
+    </insert>
+
+    <delete id="deleteSysNoticeGroupRelById" parameterType="long">
+        delete from sys_notice_group_rel where id = #{id}
+    </delete>
+
+    <delete id="deleteSysNoticeGroupRelByNoticeId" parameterType="long">
+        delete from sys_notice_group_rel where notice_id = #{noticeId}
+    </delete>
+
+    <delete id="deleteSysNoticeGroupRelByGroupId" parameterType="long">
+        delete from sys_notice_group_rel where group_id = #{groupId}
+    </delete>
+
+    <select id="getSysNoticeGroupRelInfoById" parameterType="long" resultMap="SysNoticeGroupRelResultMap">
+        select * from sys_notice_group_rel where id = #{id}
+    </select>
+
+    <select id="getSysNoticeGroupRelByNoticeId" parameterType="long" resultMap="SysNoticeGroupRelResultMap">
+        select * from sys_notice_group_rel where notice_id = #{noticeId}
+    </select>
+
+    <select id="getSysNoticeGroupRelByGroupId" parameterType="long" resultMap="SysNoticeGroupRelResultMap">
+        select * from sys_notice_group_rel where group_id = #{groupId}
+    </select>
+
+</mapper>

@@ -4,14 +4,11 @@ import com.rookie.common.enums.ResultEnum;
 
 public class ServiceException extends RuntimeException{
 
-
-    /*错误代码*/
     private Integer code;
 
     private String message;
 
-//    private
-
+    private String errorMsg;
 
     public ServiceException() {
     }
@@ -19,6 +16,12 @@ public class ServiceException extends RuntimeException{
     public ServiceException(Integer code, String message) {
         this.code = code;
         this.message = message;
+    }
+
+    public ServiceException(Integer code, String message, String errorMsg) {
+        this.code = code;
+        this.message = message;
+        this.errorMsg = errorMsg;
     }
 
     public ServiceException(ResultEnum resultEnum){
@@ -41,5 +44,13 @@ public class ServiceException extends RuntimeException{
 
     public void setMessage(String message) {
         this.message = message;
+    }
+
+    public String getErrorMsg() {
+        return errorMsg;
+    }
+
+    public void setErrorMsg(String errorMsg) {
+        this.errorMsg = errorMsg;
     }
 }

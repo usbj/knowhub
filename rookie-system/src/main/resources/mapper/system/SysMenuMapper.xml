@@ -55,8 +55,30 @@
 
 
     <insert id="addSysMenu" parameterType="com.rookie.common.pojo.entity.SysMenu">
-        insert into sys_menu(menu_name, perm_key, parent_id, menu_type, route, backlinks, path, icon, create_by, create_time, update_by, update_time)
-        VALUES (#{menuName}, #{permKey}, #{parentId}, #{menuType}, #{route}, #{backlinks}, #{path}, #{icon}, #{createBy}, now(), #{updateBy}, now())
+        insert into sys_menu
+        <trim prefix="(" suffix=")" suffixOverrides=",">
+            <if test="menuName!=null">menu_name,</if>
+            <if test="permKey!=null">perm_key,</if>
+            <if test="parentId!=null">parent_id,</if>
+            <if test="menuType!=null">menu_type,</if>
+            <if test="route!=null">route,</if>
+            <if test="backlinks!=null">backlinks,</if>
+            <if test="path!=null">path,</if>
+            <if test="icon!=null">icon,</if>
+            create_by, create_time, update_by, update_time
+        </trim>
+        values
+        <trim prefix="(" suffix=")" suffixOverrides=",">
+            <if test="menuName!=null">#{menuName},</if>
+            <if test="permKey!=null">#{permKey},</if>
+            <if test="parentId!=null">#{parentId},</if>
+            <if test="menuType!=null">#{menuType},</if>
+            <if test="route!=null">#{route},</if>
+            <if test="backlinks!=null">#{backlinks},</if>
+            <if test="path!=null">#{path},</if>
+            <if test="icon!=null">#{icon},</if>
+            #{createBy}, now(), #{updateBy}, now()
+        </trim>
     </insert>
 
     <update id="editSysMenuInfo" parameterType="com.rookie.common.pojo.entity.SysMenu">

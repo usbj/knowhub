@@ -35,6 +35,12 @@ build/
 ### Local analysis artifacts ###
 **/graphify-out/
 
+### Local documentation scratch ###
+/doc/
+
+### agent ###
+.claude
+
 ### Frontend / Vue ###
 node_modules/
 dist/

@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.rookie.system.mapper.SysNoticeGroupMemberMapper">
+
+    <resultMap id="SysNoticeGroupMemberResultMap" type="com.rookie.system.pojo.SysNoticeGroupMember">
+        <id property="id" column="id"/>
+        <result property="groupId" column="group_id"/>
+        <result property="userId" column="user_id"/>
+    </resultMap>
+
+    <insert id="addSysNoticeGroupMember" parameterType="com.rookie.system.pojo.SysNoticeGroupMember" useGeneratedKeys="true" keyProperty="id">
+        insert into sys_notice_group_member(group_id, user_id)
+        values (#{groupId}, #{userId})
+    </insert>
+
+    <insert id="insertSysNoticeGroupMember" parameterType="com.rookie.system.pojo.SysNoticeGroupMember">
+        insert into sys_notice_group_member(group_id, user_id)
+        values
+        <foreach collection="list" item="item" separator=",">
+            (#{item.groupId}, #{item.userId})
+        </foreach>
+    </insert>
+
+    <delete id="deleteSysNoticeGroupMemberById" parameterType="long">
+        delete from sys_notice_group_member where id = #{id}
+    </delete>
+
+    <delete id="deleteSysNoticeGroupMemberByGroupId" parameterType="long">
+        delete from sys_notice_group_member where group_id = #{groupId}
+    </delete>
+
+    <select id="getSysNoticeGroupMemberInfoById" parameterType="long" resultMap="SysNoticeGroupMemberResultMap">
+        select * from sys_notice_group_member where id = #{id}
+    </select>
+
+    <select id="getSysNoticeGroupMemberByGroupId" parameterType="long" resultMap="SysNoticeGroupMemberResultMap">
+        select * from sys_notice_group_member where group_id = #{groupId}
+    </select>
+
+</mapper>

@@ -26,8 +26,22 @@
     </select>
 
     <insert id="addSysDict" parameterType="com.rookie.common.pojo.entity.SysDict">
-        insert into sys_dict(dict_name, dict_key, status, remake, create_time, create_by, update_time, update_by)
-        values (#{dictName}, #{dictKey}, #{status}, #{remake}, now(), #{createBy}, now(), #{updateBy})
+        insert into sys_dict
+        <trim prefix="(" suffix=")" suffixOverrides=",">
+            <if test="dictName!=null">dict_name,</if>
+            <if test="dictKey!=null">dict_key,</if>
+            <if test="status!=null">status,</if>
+            <if test="remake!=null">remake,</if>
+            create_time, create_by, update_time, update_by
+        </trim>
+        values
+        <trim prefix="(" suffix=")" suffixOverrides=",">
+            <if test="dictName!=null">#{dictName},</if>
+            <if test="dictKey!=null">#{dictKey},</if>
+            <if test="status!=null">#{status},</if>
+            <if test="remake!=null">#{remake},</if>
+            now(), #{createBy}, now(), #{updateBy}
+        </trim>
     </insert>
 
     <update id="editSysDictInfo" parameterType="com.rookie.common.pojo.entity.SysDict">

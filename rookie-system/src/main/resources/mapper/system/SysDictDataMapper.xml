@@ -33,9 +33,34 @@
 
 
     <insert id="addSysDictData" parameterType="com.rookie.common.pojo.entity.SysDictData">
-        insert into sys_dict_data(dict_id, dict_key, dict_data_label, dict_data_value, remark, dict_data_sort, tag_type, tag_effect, css_class, ext_json, create_time, create_by, update_time, update_by)
-        VALUES (#{dictId}, #{dictKey}, #{dictDataLabel}, #{dictDataValue}, #{remark}, #{dictDataSort},
-                #{tagType}, #{tagEffect}, #{cssClass}, #{extJson}, now(), #{createBy},now(), #{updateBy})
+        insert into sys_dict_data
+        <trim prefix="(" suffix=")" suffixOverrides=",">
+            <if test="dictId!=null">dict_id,</if>
+            <if test="dictKey!=null">dict_key,</if>
+            <if test="dictDataLabel!=null">dict_data_label,</if>
+            <if test="dictDataValue!=null">dict_data_value,</if>
+            <if test="remark!=null">remark,</if>
+            <if test="dictDataSort!=null">dict_data_sort,</if>
+            <if test="tagType!=null">tag_type,</if>
+            <if test="tagEffect!=null">tag_effect,</if>
+            <if test="cssClass!=null">css_class,</if>
+            <if test="extJson!=null">ext_json,</if>
+            create_time, create_by, update_time, update_by
+        </trim>
+        values
+        <trim prefix="(" suffix=")" suffixOverrides=",">
+            <if test="dictId!=null">#{dictId},</if>
+            <if test="dictKey!=null">#{dictKey},</if>
+            <if test="dictDataLabel!=null">#{dictDataLabel},</if>
+            <if test="dictDataValue!=null">#{dictDataValue},</if>
+            <if test="remark!=null">#{remark},</if>
+            <if test="dictDataSort!=null">#{dictDataSort},</if>
+            <if test="tagType!=null">#{tagType},</if>
+            <if test="tagEffect!=null">#{tagEffect},</if>
+            <if test="cssClass!=null">#{cssClass},</if>
+            <if test="extJson!=null">#{extJson},</if>
+            now(), #{createBy}, now(), #{updateBy}
+        </trim>
     </insert>
 
     <update id="editSysDictDataInfo" parameterType="com.rookie.common.pojo.entity.SysDictData">

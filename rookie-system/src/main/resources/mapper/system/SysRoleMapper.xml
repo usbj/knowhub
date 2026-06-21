@@ -96,8 +96,20 @@
     </update>
 
     <insert id="addSysRoleInfo" parameterType="com.rookie.common.pojo.entity.SysRole" keyProperty="roleId" useGeneratedKeys="true">
-        insert into sys_role(role_name, role_level, role_key, create_by, create_time, update_by, update_time)
-        values (#{roleName},#{roleLevel},#{roleKey},#{createBy},now(),#{updateBy},now())
+        insert into sys_role
+        <trim prefix="(" suffix=")" suffixOverrides=",">
+            <if test="roleName!=null">role_name,</if>
+            <if test="roleLevel!=null">role_level,</if>
+            <if test="roleKey!=null">role_key,</if>
+            create_by, create_time, update_by, update_time
+        </trim>
+        values
+        <trim prefix="(" suffix=")" suffixOverrides=",">
+            <if test="roleName!=null">#{roleName},</if>
+            <if test="roleLevel!=null">#{roleLevel},</if>
+            <if test="roleKey!=null">#{roleKey},</if>
+            #{createBy}, now(), #{updateBy}, now()
+        </trim>
     </insert>
 
     <delete id="deleteSysRoleInfo" parameterType="long">
