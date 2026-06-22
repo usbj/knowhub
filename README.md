@@ -299,7 +299,6 @@ rookie/
   - `ElTag`
   - `ElCheckbox`
   - `ElTree`
-  - `ElTransfer`
   - `ElDescriptions`
 - Markdown 编辑/预览（@kangc/v-md-editor@next + highlight.js）：
   - 编辑器外壳与工具栏

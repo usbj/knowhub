@@ -254,8 +254,10 @@ export const useDictStore = defineStore('dict', () => {
         ),
       )
 
+      // 初始化阶段总是从后端拉取最新字典数据，
+      // 避免 localStorage 缓存导致新增字典项（如 REVOKED 状态）无法进入前端。
       await Promise.allSettled(
-        dictKeys.map((dictKey) => fetchDictDataByKey(dictKey, force)),
+        dictKeys.map((dictKey) => fetchDictDataByKey(dictKey, true)),
       )
       initialized.value = true
     } finally {

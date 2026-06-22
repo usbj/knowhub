@@ -29,7 +29,7 @@ src/
 │         ...
 ├── assets/               静态资源与全局样式
 │   ├── base.css          主题变量定义（字号、圆角、颜色、阴影、Element Plus 变量映射）
-│   ├── main.css          Element Plus 组件全局覆写与主题适配（表格、按钮、输入框、弹窗、穿梭框等）
+│   ├── main.css          Element Plus 组件全局覆写与主题适配（表格、按钮、输入框、弹窗等）
 │   └── logo.svg          应用 Logo
 ├── components/           公共可复用组件
 │   ├── BaseCard.vue      页面统一卡片容器（标题栏 + 内容区）
@@ -90,7 +90,7 @@ src/
         ├── dict-data/     字典数据管理
         └── notice/        通知管理
             ├── notice-content/  内容管理（通知 CRUD、发布/撤回/详情）
-            └── notice-group/    分组管理（分组 CRUD、成员穿梭框）
+            └── notice-group/    分组管理（分组 CRUD、成员管理弹窗）
 ```
 
 **特定名称约定：**

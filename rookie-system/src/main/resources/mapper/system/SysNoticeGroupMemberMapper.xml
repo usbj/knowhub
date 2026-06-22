@@ -8,6 +8,10 @@
         <id property="id" column="id"/>
         <result property="groupId" column="group_id"/>
         <result property="userId" column="user_id"/>
+        <result property="username" column="username"/>
+        <result property="nickName" column="nick_name"/>
+        <result property="phoneNumber" column="phone_number"/>
+        <result property="status" column="status"/>
     </resultMap>
 
     <insert id="addSysNoticeGroupMember" parameterType="com.rookie.system.pojo.SysNoticeGroupMember" useGeneratedKeys="true" keyProperty="id">
@@ -36,7 +40,11 @@
     </select>
 
     <select id="getSysNoticeGroupMemberByGroupId" parameterType="long" resultMap="SysNoticeGroupMemberResultMap">
-        select * from sys_notice_group_member where group_id = #{groupId}
+        select m.id, m.group_id, m.user_id,
+               u.username, u.nick_name, u.phone_number, u.status
+        from sys_notice_group_member m
+        left join sys_user u on m.user_id = u.user_id
+        where m.group_id = #{groupId}
     </select>
 
 </mapper>

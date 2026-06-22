@@ -265,65 +265,6 @@
   background: color-mix(in srgb, var(--rookie-text-secondary) 76%, transparent) !important;
 }
 
-/* 穿梭框：面板、项、搜索框统一跟随主题变量，避免深色模式下出现默认白底 */
-.el-transfer-panel {
-  background: var(--rookie-card-bg) !important;
-  border-color: var(--rookie-border) !important;
-}
-
-.el-transfer-panel__header {
-  background: var(--rookie-surface-muted) !important;
-  border-color: var(--rookie-border) !important;
-  color: var(--rookie-text) !important;
-}
-
-.el-transfer-panel__body {
-  background: var(--rookie-card-bg) !important;
-}
-
-.el-transfer-panel__filter .el-input__wrapper {
-  background: var(--rookie-card-bg) !important;
-  box-shadow: 0 0 0 1px var(--rookie-border) inset !important;
-}
-
-.el-transfer-panel__filter .el-input__inner {
-  color: var(--rookie-text) !important;
-}
-
-.el-transfer-panel__filter .el-input__icon {
-  color: var(--rookie-text-secondary) !important;
-}
-
-.el-transfer-panel__item {
-  color: var(--rookie-text-secondary) !important;
-}
-
-.el-transfer-panel__item:hover {
-  background: var(--rookie-hover-bg) !important;
-  color: var(--rookie-text) !important;
-}
-
-.el-transfer-panel__item.is-disabled {
-  color: var(--rookie-text-tertiary) !important;
-}
-
-.el-transfer__buttons .el-button {
-  background: var(--rookie-card-bg) !important;
-  border-color: var(--rookie-border) !important;
-  color: var(--rookie-text-secondary) !important;
-}
-
-.el-transfer__buttons .el-button:hover {
-  background: var(--rookie-surface-muted) !important;
-  border-color: var(--rookie-border-strong) !important;
-  color: var(--rookie-text) !important;
-}
-
-.el-transfer__buttons .el-button.is-disabled {
-  background: var(--rookie-surface-muted) !important;
-  color: var(--rookie-text-tertiary) !important;
-}
-
 .el-popper.nav-bar-notice-dropdown {
   transform: translateX(2.25rem);
   padding: 0 !important;

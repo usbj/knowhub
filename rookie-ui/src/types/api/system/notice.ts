@@ -50,7 +50,8 @@ export type SysNoticePageResult = NormalizedPageResult<SysNoticeRecord>
 
 /**
  * 通知分组成员记录，与后端 SysNoticeGroupMember 对齐。
- * nickName / username 不来自后端该对象，由页面拉取用户列表后按 userId 关联补全用于展示。
+ * nickName / username / phoneNumber / status 不对应 sys_notice_group_member 表列，
+ * 由后端 getSysNoticeGroupMemberByGroupId 关联 sys_user 查询时填充，供成员表格展示。
  */
 export interface SysNoticeGroupMemberRecord {
   id: number
@@ -58,6 +59,8 @@ export interface SysNoticeGroupMemberRecord {
   userId: number
   nickName?: string
   username?: string
+  phoneNumber?: string
+  status?: number
 }
 
 /**

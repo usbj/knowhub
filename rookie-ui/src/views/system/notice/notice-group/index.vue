@@ -1,14 +1,13 @@
 /**
  * 文件作用：
  * 承接通知分组管理页面，
- * 负责分组列表查询、分页展示、新增、编辑、删除，以及分组成员的穿梭框管理。
+ * 负责分组列表查询、分页展示、新增、编辑、删除，以及分组成员管理弹窗。
  * 关键状态：
- * - `userOptions`：全部用户穿梭框数据源，打开成员管理时供左侧渲染。
- * - `currentMembers`：当前管理成员的分组已有成员列表，供穿梭框右侧初始化与差集计算。
+ * - `currentMembers`：当前管理成员的分组已有成员列表，供成员管理弹窗初始化已选集合与差集计算。
  * - `pageState` / `dialogVisible` / `memberManageGroupId`：列表分页、编辑弹窗、成员管理弹窗状态。
  * 关键依赖：
  * - 复用公共表格、公共表单、筛选面板，对齐字典管理页结构；
- * - 成员管理穿梭框单独封装在 components/GroupMemberTransfer.vue。
+ * - 成员管理弹窗单独封装在 components/GroupMemberTransfer.vue（搜索 + 分页 + 标签区形态）。
  */
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
@@ -20,7 +19,6 @@ import {
   getSysNoticeGroupPageApi,
   updateSysNoticeGroupApi,
 } from '@/api/system/notice'
-import { getSysUserPageApi } from '@/api/system/user'
 import BaseCard from '@/components/BaseCard.vue'
 import SearchFilterPanel from '@/components/SearchFilterPanel.vue'
 import SharedTablePanel from '@/components/SharedTablePanel.vue'
@@ -46,7 +44,6 @@ import GroupMemberTransfer from './components/GroupMemberTransfer.vue'
 type NoticeGroupDialogMode = 'create' | 'edit'
 
 const queryForm = reactive<NoticeGroupQueryFormState>(createDefaultNoticeGroupQuery())
-const userOptions = ref<Array<{ key: number; label: string; disabled?: boolean }>>([])
 const listLoading = ref(false)
 const submitLoading = ref(false)
 const dialogVisible = ref(false)
@@ -60,7 +57,7 @@ const pageState = ref<SysNoticeGroupPageResult>({
   total: 0,
 })
 
-// 成员管理穿梭框状态：当前操作的分组主键与已有成员列表
+// 成员管理弹窗状态：当前操作的分组主键与已有成员列表
 const memberTransferRef = ref<InstanceType<typeof GroupMemberTransfer>>()
 const currentGroupId = ref(0)
 const currentMembers = ref<SysNoticeGroupMemberRecord[]>([])
@@ -110,26 +107,6 @@ const tableActions = computed<SharedActionConfig<Record<string, unknown>>[]>(() 
     },
   },
 ])
-
-/**
- * 方法效果：
- * 拉取全部用户作为穿梭框数据源，一次取较大分页避免分批拼接。
- * 参数：
- * - 无。
- * 返回值：
- * - 无返回值；副作用是更新用户穿梭框数据源。
- */
-const fetchUserOptions = async () => {
-  const result = await getSysUserPageApi({
-    pageNum: 1,
-    pageSize: 500,
-  })
-
-  userOptions.value = result.records.map((user) => ({
-    key: Number(user.userId),
-    label: `${user.nickName}（${user.username}）`,
-  }))
-}
 
 /**
  * 方法效果：
@@ -237,22 +214,18 @@ const openEditDialog = async (groupId: number) => {
 
 /**
  * 方法效果：
- * 打开成员管理穿梭框，先拉取分组详情拿到当前成员列表再交给穿梭框初始化。
+ * 打开成员管理弹窗，先拉取分组详情拿到当前成员列表再交给弹窗初始化已选集合。
+ * 用户候选数据由弹窗内部按搜索条件分页拉取，不再预拉全量用户。
  * 参数：
  * - `groupId`：待管理成员的分组主键。
  * 返回值：
- * - 无返回值；副作用是更新当前成员列表并打开穿梭框。
+ * - 无返回值；副作用是更新当前成员列表并打开成员管理弹窗。
  */
 const openMemberManage = async (groupId: number) => {
   const result = await getSysNoticeGroupDetailApi(groupId)
 
   currentGroupId.value = groupId
   currentMembers.value = Array.isArray(result.data.members) ? result.data.members : []
-
-  // 确保用户数据源已就绪后打开穿梭框
-  if (userOptions.value.length === 0) {
-    await fetchUserOptions()
-  }
 
   memberTransferRef.value?.open()
 }
@@ -323,7 +296,7 @@ const handleSubmitForm = async () => {
 
 /**
  * 方法效果：
- * 成员穿梭框保存成功后刷新列表，让成员数量列及时更新。
+ * 成员管理弹窗保存成功后刷新列表，让成员数量列及时更新。
  * 参数：
  * - 无。
  * 返回值：
@@ -357,7 +330,7 @@ const handleDeleteGroup = async (groupId: number) => {
 }
 
 onMounted(async () => {
-  // 用户数据源延迟到首次打开成员管理时按需拉取，列表初次加载只拉分组
+  // 列表初次加载只拉分组，用户候选数据延迟到打开成员管理弹窗时按需分页拉取
   await fetchPage()
 })
 </script>
@@ -405,12 +378,11 @@ onMounted(async () => {
       />
     </BaseCard>
 
-    <!-- 分组成员管理穿梭框 -->
+    <!-- 分组成员管理弹窗（搜索 + 分页 + 标签区） -->
     <GroupMemberTransfer
       ref="memberTransferRef"
       :group-id="currentGroupId"
       :members="currentMembers"
-      :user-options="userOptions"
       @success="handleMemberSaved"
     />
   </section>
