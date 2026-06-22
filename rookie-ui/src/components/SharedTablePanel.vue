@@ -22,13 +22,20 @@ import {
   ElPagination,
   ElTable,
   ElTableColumn,
+  ElTag,
 } from 'element-plus'
 import type { FormRules } from 'element-plus'
 import DictTag from '@/components/DictTag.vue'
 import { useDict } from '@/composables/useDict'
 import { usePermission } from '@/composables/usePermission'
 import type { NormalizedPageResult } from '@/types/api/system/common'
-import type { SharedActionConfig, SharedFieldSchemaMap } from '@/types/components/data-display'
+import type {
+  SharedActionConfig,
+  SharedFieldSchemaItem,
+  SharedFieldSchemaMap,
+  SharedFieldTagRenderOptions,
+  SharedFieldTagType,
+} from '@/types/components/data-display'
 import { formatDisplayValue } from '@/utils/format'
 import { getValueByPath } from '@/utils/object'
 import SharedFormPanel from './SharedFormPanel.vue'
@@ -143,6 +150,81 @@ const formatCellValue = (row: Record<string, unknown>, fieldKey: string) => {
   }
 
   return formatDisplayValue(rawValue)
+}
+
+/**
+ * 方法效果：
+ * 当字段声明为 `tag` 渲染类型时，把当前行数据转换成标签展示所需的信息，
+ * 包括标签文字、标签类型（颜色）、标签风格和自定义类名。
+ * 数据流转：
+ * - 标签文字优先从 `tagRender.labelField` 跨字段读取，否则取本字段值；
+ *   命中字段 `options` 时用选项 `label` 作为文字，否则用原始值的字符串形式。
+ * - 标签颜色优先从 `tagRender.typeField` 跨字段读取，否则取本字段值；
+ *   读到的值再经 `tagTypeMap` 映射，未提供映射时直接当作标签类型使用；
+ *   来源为空时回落到 `info`，用于无标签类型的下拉选项型数据。
+ * - 标签风格优先从 `tagRender.effectField` 跨字段读取，否则取 `effect`，
+ *   再否则若本字段值本身是合法风格则复用，最终回落 `plain`。
+ * - 自定义类名从 `tagRender.classField` 跨字段读取并裁剪空白。
+ * - 是否渲染标签以"文字来源值"是否非空为准：标签展示列本身不对应数据属性，
+ *   本字段恒为空，必须按 labelField 指向的字段判断是否展示。
+ * 参数：
+ * - `row`：当前表格行。
+ * - `fieldKey`：字段路径键。
+ * 返回值：
+ * - 标签展示信息；无法渲染有效标签（文字为空）时返回 `null`，交由模板渲染占位文本。
+ */
+const resolveTagDisplay = (
+  row: Record<string, unknown>,
+  fieldKey: string,
+): { label: string; type: SharedFieldTagType; effect: 'plain' | 'light' | 'dark'; className: string } | null => {
+  const fieldConfig = props.schema[fieldKey] as SharedFieldSchemaItem<Record<string, unknown>> | undefined
+  const tagConfig: SharedFieldTagRenderOptions = fieldConfig?.tagRender ?? {}
+  const rawValue = readCellValue(row, fieldKey)
+
+  // 文字来源：优先跨字段读取，否则用本字段值
+  const labelSourceValue = tagConfig.labelField ? readCellValue(row, tagConfig.labelField) : rawValue
+
+  // 是否渲染以文字来源是否非空为准，避免标签展示列因本字段恒空而被误判为无内容
+  if (labelSourceValue === null || labelSourceValue === undefined || labelSourceValue === '') {
+    return null
+  }
+
+  // 命中字段 options 时用选项 label 作为可见文字，否则用文字来源的字符串形式
+  const matchedOption = fieldConfig?.options?.find(
+    (item) => String(item.value) === String(labelSourceValue),
+  )
+  const tagText = matchedOption?.label ?? String(labelSourceValue)
+
+  // 标签颜色来源：优先跨字段读取，否则回落到本字段值；再经 tagTypeMap 映射，空值回落 info
+  const colorSourceValue = tagConfig.typeField
+    ? readCellValue(row, tagConfig.typeField)
+    : rawValue
+  const colorKey = String(colorSourceValue ?? '')
+  const tagType: SharedFieldTagType = colorKey
+    ? ((tagConfig.tagTypeMap?.[colorKey] ?? colorKey) as SharedFieldTagType)
+    : 'info'
+
+  // 标签风格来源：优先跨字段读取，否则取显式 effect，再否则本字段值若合法则复用，最终回落 plain
+  const validEffects = ['plain', 'light', 'dark'] as const
+  const effectSourceValue = tagConfig.effectField ? readCellValue(row, tagConfig.effectField) : undefined
+  const resolvedEffect: 'plain' | 'light' | 'dark' =
+    (effectSourceValue as (typeof validEffects)[number] | undefined) ??
+    tagConfig.effect ??
+    (validEffects.includes(rawValue as (typeof validEffects)[number])
+      ? (rawValue as (typeof validEffects)[number])
+      : 'plain')
+
+  // 自定义类名跨字段读取并裁剪，避免空白类名污染标签
+  const className = tagConfig.classField
+    ? String(readCellValue(row, tagConfig.classField) ?? '').trim()
+    : ''
+
+  return {
+    label: tagText,
+    type: tagType,
+    effect: resolvedEffect,
+    className,
+  }
 }
 
 /**
@@ -319,8 +401,23 @@ const handleSelectionChange = (rows: Record<string, unknown>[]) => {
         show-overflow-tooltip
       >
         <template #default="{ row }">
+          <ElTag
+            v-if="fieldConfig.renderType === 'tag' && resolveTagDisplay(row, fieldKey)"
+            size="small"
+            :class="resolveTagDisplay(row, fieldKey)?.className"
+            :effect="resolveTagDisplay(row, fieldKey)?.effect ?? 'plain'"
+            :type="resolveTagDisplay(row, fieldKey)?.type ?? 'info'"
+          >
+            {{ resolveTagDisplay(row, fieldKey)?.label }}
+          </ElTag>
+          <span
+            v-else-if="fieldConfig.renderType === 'tag'"
+            class="shared-table-panel__tag-placeholder"
+          >
+            {{ fieldConfig.tagRender?.placeholder ?? '--' }}
+          </span>
           <DictTag
-            v-if="fieldConfig.dictKey && !fieldConfig.formatter"
+            v-else-if="fieldConfig.dictKey && !fieldConfig.formatter"
             :dict-key="fieldConfig.dictKey"
             :value="readCellValue(row, fieldKey)"
           />
@@ -447,5 +544,9 @@ const handleSelectionChange = (rows: Record<string, unknown>[]) => {
 .shared-table-panel__pagination {
   display: flex;
   justify-content: flex-end;
+}
+
+.shared-table-panel__tag-placeholder {
+  color: var(--rookie-text-tertiary);
 }
 </style>

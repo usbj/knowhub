@@ -22,5 +22,5 @@ public interface SysDictDataMapper {
 
     List<SysDictData> getSysDictDataByDictKey(String dictKey);
 
-
+    Boolean updateDictKeyByDictId(Long dictId, String newDictKey);
 }

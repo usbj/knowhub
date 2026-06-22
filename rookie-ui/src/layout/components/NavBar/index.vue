@@ -17,8 +17,12 @@ import { ElBadge, ElDropdown, ElDropdownItem, ElDropdownMenu } from 'element-plu
 import { useUserStore } from '@/stores/user'
 import { useLayoutNavigationStore } from '@/stores/navigation'
 import { useThemePreferenceStore } from '@/stores/themePreference'
+import { useNoticeStore } from '@/stores/notice'
+import { useDict } from '@/composables/useDict'
 import { unregisterDynamicRoutes } from '@/router/dynamicRoutes'
+import { formatDateTime } from '@/utils/format'
 import type { NotificationItem } from '@/types/components/theme'
+import type { SysNoticeRecord } from '@/types/api/system/notice'
 import NavBreadcrumb from './components/NavBreadcrumb.vue'
 import NavTabs from './components/NavTabs.vue'
 
@@ -35,6 +39,8 @@ const route = useRoute()
 const userStore = useUserStore()
 const layoutNavigationStore = useLayoutNavigationStore()
 const themePreferenceStore = useThemePreferenceStore()
+const noticeStore = useNoticeStore()
+const { resolveDictLabel } = useDict()
 const emit = defineEmits<{
   openSettings: []
   toggleSidebar: []
@@ -43,14 +49,46 @@ const emit = defineEmits<{
 }>()
 
 /**
- * 当前通知列表先保持空数组，等待后端真实通知接口接入。
- * 这样可以避免界面继续依赖本地演示数据。
+ * 通知类型到中文标签的映射，供下拉项分类展示复用。
+ * 与通知内容管理页的 noticeTypeOptions 保持同口径。
  */
-const notifications = ref<NotificationItem[]>([])
+const NOTICE_TYPE_LABEL: Record<string, string> = {
+  NOTICE: '公告',
+  NOTIFY: '通知',
+  REMIND: '提醒',
+}
 
-const unreadNotificationCount = computed(
-  () => notifications.value.filter((item) => item.unread).length,
+/**
+ * 方法效果：
+ * 把后端 SysNoticeRecord 映射成头导航下拉使用的 NotificationItem，
+ * 摘要取正文前 40 字，时间格式化为发布时间，
+ * 分类/级别通过字典系统翻译为中文标签。
+ * 参数：
+ * - `notice`：后端通知记录。
+ * 返回值：
+ * - 供下拉与详情弹窗消费的展示项。
+ */
+const toNotificationItem = (notice: SysNoticeRecord): NotificationItem => ({
+  id: Number(notice.noticeId),
+  title: notice.title,
+  summary: (notice.content ?? '').slice(0, 40),
+  time: formatDateTime(notice.publishTime),
+  unread: !notice.hasRead,
+  category: (resolveDictLabel('sys_notice_type', notice.noticeType) as string) ?? notice.noticeType,
+  content: notice.content,
+  needConfirm: Number(notice.needConfirm) === 1,
+  isTop: Number(notice.isTop) === 1,
+})
+
+/**
+ * 头导航通知下拉直接消费 notice store 的"我的通知"列表，
+ * 未读数由 store 统一计算，保证铃铛徽标与列表一致。
+ */
+const notifications = computed<NotificationItem[]>(() =>
+  noticeStore.myNotices.map(toNotificationItem),
 )
+
+const unreadNotificationCount = computed(() => noticeStore.unreadCount)
 
 /**
  * 关闭标签后，如果关掉的是当前页，就自动切到相邻标签，
@@ -171,6 +209,7 @@ const handleProfileCommand = async (command: string) => {
                 <div class="nav-bar__notice-copy">
                   <strong>
                     {{ item.title }}
+                    <span v-if="item.isTop" class="nav-bar__notice-top">置顶</span>
                     <span v-if="item.unread" class="nav-bar__notice-dot"></span>
                   </strong>
                   <span>{{ item.summary }}</span>
@@ -481,6 +520,16 @@ const handleProfileCommand = async (command: string) => {
   background: var(--rookie-primary);
 }
 
+.nav-bar__notice-top {
+  padding: 1px 6px;
+  border-radius: var(--rookie-radius-sm);
+  font-size: var(--rookie-font-size-xs);
+  font-weight: 600;
+  color: var(--rookie-primary-strong);
+  background: var(--rookie-hover-bg);
+  border: 1px solid var(--rookie-primary-border);
+}
+
 @media (max-width: 1024px) {
   .nav-bar__top-row,
   .nav-bar__tab-row {
@@ -495,5 +544,17 @@ const handleProfileCommand = async (command: string) => {
   .nav-bar__search {
     width: 100%;
   }
+}
+</style>
+
+<!--
+  通知下拉的 popper 通过 popper-class 传 nav-bar-notice-dropdown，
+  teleport 到 body 后 scoped 样式命不中，这里用全局样式覆写。
+ -->
+<style>
+/* 防止鼠标移出下拉后最后划过的通知项残留 hover/focus 高亮 */
+.nav-bar-notice-dropdown .el-dropdown-menu__item:not(:hover):not(:focus) {
+  background-color: transparent !important;
+  color: var(--el-text-color-regular) !important;
 }
 </style>

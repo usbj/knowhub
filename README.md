@@ -143,6 +143,17 @@ rookie/
 `api.md` 和 `devlog.md` 是协作过程中使用的文档产物，约定如下：
 - 单次接口更新推荐覆盖 5–8 个接口或一个模块的完整变更，不满时可先暂存再合并为正式日志
 - devlog 只记录产生实际文件/代码变动的任务，时间精确到分钟
+- 每次完成代码开发任务后需同步更新 `doc/devlog.md`
+- 每次新增或修改后端接口后需同步更新 `doc/api.md`
+- 接口文档每个接口统一四段式（基本信息 / 请求头 / 请求体含参数表格 / 响应示例），无内容写"无"；参数说明一律使用表格
+- 认证 Token 的请求头名称为 `Token`（无 Bearer 前缀），由 `TokenVerifyFilter` 从请求头 `Token` 字段直接取 JWT 值
+- 新增文档前先阅读 `doc/README.md`
+
+### 当前其他注意事项
+
+- 系统使用了装饰器模式（如 `SysNoticeGroupServiceImpl` 中 `addMembersInternal` 内部调用 `addMembers` → `insert`），勿在透明代理场景下跨代理调用私有方法，否则可能导致事务失效
+- Mapper XML 中所有 insert 语句均已改为 `<trim>` + `<if>` 动态列模式，避免前端漏传有默认值的列时插入空值报错
+- 根据 `constraints.md` 约定，非代码任务（规则探讨、项目规划等）不写入 `devlog.md`，也不通过后台启动验证改动
 - 记录格式为 “## 日期” → “### 时间-任务简介” → 变更清单
 
 ## 6. 当前技术栈
@@ -288,6 +299,14 @@ rookie/
   - `ElTag`
   - `ElCheckbox`
   - `ElTree`
+  - `ElTransfer`
+  - `ElDescriptions`
+- Markdown 编辑/预览（@kangc/v-md-editor@next + highlight.js）：
+  - 编辑器外壳与工具栏
+  - 编辑区、预览区背景与文字
+  - 代码块（highlight.js github 配色，深色模式覆盖背景）
+  - 表格、引用块、分隔线、行内代码
+  - 深色模式下统一跟随主题变量
 - 顶部导航区：
   - 搜索框
   - 图标按钮

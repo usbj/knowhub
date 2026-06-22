@@ -84,7 +84,7 @@
 }
 
 .el-table--striped .el-table__body tr.el-table__row--striped td.el-table__cell {
-  background: var(--rookie-bg-elevated) !important;
+  background: var(--rookie-table-stripe-bg) !important;
 }
 
 .el-table .el-table__body tr:hover > td.el-table__cell {
@@ -265,6 +265,65 @@
   background: color-mix(in srgb, var(--rookie-text-secondary) 76%, transparent) !important;
 }
 
+/* 穿梭框：面板、项、搜索框统一跟随主题变量，避免深色模式下出现默认白底 */
+.el-transfer-panel {
+  background: var(--rookie-card-bg) !important;
+  border-color: var(--rookie-border) !important;
+}
+
+.el-transfer-panel__header {
+  background: var(--rookie-surface-muted) !important;
+  border-color: var(--rookie-border) !important;
+  color: var(--rookie-text) !important;
+}
+
+.el-transfer-panel__body {
+  background: var(--rookie-card-bg) !important;
+}
+
+.el-transfer-panel__filter .el-input__wrapper {
+  background: var(--rookie-card-bg) !important;
+  box-shadow: 0 0 0 1px var(--rookie-border) inset !important;
+}
+
+.el-transfer-panel__filter .el-input__inner {
+  color: var(--rookie-text) !important;
+}
+
+.el-transfer-panel__filter .el-input__icon {
+  color: var(--rookie-text-secondary) !important;
+}
+
+.el-transfer-panel__item {
+  color: var(--rookie-text-secondary) !important;
+}
+
+.el-transfer-panel__item:hover {
+  background: var(--rookie-hover-bg) !important;
+  color: var(--rookie-text) !important;
+}
+
+.el-transfer-panel__item.is-disabled {
+  color: var(--rookie-text-tertiary) !important;
+}
+
+.el-transfer__buttons .el-button {
+  background: var(--rookie-card-bg) !important;
+  border-color: var(--rookie-border) !important;
+  color: var(--rookie-text-secondary) !important;
+}
+
+.el-transfer__buttons .el-button:hover {
+  background: var(--rookie-surface-muted) !important;
+  border-color: var(--rookie-border-strong) !important;
+  color: var(--rookie-text) !important;
+}
+
+.el-transfer__buttons .el-button.is-disabled {
+  background: var(--rookie-surface-muted) !important;
+  color: var(--rookie-text-tertiary) !important;
+}
+
 .el-popper.nav-bar-notice-dropdown {
   transform: translateX(2.25rem);
   padding: 0 !important;
@@ -361,4 +420,124 @@
 .el-popper.nav-bar-profile-dropdown .el-popper__arrow::before {
   background: var(--rookie-card-bg) !important;
   border-color: var(--rookie-border) !important;
+}
+
+/* v-md-editor：编辑器外壳、工具栏、编辑区、预览区统一跟随主题变量，
+   github 主题默认是浅色固定背景，深色模式下需覆盖关键区域避免白底刺眼 */
+.v-md-editor {
+  background: var(--rookie-card-bg) !important;
+  border-color: var(--rookie-border) !important;
+}
+
+.v-md-editor__toolbar {
+  background: var(--rookie-surface-muted) !important;
+  border-color: var(--rookie-border) !important;
+}
+
+.v-md-editor__toolbar-item:hover {
+  background: var(--rookie-hover-bg) !important;
+}
+
+.v-md-editor__toolbar-item--active .v-md-editor__toolbar-item-inner {
+  border-color: var(--rookie-primary) !important;
+}
+
+.v-md-editor__editor-wrapper,
+.v-md-editor__preview-wrapper,
+.v-md-editor__editor-wrapper textarea,
+.v-md-editor__preview-wrapper .v-md-editor__preview {
+  background: var(--rookie-card-bg) !important;
+  color: var(--rookie-text) !important;
+}
+
+.v-md-editor__editor-wrapper textarea::placeholder {
+  color: var(--rookie-text-tertiary) !important;
+}
+
+.v-md-editor__preview-wrapper .github-markdown-body {
+  color: var(--rookie-text);
+}
+
+.v-md-editor__preview-wrapper .github-markdown-body h1,
+.v-md-editor__preview-wrapper .github-markdown-body h2,
+.v-md-editor__preview-wrapper .github-markdown-body h3,
+.v-md-editor__preview-wrapper .github-markdown-body h4,
+.v-md-editor__preview-wrapper .github-markdown-body h5,
+.v-md-editor__preview-wrapper .github-markdown-body h6,
+.v-md-editor__preview-wrapper .github-markdown-body li,
+.v-md-editor__preview-wrapper .github-markdown-body p,
+.v-md-editor__preview-wrapper .github-markdown-body td,
+.v-md-editor__preview-wrapper .github-markdown-body th {
+  color: var(--rookie-text);
+}
+
+.v-md-editor__preview-wrapper .github-markdown-body a {
+  color: var(--rookie-primary);
+}
+
+.v-md-editor__preview-wrapper .github-markdown-body blockquote {
+  color: var(--rookie-text-secondary);
+  border-left-color: var(--rookie-border);
+}
+
+.v-md-editor__preview-wrapper .github-markdown-body hr {
+  background-color: var(--rookie-border);
+}
+
+.v-md-editor__preview-wrapper .github-markdown-body h1,
+.v-md-editor__preview-wrapper .github-markdown-body h2 {
+  border-bottom-color: var(--rookie-border);
+}
+
+.v-md-editor__preview-wrapper .github-markdown-body table tr {
+  background-color: var(--rookie-card-bg);
+  border-top-color: var(--rookie-border);
+}
+
+.v-md-editor__preview-wrapper .github-markdown-body table td,
+.v-md-editor__preview-wrapper .github-markdown-body table th {
+  border-color: var(--rookie-border);
+}
+
+.v-md-editor__preview-wrapper .github-markdown-body table tr:nth-child(2n) {
+  background-color: var(--rookie-surface-muted);
+}
+
+.v-md-editor__preview-wrapper .github-markdown-body code,
+.v-md-editor__preview-wrapper .github-markdown-body tt {
+  background-color: var(--rookie-surface-muted);
+}
+
+.v-md-editor__preview-wrapper .github-markdown-body pre,
+.v-md-editor__preview-wrapper .github-markdown-body div[class*='v-md-pre-wrapper-'] {
+  background-color: var(--rookie-surface-muted) !important;
+}
+
+.v-md-editor__preview-wrapper .github-markdown-body pre code {
+  color: var(--rookie-text);
+}
+
+.v-md-editor__preview-wrapper .github-markdown-body kbd {
+  color: var(--rookie-text-secondary);
+  background-color: var(--rookie-card-bg);
+  border-color: var(--rookie-border);
+  box-shadow: inset 0 -1px 0 var(--rookie-border);
+}
+
+/* 详情弹窗内的预览区去掉 markdown-body 默认左右大内边距，贴合弹窗 */
+.notice-detail .v-md-editor__preview-wrapper .github-markdown-body {
+  padding: 0 4px;
+}
+
+/* highlight.js 代码块：浅色配色默认引入 github.css，深色模式下覆盖背景与基础文字，
+   避免代码块白底刺眼；语法 token 颜色沿用浅色版（在深色背景上对比度仍可读） */
+[data-theme='dark'] .v-md-editor__preview-wrapper .hljs,
+[data-theme='dark'] .v-md-editor .v-md-editor__editor-wrapper .hljs {
+  background: var(--rookie-surface-muted);
+  color: var(--rookie-text);
+}
+
+[data-theme='dark'] .v-md-editor__preview-wrapper .github-markdown-body pre,
+[data-theme='dark'] .v-md-editor__preview-wrapper .github-markdown-body div[class*='v-md-pre-wrapper-'] {
+  background-color: var(--rookie-surface-muted) !important;
 }

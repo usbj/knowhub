@@ -23,4 +23,17 @@ export const SYSTEM_PERMISSION_KEYS = {
     edit: ['system:dict:edit', 'sys:dict:edit'],
     delete: ['system:dict:delete', 'sys:dict:delete'],
   },
+  notice: {
+    create: ['system:notice:add', 'sys:notice:add'],
+    edit: ['system:notice:edit', 'sys:notice:edit'],
+    delete: ['system:notice:delete', 'sys:notice:delete'],
+    publish: ['system:notice:publish', 'sys:notice:publish'],
+    revoke: ['system:notice:revoke', 'sys:notice:revoke'],
+  },
+  noticeGroup: {
+    create: ['system:noticeGroup:add', 'sys:noticeGroup:add'],
+    edit: ['system:noticeGroup:edit', 'sys:noticeGroup:edit'],
+    delete: ['system:noticeGroup:delete', 'sys:noticeGroup:delete'],
+    member: ['system:noticeGroup:member', 'sys:noticeGroup:member'],
+  },
 } as const

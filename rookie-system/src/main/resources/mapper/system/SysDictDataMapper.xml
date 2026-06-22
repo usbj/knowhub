@@ -92,5 +92,9 @@
         select * from sys_dict_data where dict_key = #{dictKey}
     </select>
 
+    <update id="updateDictKeyByDictId">
+        update sys_dict_data set dict_key = #{newDictKey} where dict_id = #{dictId}
+    </update>
+
 
 </mapper>

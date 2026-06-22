@@ -97,31 +97,62 @@ export const useLayoutNavigationStore = defineStore('layout-navigation', () => {
   )
 
   /**
-   * 当前页面所属目录，用于目录标记和面包屑生成。
+   * 构建从顶层目录到直接父目录的完整祖先链。
+   * 通过 parentId 在扁平菜单表里逐层向上反查，兼容"目录套目录"的任意深度嵌套，
+   * 保证三级及以上嵌套时面包屑和自动展开都能拿到整条祖先路径，而非只取直接父级。
+   * 参数：
+   * - `menuId`：当前命中的菜单或目录主键。
+   * 返回值：
+   * - 祖先目录数组，顺序为顶层在前、直接父级在后；无祖先时返回空数组。
    */
-  const activeDirectory = computed(() => {
-    if (!currentMenu.value) {
-      return null
+  const buildAncestorTrail = (menuId: number): NavigationMenuItem[] => {
+    const idToMenu = new Map<number, NavigationMenuItem>()
+    flatMenuList.value.forEach((menu) => idToMenu.set(menu.menuId, menu))
+
+    const trail: NavigationMenuItem[] = []
+    // 从当前节点向上找父级，parentId<=0 表示已到顶层之外，停止追溯
+    let cursor = idToMenu.get(menuId)
+    while (cursor && cursor.parentId > 0) {
+      const ancestor = idToMenu.get(cursor.parentId)
+
+      if (!ancestor) {
+        break
+      }
+
+      // 仅收集目录节点作为祖先，跳过理论上不会出现的非目录父级
+      if (ancestor.menuType === 1) {
+        trail.unshift(ancestor)
+      }
+
+      cursor = ancestor
     }
 
-    return menuTree.value.find((menu) => menu.menuId === currentMenu.value?.parentId) ?? null
+    return trail
+  }
+
+  /**
+   * 当前页面所属的完整祖先目录链，用于面包屑生成和侧边栏自动展开。
+   * 三级嵌套（如 系统模块 > 通知管理 > 通知内容）时会返回 [系统模块, 通知管理]。
+   */
+  const activeDirectoryTrail = computed(() => {
+    if (!currentMenu.value) {
+      return [] as NavigationMenuItem[]
+    }
+
+    return buildAncestorTrail(currentMenu.value.menuId)
   })
 
   /**
    * 面包屑与侧边栏共享同一套层级语义：
-   * - 如果页面属于目录，则显示“目录 > 菜单”
-   * - 如果页面本身就是顶层菜单，则只显示菜单自己
+   * - 有祖先目录时，按"顶层目录 > ... > 直接父目录 > 当前菜单"完整展示
+   * - 无祖先目录（顶层菜单）时，只显示菜单自己
    */
   const breadcrumbs = computed(() => {
     if (!currentMenu.value) {
       return []
     }
 
-    if (activeDirectory.value) {
-      return [activeDirectory.value, currentMenu.value]
-    }
-
-    return [currentMenu.value]
+    return [...activeDirectoryTrail.value, currentMenu.value]
   })
 
   /**
@@ -145,12 +176,16 @@ export const useLayoutNavigationStore = defineStore('layout-navigation', () => {
       })
     }
 
-    if (
-      activeDirectory.value &&
-      !expandedDirectoryIds.value.includes(activeDirectory.value.menuId)
-    ) {
-      expandedDirectoryIds.value.push(activeDirectory.value.menuId)
-    }
+    /**
+     * 自动展开当前页面的整条祖先目录链，保证刷新或直进深层菜单时，
+     * 从顶层到直接父级全部展开，用户始终能看到当前位置。
+     * 嵌套目录下只展开直接父级会丢失上层目录可见性，因此遍历完整 trail。
+     */
+    activeDirectoryTrail.value.forEach((ancestor) => {
+      if (!expandedDirectoryIds.value.includes(ancestor.menuId)) {
+        expandedDirectoryIds.value.push(ancestor.menuId)
+      }
+    })
   }
 
   /**
@@ -246,7 +281,7 @@ export const useLayoutNavigationStore = defineStore('layout-navigation', () => {
     dynamicRoutesReady,
     currentPath,
     currentMenu,
-    activeDirectory,
+    activeDirectoryTrail,
     breadcrumbs,
     visitedTabs,
     expandedDirectoryIds,

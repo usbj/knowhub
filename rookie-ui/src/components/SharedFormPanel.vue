@@ -29,6 +29,7 @@ import {
 } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
 import { useDict } from '@/composables/useDict'
+import MarkdownEditor from '@/components/MarkdownEditor.vue'
 import type { SharedFieldSchemaItem, SharedFieldSchemaMap } from '@/types/components/data-display'
 import { getValueByPath, setValueByPath } from '@/utils/object'
 
@@ -86,6 +87,7 @@ const { resolveDictOptions } = useDict()
 const formFields = computed(() =>
   Object.entries(props.schema)
     .filter(([, config]) => config.formVisible !== false)
+    .filter(([, config]) => (!config.visibleWhen || config.visibleWhen(props.modelValue)))
     .sort(([, previousConfig], [, nextConfig]) => (previousConfig.formOrder ?? 0) - (nextConfig.formOrder ?? 0)),
 )
 
@@ -257,6 +259,8 @@ const handleSubmit = async () => {
     :model-value="visible"
     :title="dialogTitle"
     :width="dialogWidth"
+    top="40px"
+    class="shared-form-dialog"
     destroy-on-close
     @close="handleCancel"
     @update:model-value="emit('update:visible', $event)"
@@ -352,6 +356,15 @@ const handleSubmit = async () => {
               v-else-if="fieldConfig.inputType === 'switch'"
               :model-value="Boolean(readFieldValue(fieldKey))"
               :disabled="fieldConfig.disabled"
+              v-bind="fieldConfig.props"
+              @update:model-value="updateFieldValue(fieldKey, $event)"
+            />
+
+            <MarkdownEditor
+              v-else-if="fieldConfig.inputType === 'markdown'"
+              class="shared-form-panel__markdown"
+              :model-value="String(readFieldValue(fieldKey) ?? '')"
+              :placeholder="fieldConfig.placeholder || `请输入${fieldConfig.label}`"
               v-bind="fieldConfig.props"
               @update:model-value="updateFieldValue(fieldKey, $event)"
             />
@@ -476,6 +489,15 @@ const handleSubmit = async () => {
               @update:model-value="updateFieldValue(fieldKey, $event)"
             />
 
+            <MarkdownEditor
+              v-else-if="fieldConfig.inputType === 'markdown'"
+              class="shared-form-panel__markdown"
+              :model-value="String(readFieldValue(fieldKey) ?? '')"
+              :placeholder="fieldConfig.placeholder || `请输入${fieldConfig.label}`"
+              v-bind="fieldConfig.props"
+              @update:model-value="updateFieldValue(fieldKey, $event)"
+            />
+
             <ElInput
               v-else
               :model-value="readFieldValue(fieldKey) as string"
@@ -535,6 +557,14 @@ const handleSubmit = async () => {
   width: 100%;
 }
 
+.shared-form-panel__markdown {
+  width: 100%;
+}
+
+.shared-form-panel__markdown :deep(.v-md-editor) {
+  width: 100%;
+}
+
 .shared-form-panel__actions {
   display: flex;
   justify-content: flex-end;
@@ -560,5 +590,36 @@ const handleSubmit = async () => {
 .shared-form-panel.is-compact .shared-form-panel__form :deep(.el-col) {
   padding-left: 4px !important;
   padding-right: 4px !important;
+}
+</style>
+
+<!--
+  弹窗滚动样式单独用非 scoped 全局块：
+  ElDialog teleport 到 body，scoped 的 data-v 属性锚点不在 teleported 子树内，
+  scoped 选择器匹配不到 .el-dialog；改用全局样式才能稳定命中。
+  shared-form-dialog class 经 $attrs 透传落到 .el-dialog 元素上（与 el-dialog 同元素）。
+-->
+<style>
+/* 弹窗模式：固定弹窗最大高度，内容区（body）限高滚动，
+   header/footer 固定不随内容滚动，避免长表单把整个弹窗撑出屏幕。
+   top 由 ElDialog 的 top="40px" prop 控制（inline style），max-height 留出顶部 40px + 底部 40px。 */
+.shared-form-dialog.el-dialog {
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - 80px);
+}
+
+.shared-form-dialog .el-dialog__header {
+  flex: none;
+}
+
+.shared-form-dialog .el-dialog__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.shared-form-dialog .el-dialog__footer {
+  flex: none;
 }
 </style>

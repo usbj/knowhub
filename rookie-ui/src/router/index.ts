@@ -2,6 +2,7 @@ import { createRouter, createWebHistory } from 'vue-router'
 import { useUserStore } from '@/stores/user'
 import { useDictStore } from '@/stores/dict'
 import { useLayoutNavigationStore } from '@/stores/navigation'
+import { useNoticeStore } from '@/stores/notice'
 import { finishPageTransition, startPageTransition } from '@/composables/usePageTransition'
 import Layout from '@/layout/index.vue'
 import LoginView from '@/views/login.vue'
@@ -92,6 +93,7 @@ router.beforeEach(async (to) => {
   const userStore = useUserStore()
   const dictStore = useDictStore()
   const layoutNavigationStore = useLayoutNavigationStore()
+  const noticeStore = useNoticeStore()
 
   if (to.meta.public) {
     if (userStore.isAuthenticated && to.path === '/login') {
@@ -126,6 +128,8 @@ router.beforeEach(async (to) => {
       registerDynamicRoutes(router, layoutNavigationStore.rawMenuTree)
       layoutNavigationStore.markDynamicRoutesReady()
       await dictStore.initializeDictionaries().catch(() => undefined)
+      // 首屏即拉取当前用户的通知，让头导航铃铛在网站加载时就显示最新未读
+      await noticeStore.fetchMyNotices().catch(() => undefined)
 
       const fallbackPath = getFirstAccessibleMenuPath(layoutNavigationStore.rawMenuTree)
 
@@ -146,6 +150,7 @@ router.beforeEach(async (to) => {
   } catch {
     userStore.logout()
     layoutNavigationStore.resetNavigationState()
+    noticeStore.resetNoticeState()
     unregisterDynamicRoutes(router)
 
     return {

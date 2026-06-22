@@ -23,6 +23,7 @@ export interface ThemePresetItem {
 
 /**
  * 顶部通知下拉使用的统一结构。
+ * 由 notice store 的 SysNoticeRecord 映射而来，供头导航下拉与详情弹窗复用。
  */
 export interface NotificationItem {
   id: number
@@ -32,4 +33,10 @@ export interface NotificationItem {
   unread: boolean
   publisher?: string
   category?: string
+  /** 完整正文，供详情弹窗展示；下拉列表只用 summary 摘要 */
+  content?: string
+  /** 是否需要用户确认，用于详情弹窗决定是否展示确认按钮 */
+  needConfirm?: boolean
+  /** 是否置顶，用于下拉项展示置顶标记 */
+  isTop?: boolean
 }

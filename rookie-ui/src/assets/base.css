@@ -46,6 +46,8 @@
   --rookie-avatar-bg: var(--rookie-primary-soft);
   --rookie-shadow: 0 16px 40px rgba(23, 32, 51, 0.08);
   --rookie-login-gradient-end: color-mix(in srgb, var(--rookie-bg) 88%, #d8e2ef);
+  /* 表格斑马纹底色：浅色下比纯白只略灰一点，避免奇偶行对比过强；深色由主题 store 覆盖为略亮一档 */
+  --rookie-table-stripe-bg: color-mix(in srgb, var(--rookie-text) 3%, var(--rookie-card-bg));
 
   --rookie-sidebar-width: 276px;
   --rookie-sidebar-collapsed-width: 92px;

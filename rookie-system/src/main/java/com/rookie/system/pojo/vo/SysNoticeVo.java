@@ -32,6 +32,8 @@ public class SysNoticeVo {
 
     private String remark;
 
+    private String createBy;
+
     private String createTime;
 
     private List<Long> groupIds;
@@ -147,6 +149,14 @@ public class SysNoticeVo {
 
     public void setRemark(String remark) {
         this.remark = remark;
+    }
+
+    public String getCreateBy() {
+        return createBy;
+    }
+
+    public void setCreateBy(String createBy) {
+        this.createBy = createBy;
     }
 
     public String getCreateTime() {

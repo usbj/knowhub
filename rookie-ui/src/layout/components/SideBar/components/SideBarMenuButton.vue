@@ -5,10 +5,11 @@ import type { SideBarMenuButtonProps } from '@/types/components/navigation'
 const props = defineProps<SideBarMenuButtonProps>()
 
 /**
- * 不同层级的菜单复用同一按钮结构，
- * 通过深度偏移控制缩进，避免为每一级单独维护一套样式。
+ * 层级深度用于弱化非顶层节点的视觉权重（图标更浅、文字更轻），
+ * 辅助辨识"目录套目录"的层级关系；缩进统一由父级容器提供，不再在此叠加内边距，
+ * 避免深层嵌套时文字可用宽度被反复压缩。
  */
-const depthOffset = computed(() => `${Math.max(props.depth ?? 0, 0) * 18}px`)
+const isNested = computed(() => (props.depth ?? 0) > 0)
 </script>
 
 <template>
@@ -20,9 +21,9 @@ const depthOffset = computed(() => `${Math.max(props.depth ?? 0, 0) * 18}px`)
         'is-active': active,
         'is-ancestor-active': ancestorActive,
         'is-collapsed': collapsed,
+        'is-nested': isNested,
       },
     ]"
-    :style="{ '--side-bar-depth-offset': depthOffset }"
   >
     <span class="side-bar-menu-button__icon">
       <component :is="icon" />
@@ -39,7 +40,8 @@ const depthOffset = computed(() => `${Math.max(props.depth ?? 0, 0) * 18}px`)
   align-items: center;
   gap: 12px;
   width: 100%;
-  padding: 0 14px 0 calc(14px + var(--side-bar-depth-offset, 0px));
+  /* 缩进统一由父级 __children 的 padding 提供，按钮自身 padding 固定，避免深层嵌套文字被挤 */
+  padding: 0 14px;
   border-radius: var(--rookie-radius-md);
   color: var(--rookie-text-secondary);
   font-size: var(--rookie-font-size-md);
@@ -78,6 +80,26 @@ const depthOffset = computed(() => `${Math.max(props.depth ?? 0, 0) * 18}px`)
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/**
+ * 嵌套层级（非顶层）的节点弱化视觉权重：图标略小、文字字重更轻，
+ * 让"目录套目录"时子级在视觉上轻于父级，层级关系清晰但不靠缩进堆叠。
+ */
+.side-bar-menu-button.is-nested {
+  font-weight: 500;
+  color: var(--rookie-text-tertiary);
+}
+
+.side-bar-menu-button.is-nested .side-bar-menu-button__icon {
+  width: 28px;
+  height: 28px;
+  background: transparent;
+}
+
+.side-bar-menu-button.is-nested .side-bar-menu-button__icon :deep(svg) {
+  width: 16px;
+  height: 16px;
 }
 
 /**

@@ -106,6 +106,11 @@ export const useThemePreferenceStore = defineStore('theme-preference', () => {
       root.style.setProperty('--rookie-card-bg', '#111827')
       root.style.setProperty('--rookie-border', '#243244')
       root.style.setProperty('--rookie-border-strong', '#334155')
+      // 深色下斑马纹比卡片底略亮一档，保证奇偶行有可辨的微对比，而不是和 card-bg 完全相同
+      root.style.setProperty(
+        '--rookie-table-stripe-bg',
+        'color-mix(in srgb, #ffffff 4%, var(--rookie-card-bg))',
+      )
       root.style.setProperty('--rookie-text', '#e5edf8')
       root.style.setProperty('--rookie-text-secondary', '#b4c2d3')
       root.style.setProperty('--rookie-text-tertiary', '#7f90a8')

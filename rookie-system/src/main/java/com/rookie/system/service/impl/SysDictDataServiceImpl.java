@@ -44,7 +44,12 @@ public class SysDictDataServiceImpl implements SysDictDataService {
         UserInfo userInfo = (UserInfo) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
         dictDataEntity.setCreateBy(userInfo.getUsername());
         dictDataEntity.setUpdateBy(userInfo.getUsername());
-        return sysDictDataMapper.addSysDictData(dictDataEntity);
+        Boolean b = sysDictDataMapper.addSysDictData(dictDataEntity);
+        if (b) {
+            List<SysDictData> dictDataList = sysDictDataMapper.getSysDictDataByDictKey(dictDataVo.getDictKey());
+            DictUtil.setDictData(dictDataVo.getDictKey(), dictDataList);
+        }
+        return b;
     }
 
     @Override

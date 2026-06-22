@@ -75,7 +75,7 @@ const tooltipLabel = computed(() => {
       v-if="collapsed && isDirectory"
       placement="right-start"
       trigger="click"
-      width="220"
+      width="260"
       popper-class="side-bar-section__popover"
     >
       <template #reference>
@@ -165,7 +165,11 @@ const tooltipLabel = computed(() => {
     </template>
 
     <Transition name="side-bar-section-expand">
-      <div v-if="isDirectory && expanded && !collapsed" class="side-bar-section__children">
+      <div
+        v-if="isDirectory && expanded && !collapsed"
+        class="side-bar-section__children"
+        :class="{ 'side-bar-section__children--root': currentDepth === 0 }"
+      >
         <SideBarSection
           v-for="child in item.children"
           :key="child.menuId"
@@ -227,10 +231,18 @@ const tooltipLabel = computed(() => {
 .side-bar-section__children {
   display: grid;
   gap: 8px;
-  padding-left: 10px;
-  border-left: 1px solid var(--rookie-border-strong);
-  margin-left: 17px;
+  /* 缩进统一由这里提供，按钮自身不再叠加内边距，避免深层嵌套文字被挤 */
+  padding-left: 14px;
   overflow: hidden;
+}
+
+/**
+ * 仅顶层目录展开时画一条贯通的浅色引导线，表达"这些子项属于同一父级"；
+ * 嵌套子目录展开时不重复画线，避免出现平行双竖线，层级靠缩进区分即可。
+ */
+.side-bar-section__children--root {
+  border-left: 1px solid var(--rookie-border);
+  margin-left: 17px;
 }
 
 .side-bar-section__arrow {
@@ -261,6 +273,10 @@ const tooltipLabel = computed(() => {
   border-radius: var(--rookie-radius-sm);
   color: var(--rookie-text-secondary);
   font-size: var(--rookie-font-size-sm);
+  /* 嵌套目录拍平后的标签较长（如"系统模块 / 通知管理 / 通知内容"），超长时省略避免撑破浮层 */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .side-bar-section__popover-link:hover {
@@ -286,7 +302,8 @@ const tooltipLabel = computed(() => {
 
 .side-bar-section-expand-enter-to,
 .side-bar-section-expand-leave-from {
-  max-height: 520px;
+  /* 容纳目录套目录的多层嵌套展开，留足深度余量 */
+  max-height: 760px;
   opacity: 1;
   margin-top: 0;
 }

@@ -1,7 +1,19 @@
 import type { FormRules } from 'element-plus'
-import type { SharedFieldSchemaMap } from '@/types/components/data-display'
+import type { SharedFieldSchemaMap, SharedFieldTagType } from '@/types/components/data-display'
 import type { SysDictDataRecord } from '@/types/api/system/dict'
 import { formatDateTime } from '@/utils/format'
+
+/**
+ * 标签类型选项 value 到 Element Plus 标签类型的映射，
+ * "标签类型"与"标签风格"两列共用，保证两列颜色口径一致。
+ */
+const TAG_TYPE_MAP: Record<string, SharedFieldTagType> = {
+  info: 'info',
+  primary: 'primary',
+  success: 'success',
+  warning: 'warning',
+  danger: 'danger',
+}
 
 export interface DictDataQueryFormState {
   dictId?: number
@@ -104,13 +116,32 @@ export const createDictDataSchema = (
     formOrder: 4,
     span: 12,
   },
+  tagPreview: {
+    label: '标签展示',
+    tableVisible: true,
+    formVisible: false,
+    tableOrder: 6,
+    // 表格中专用的标签预览列：把本行数据标签按其标签类型、标签风格、样式类名
+    // 组合成一个真实标签展示，直观体现该字典数据在业务中渲染出的样式。
+    // 文字、颜色、风格、类名均跨字段读取，本字段不对应实际数据属性，
+    // 因此仅在表格展示、不参与表单编辑。
+    renderType: 'tag',
+    tagRender: {
+      labelField: 'dictDataLabel',
+      typeField: 'tagType',
+      effectField: 'tagEffect',
+      classField: 'cssClass',
+      tagTypeMap: TAG_TYPE_MAP,
+      placeholder: '--',
+    },
+  },
   tagType: {
     label: '标签类型',
     inputType: 'select',
     placeholder: '请选择标签类型',
-    tableVisible: true,
+    // 表格中已由"标签展示"列统一预览，不再单独成列；保留在表单供编辑。
+    tableVisible: false,
     formVisible: true,
-    tableOrder: 6,
     formOrder: 5,
     span: 12,
     options: [
@@ -125,9 +156,9 @@ export const createDictDataSchema = (
     label: '标签风格',
     inputType: 'select',
     placeholder: '请选择标签风格',
-    tableVisible: true,
+    // 表格中已由"标签展示"列统一预览，不再单独成列；保留在表单供编辑。
+    tableVisible: false,
     formVisible: true,
-    tableOrder: 7,
     formOrder: 6,
     span: 12,
     options: [
@@ -140,23 +171,21 @@ export const createDictDataSchema = (
     label: '样式类名',
     inputType: 'text',
     placeholder: '请输入自定义类名',
-    tableVisible: true,
+    // 表格中已由"标签展示"列通过 classField 应用，不再单独成列；保留在表单供编辑。
+    tableVisible: false,
     formVisible: true,
-    tableOrder: 8,
     formOrder: 7,
     span: 12,
-    tableMinWidth: 160,
   },
   extJson: {
     label: '扩展配置',
     inputType: 'textarea',
     placeholder: '请输入扩展 JSON',
-    tableVisible: true,
+    // 扩展配置属于详情级内容，表格中不再展示；保留在表单供编辑。
+    tableVisible: false,
     formVisible: true,
-    tableOrder: 9,
     formOrder: 8,
     span: 12,
-    tableMinWidth: 180,
     props: {
       rows: 3,
     },

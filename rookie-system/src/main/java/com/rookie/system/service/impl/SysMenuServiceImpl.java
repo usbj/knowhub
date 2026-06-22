@@ -62,7 +62,7 @@ public class SysMenuServiceImpl implements SysMenuService {
         try {
             sysMenuMapper.editSysMenuInfo(sysMenu);
         } catch (Exception e) {
-            throw new ServiceException(500,"菜单更改失败");
+            throw new ServiceException(500,"菜单更改失败",e.getMessage());
         }
         return true;
     }

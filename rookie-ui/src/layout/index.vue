@@ -4,26 +4,25 @@ import { useRoute } from 'vue-router'
 import { startPageTransition } from '@/composables/usePageTransition'
 import MainContentShell from './components/MainContentShell.vue'
 import NavBar from './components/NavBar/index.vue'
-import PromptPanel from './components/PromptPanel.vue'
+import NoticeDetailDialog from '@/components/NoticeDetailDialog.vue'
 import SideBar from './components/SideBar/index.vue'
 import ThemeSettingsDrawer from './components/ThemeSettingsDrawer.vue'
 import { useLayoutNavigationStore } from '@/stores/navigation'
-import type { PromptMode, PromptNoticeMeta } from '@/types/components/prompt'
+import { useNoticeStore } from '@/stores/notice'
+import type { SysNoticeRecord } from '@/types/api/system/notice'
 import type { NotificationItem } from '@/types/components/theme'
 
 const route = useRoute()
 const layoutNavigationStore = useLayoutNavigationStore()
+const noticeStore = useNoticeStore()
 const collapsed = ref(false)
 const settingsVisible = ref(false)
 const currentViewKey = ref(0)
-const promptVisible = ref(false)
-const promptMode = ref<PromptMode>('prompt')
-const promptTitle = ref('')
-const promptContent = ref('')
-const promptNoticeMeta = ref<PromptNoticeMeta>()
+const noticeDetailVisible = ref(false)
+const currentNotice = ref<SysNoticeRecord | null>(null)
 
 /**
- * 布局层负责把“当前路由”同步给导航 store。
+ * 布局层负责把"当前路由"同步给导航 store。
  * 这样侧边栏、面包屑、标签页会围绕同一份 currentPath 更新。
  */
 watch(
@@ -37,20 +36,40 @@ watch(
   { immediate: true },
 )
 
-const openNoticePrompt = (item: NotificationItem) => {
-  promptMode.value = 'notice'
-  promptVisible.value = true
-  promptTitle.value = item.title
-  promptContent.value = item.summary
-  promptNoticeMeta.value = {
-    publisher: item.publisher || '系统公告',
-    publishTime: item.time,
-    category: item.category,
+/**
+ * 方法效果：
+ * 打开通知详情弹窗，展示完整正文（非下拉 summary），
+ * 并在打开的同时调用 markAsRead 标记已读、刷新铃铛徽标。
+ * 参数：
+ * - `item`：头导航通知下拉传递的展示项，内含 noticeId 用于查完整记录。
+ * 返回值：
+ * - 无返回值；副作用是更新弹窗状态并将通知标记为已读。
+ */
+const openNoticeDetail = (item: NotificationItem) => {
+  currentNotice.value = noticeStore.getNoticeById(item.id)
+  noticeDetailVisible.value = true
+
+  // 点开详情即标记已读，铃铛徽标即时减少
+  if (item.unread) {
+    noticeStore.markAsRead(item.id)
   }
 }
 
-const closePrompt = () => {
-  promptVisible.value = false
+const closeNoticeDetail = () => {
+  noticeDetailVisible.value = false
+}
+
+/**
+ * 方法效果：
+ * 详情弹窗点击"确认"按钮时调用，调 store 确认接口乐观更新 hasConfirmed，
+ * 确认成功后按钮自动隐藏（由 NoticeDetailDialog 的 showConfirmButton 计算）。
+ * 参数：
+ * - `noticeId`：通知主键。
+ * 返回值：
+ * - 无返回值；副作用是调用 store 确认方法。
+ */
+const handleConfirmNotice = (noticeId: number) => {
+  noticeStore.confirmNotice(noticeId)
 }
 
 /**
@@ -72,19 +91,17 @@ const handleRefreshView = () => {
       <NavBar
         :collapsed="collapsed"
         @open-settings="settingsVisible = true"
-        @open-notice="openNoticePrompt"
+        @open-notice="openNoticeDetail"
         @toggle-sidebar="collapsed = !collapsed"
         @refresh-view="handleRefreshView"
       />
       <MainContentShell :view-key="`${route.fullPath}-${currentViewKey}`" />
     </div>
-    <PromptPanel
-      :visible="promptVisible"
-      :mode="promptMode"
-      :title="promptTitle"
-      :content="promptContent"
-      :notice-meta="promptNoticeMeta"
-      @close="closePrompt"
+    <NoticeDetailDialog
+      :visible="noticeDetailVisible"
+      :notice="currentNotice"
+      @update:visible="noticeDetailVisible = $event"
+      @confirm="handleConfirmNotice"
     />
     <ThemeSettingsDrawer v-model:visible="settingsVisible" />
   </div>
