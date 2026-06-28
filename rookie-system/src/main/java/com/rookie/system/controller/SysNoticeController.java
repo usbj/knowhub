@@ -11,6 +11,7 @@ import com.rookie.system.service.SysNoticeService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
@@ -26,6 +27,7 @@ public class SysNoticeController {
 
     @GetMapping("/list")
     @Operation(summary = "获取消息通知列表")
+    @PreAuthorize("hasAuthority('system:notice:quarry')")
     public Result<PageInfo<SysNoticeVo>> quarrySysNotice(NoticeQuarry quarry) {
         PageInfo<SysNoticeVo> pageInfo = sysNoticeService.quarrySysNotice(quarry);
         return Result.success(pageInfo);
@@ -33,6 +35,7 @@ public class SysNoticeController {
 
     @GetMapping("/{noticeId}")
     @Operation(summary = "获取消息通知详情")
+    @PreAuthorize("hasAuthority('system:notice:info')")
     public Result<SysNoticeVo> getSysNoticeInfo(@PathVariable Long noticeId) {
         SysNoticeVo vo = sysNoticeService.getSysNoticeInfo(noticeId);
         return Result.success(vo);
@@ -41,6 +44,7 @@ public class SysNoticeController {
     @PostMapping()
     @Operation(summary = "添加消息通知")
     @Log(title = "消息通知", businessType = BusinessType.INSERT)
+    @PreAuthorize("hasAuthority('system:notice:add')")
     public Result<Boolean> addSysNotice(@RequestBody SysNoticeVo vo) {
         Boolean b = sysNoticeService.addSysNoticeInfo(vo);
         return Result.success(b);
@@ -49,6 +53,7 @@ public class SysNoticeController {
     @PutMapping()
     @Operation(summary = "编辑消息通知")
     @Log(title = "消息通知", businessType = BusinessType.UPDATE)
+    @PreAuthorize("hasAuthority('system:notice:edit')")
     public Result<Boolean> editSysNotice(@RequestBody SysNoticeVo vo) {
         Boolean b = sysNoticeService.editSysNoticeInfo(vo);
         return Result.success(b);
@@ -57,6 +62,7 @@ public class SysNoticeController {
     @DeleteMapping("/{noticeIds}")
     @Operation(summary = "批量删除消息通知")
     @Log(title = "消息通知", businessType = BusinessType.DELETE)
+    @PreAuthorize("hasAuthority('system:notice:delete')")
     public Result<Boolean> deleteSysNotice(@PathVariable Long[] noticeIds) {
         Boolean b = sysNoticeService.deleteSysNoticeInfo(noticeIds);
         return Result.success(b);
@@ -65,6 +71,7 @@ public class SysNoticeController {
     @PutMapping("/publish/{noticeId}")
     @Operation(summary = "发布消息通知")
     @Log(title = "消息通知", businessType = BusinessType.UPDATE)
+    @PreAuthorize("hasAuthority('system:notice:publish')")
     public Result<Boolean> publishSysNotice(@PathVariable Long noticeId) {
         Boolean b = sysNoticeService.publishSysNotice(noticeId);
         return Result.success(b);
@@ -73,6 +80,7 @@ public class SysNoticeController {
     @PutMapping("/revoke/{noticeId}")
     @Operation(summary = "撤回消息通知")
     @Log(title = "消息通知", businessType = BusinessType.UPDATE)
+    @PreAuthorize("hasAuthority('system:notice:revoke')")
     public Result<Boolean> revokeSysNotice(@PathVariable Long noticeId) {
         Boolean b = sysNoticeService.revokeSysNotice(noticeId);
         return Result.success(b);

@@ -12,6 +12,7 @@ import com.rookie.system.service.SysUserService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
@@ -29,6 +30,7 @@ public class SysUserController  {
 
     @GetMapping("/list")
     @Operation(summary = "获取用户列表")
+    @PreAuthorize("hasAuthority('system:user:quarry')")
     public Result<PageInfo<SysUserVo>> quarrySysUserList(UserQuarry userQuarry) {
         PageInfo<SysUserVo> pageInfo = sysUserService.quarrySysUser(userQuarry);
         return Result.success(pageInfo);
@@ -37,6 +39,7 @@ public class SysUserController  {
     @PutMapping()
     @Operation(summary = "更改用户信息")
     @Log(title = "用户管理", businessType = BusinessType.UPDATE)
+    @PreAuthorize("hasAuthority('system:user:edit')")
     public Result<Boolean> editSysUserInfo(@RequestBody SysUserVo userVo) {
         Boolean b = sysUserService.editSysUserInfo(userVo);
         return Result.success(b);
@@ -44,6 +47,7 @@ public class SysUserController  {
 
     @GetMapping("/{userId}")
     @Operation(summary = "获取用户详细信息")
+    @PreAuthorize("hasAuthority('system:user:info')")
     public Result<SysUserVo> getSysUserInfo(@PathVariable Long userId ) {
         SysUserVo userVo = sysUserService.selectSysUserVoById(userId);
         return Result.success(userVo);
@@ -52,6 +56,7 @@ public class SysUserController  {
     @PostMapping()
     @Operation(summary = "添加用户")
     @Log(title = "用户管理", businessType = BusinessType.INSERT)
+    @PreAuthorize("hasAuthority('system:user:add')")
     public Result<Boolean> addSysUser(@RequestBody SysUserVo userVo) {
         Boolean b = sysUserService.addSysUserInfo(userVo);
         return Result.success(b);
@@ -60,6 +65,7 @@ public class SysUserController  {
     @DeleteMapping("/{userIds}")
     @Operation(summary = "删除用户（可批量）")
     @Log(title = "用户管理", businessType = BusinessType.DELETE)
+    @PreAuthorize("hasAuthority('system:user:delete')")
     public Result<Boolean> deleteSysUsers(@PathVariable Long[] userIds) {
         Boolean b = sysUserService.deleteSysUser(userIds);
         return Result.success(b);
@@ -68,6 +74,7 @@ public class SysUserController  {
     @PutMapping("/status")
     @Operation(summary = "更改用户状态")
     @Log(title = "用户管理", businessType = BusinessType.UPDATE)
+    @PreAuthorize("hasAuthority('system:user:edit')")
     public Result<Boolean> changeSysUserStatus(Long userId, Integer status) {
         Boolean b = sysUserService.chargeSysUserStatus(userId, status);
         return Result.success(b);

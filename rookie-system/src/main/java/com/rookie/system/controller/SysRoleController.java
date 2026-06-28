@@ -11,6 +11,7 @@ import com.rookie.system.service.SysRoleService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 
@@ -30,6 +31,7 @@ public class SysRoleController {
 
     @GetMapping("/list")
     @Operation(summary = "获取角色列表")
+    @PreAuthorize("hasAuthority('system:role:quarry')")
     public Result<PageInfo<SysRoleVo>> quarrySysRoleVo(RoleQuarry roleQuarry){
         PageInfo<SysRoleVo> roleVoPageInfo = sysRoleService.quarrySysRole(roleQuarry);
         return Result.success(roleVoPageInfo);
@@ -37,6 +39,7 @@ public class SysRoleController {
 
     @GetMapping("/{roleId}")
     @Operation(summary = "获取角色详细信息")
+    @PreAuthorize("hasAuthority('system:role:info')")
     public Result<SysRoleVo> getSysRoleInfo(@PathVariable Long roleId) {
         SysRoleVo sysRoleInfo = sysRoleService.getSysRoleInfo(roleId);
         return Result.success(sysRoleInfo);
@@ -45,6 +48,7 @@ public class SysRoleController {
     @PutMapping()
     @Operation(summary = "更改角色信息")
     @Log(title = "角色管理", businessType = BusinessType.UPDATE)
+    @PreAuthorize("hasAuthority('system:role:edit')")
     public Result<Boolean> editSysRoleInfo(@RequestBody SysRoleVo sysRoleVo){
         Boolean b = sysRoleService.editSysRoleInfo(sysRoleVo);
         return Result.success(b);
@@ -54,6 +58,7 @@ public class SysRoleController {
     @PostMapping()
     @Operation(summary = "添加角色")
     @Log(title = "角色管理", businessType = BusinessType.INSERT)
+    @PreAuthorize("hasAuthority('system:role:add')")
     public Result<Boolean> addSysRoleInfo(@RequestBody SysRoleVo sysRoleVo){
         Boolean b = sysRoleService.addSysRoleInfo(sysRoleVo);
         return Result.success(b);
@@ -62,6 +67,7 @@ public class SysRoleController {
     @DeleteMapping("/{roleIds}")
     @Operation(summary = "批量删除角色")
     @Log(title = "角色管理", businessType = BusinessType.DELETE)
+    @PreAuthorize("hasAuthority('system:role:delete')")
     public Result<Boolean> deleteSysRoleInfo(@PathVariable Long[] roleIds) {
         Boolean b = sysRoleService.deleteSysRoleInfo(roleIds);
         return Result.success(b);
@@ -70,6 +76,7 @@ public class SysRoleController {
     @PutMapping("/status")
     @Operation(summary = "更改角色状态")
     @Log(title = "角色管理", businessType = BusinessType.UPDATE)
+    @PreAuthorize("hasAuthority('system:role:status')")
     public Result<Boolean> changeSysRoleStatus(Long roleId,Integer status){
         Boolean b = sysRoleService.changeSysRoleStatus(roleId, status);
         return Result.success(b);
@@ -78,6 +85,7 @@ public class SysRoleController {
     @PutMapping("/default/{roleId}")
     @Operation(summary = "设置默认角色")
     @Log(title = "角色管理", businessType = BusinessType.GRANT)
+    @PreAuthorize("hasAuthority('system:role:default')")
     public Result<Boolean> setTheDefaultRole(@PathVariable Long roleId){
         Boolean b = sysRoleService.setTheDefaultRole(roleId);
         return Result.success(b);

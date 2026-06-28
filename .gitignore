@@ -36,7 +36,8 @@ build/
 **/graphify-out/
 
 ### Local documentation scratch ###
-/doc/
+/doc/README.md
+/doc/综合知识库管理系统-项目文档初稿.md
 
 # 开发者进阶文档（仅本地协作使用，不进仓库历史）
 /README.dev.md
