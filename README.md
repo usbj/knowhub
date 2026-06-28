@@ -38,7 +38,7 @@ rookie/
 ├─ rookie-framework/   框架层：Security 配置、鉴权衔接、AOP、日志切面、异步配置
 ├─ rookie-system/      系统业务：用户/角色/菜单/字典/通知/日志的 Service、Mapper、Controller
 ├─ rookie-ui/          Vue 3 前端工程（独立于 Maven 多模块）
-├─ sql/                数据库脚本（建表 / 字典 / 菜单初始化）
+├─ sql/                数据库脚本（单文件 rookie.sql：建表 + 关键数据初始化）
 ├─ pom.xml             Maven 聚合配置
 └─ README.dev.md       面向开发者的详细文档（协作约定、模块边界、主题适配清单等）
 ```
@@ -58,7 +58,7 @@ rookie/
 ### 后端
 
 ```bash
-# 1. 初始化数据库（在 MySQL 中执行 sql/ 下脚本）
+# 1. 初始化数据库（在 MySQL 中执行 sql/rookie.sql，含建库 + 14 张表 + 菜单/字典/角色等关键数据）
 # 2. 按需修改 rookie-admin/src/main/resources/application.yml 的数据源与 Redis 配置
 # 3. 编译并启动
 ./mvnw clean install -DskipTests

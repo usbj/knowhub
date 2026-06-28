@@ -10,6 +10,7 @@ import com.rookie.system.service.SysNoticeGroupService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -24,6 +25,7 @@ public class SysNoticeGroupController {
 
     @GetMapping("/list")
     @Operation(summary = "获取通知分组列表")
+    @PreAuthorize("hasAuthority('system:noticeGroup:quarry')")
     public Result<PageInfo<SysNoticeGroupVo>> quarrySysNoticeGroup(NoticeGroupQuarry quarry) {
         PageInfo<SysNoticeGroupVo> page = sysNoticeGroupService.quarrySysNoticeGroup(quarry);
         return Result.success(page);
@@ -31,6 +33,7 @@ public class SysNoticeGroupController {
 
     @GetMapping("/{groupId}")
     @Operation(summary = "获取通知分组详情")
+    @PreAuthorize("hasAuthority('system:noticeGroup:info')")
     public Result<SysNoticeGroupVo> getSysNoticeGroupInfo(@PathVariable Long groupId) {
         SysNoticeGroupVo vo = sysNoticeGroupService.getSysNoticeGroupInfo(groupId);
         return Result.success(vo);
@@ -39,6 +42,7 @@ public class SysNoticeGroupController {
     @PostMapping()
     @Operation(summary = "添加通知分组")
     @Log(title = "通知分组", businessType = BusinessType.INSERT)
+    @PreAuthorize("hasAuthority('system:noticeGroup:add')")
     public Result<Boolean> addSysNoticeGroup(@RequestBody SysNoticeGroupVo vo) {
         Boolean b = sysNoticeGroupService.addSysNoticeGroupInfo(vo);
         return Result.success(b);
@@ -47,6 +51,7 @@ public class SysNoticeGroupController {
     @PutMapping()
     @Operation(summary = "编辑通知分组")
     @Log(title = "通知分组", businessType = BusinessType.UPDATE)
+    @PreAuthorize("hasAuthority('system:noticeGroup:edit')")
     public Result<Boolean> editSysNoticeGroup(@RequestBody SysNoticeGroupVo vo) {
         Boolean b = sysNoticeGroupService.editSysNoticeGroupInfo(vo);
         return Result.success(b);
@@ -55,6 +60,7 @@ public class SysNoticeGroupController {
     @DeleteMapping("/{groupIds}")
     @Operation(summary = "批量删除通知分组")
     @Log(title = "通知分组", businessType = BusinessType.DELETE)
+    @PreAuthorize("hasAuthority('system:noticeGroup:delete')")
     public Result<Boolean> deleteSysNoticeGroup(@PathVariable Long[] groupIds) {
         Boolean b = sysNoticeGroupService.deleteSysNoticeGroupInfo(groupIds);
         return Result.success(b);
@@ -63,6 +69,7 @@ public class SysNoticeGroupController {
     @PostMapping("/{groupId}/members")
     @Operation(summary = "向分组批量添加成员")
     @Log(title = "通知分组", businessType = BusinessType.INSERT)
+    @PreAuthorize("hasAuthority('system:noticeGroup:member')")
     public Result<Boolean> addMembers(@PathVariable Long groupId, @RequestBody List<Long> userIds) {
         Boolean b = sysNoticeGroupService.addMembers(groupId, userIds);
         return Result.success(b);
@@ -71,6 +78,7 @@ public class SysNoticeGroupController {
     @DeleteMapping("/{groupId}/members")
     @Operation(summary = "批量移除分组成员")
     @Log(title = "通知分组", businessType = BusinessType.DELETE)
+    @PreAuthorize("hasAuthority('system:noticeGroup:member')")
     public Result<Boolean> removeMembers(@PathVariable Long groupId, @RequestBody List<Long> memberIds) {
         Boolean b = sysNoticeGroupService.removeMembers(groupId, memberIds);
         return Result.success(b);

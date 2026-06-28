@@ -19,4 +19,11 @@ public interface UserInfoMapper {
 
     ArrayList<String> getPermKeyById(ArrayList<Integer> menus);
 
+    /**
+     * 查询全部启用且未删除的按钮型权限标识（system:xxx:yyy），供 admin 直通兜底加载。
+     *
+     * @return 全部按钮权限 perm_key 列表；无结果时返回空集合
+     */
+    ArrayList<String> selectAllPermKey();
+
 }

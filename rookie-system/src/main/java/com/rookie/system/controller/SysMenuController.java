@@ -10,6 +10,7 @@ import com.rookie.system.service.SysMenuService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -25,6 +26,7 @@ public class SysMenuController {
 
     @GetMapping("/list")
     @Operation(summary = "菜单列表")
+    @PreAuthorize("hasAuthority('system:menu:quarry')")
     public Result<List<SysMenuVo>> quarrySysMenu(MenuQuarry menuQuarry) {
         List<SysMenuVo> sysMenuVos = sysMenuService.quarrySysMenu(menuQuarry);
         return Result.success(sysMenuVos);
@@ -33,6 +35,7 @@ public class SysMenuController {
     @PostMapping()
     @Operation(summary = "添加菜单")
     @Log(title = "菜单管理", businessType = BusinessType.INSERT)
+    @PreAuthorize("hasAuthority('system:menu:add')")
     public Result<Boolean> addSysMenu(@RequestBody SysMenuVo menuVo) {
         Boolean b = sysMenuService.addSysMenu(menuVo);
         return Result.success(b);
@@ -41,6 +44,7 @@ public class SysMenuController {
     @PutMapping()
     @Operation(summary = "更改菜单信息")
     @Log(title = "菜单管理", businessType = BusinessType.UPDATE)
+    @PreAuthorize("hasAuthority('system:menu:edit')")
     public Result<Boolean> editSysMenu(@RequestBody SysMenuVo menuVo){
         Boolean b = sysMenuService.editSysMenu(menuVo);
         return Result.success(b);
@@ -48,6 +52,7 @@ public class SysMenuController {
 
     @GetMapping("/{menuId}")
     @Operation(summary = "获取菜单详情")
+    @PreAuthorize("hasAuthority('system:menu:info')")
     public Result<SysMenuVo> sysMenuInfo(@PathVariable Integer menuId){
         SysMenuVo sysMenuInfo = sysMenuService.getSysMenuInfo(menuId);
         return Result.success(sysMenuInfo);
@@ -56,6 +61,7 @@ public class SysMenuController {
     @DeleteMapping("/{menuIds}")
     @Operation(summary = "删除菜单信息")
     @Log(title = "菜单管理", businessType = BusinessType.DELETE)
+    @PreAuthorize("hasAuthority('system:menu:delete')")
     public Result<Boolean> deleteSysMenu(@PathVariable Integer[] menuIds){
         Boolean b = sysMenuService.deleteSysMenuInfo(menuIds);
         return Result.success(b);
@@ -64,6 +70,7 @@ public class SysMenuController {
     @PutMapping("/status")
     @Operation(summary = "更改菜单状态")
     @Log(title = "菜单管理", businessType = BusinessType.UPDATE)
+    @PreAuthorize("hasAuthority('system:menu:status')")
     public Result<Boolean> changeSysMenuStatus(Integer menuId,Integer status){
         Boolean b = sysMenuService.changeSysMenuStatus(menuId, status);
         return Result.success(b);
