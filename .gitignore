@@ -31,3 +31,34 @@ build/
 
 ### VS Code ###
 .vscode/
+
+### Local analysis artifacts ###
+**/graphify-out/
+
+### Local documentation scratch ###
+/doc/
+
+# 开发者进阶文档（仅本地协作使用，不进仓库历史）
+/README.dev.md
+/rookie-ui/README.dev.md
+
+### agent ###
+.claude
+
+### Frontend / Vue ###
+node_modules/
+dist/
+coverage/
+.vite/
+.nuxt/
+.output/
+.cache/
+.parcel-cache/
+.npm/
+.pnpm-store/
+.yarn/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+/AGENTS.md

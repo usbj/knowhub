@@ -1,9 +1,18 @@
 package com.rookie.admin;
 
+import org.mybatis.spring.annotation.MapperScan;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 
-@SpringBootApplication
+/*
+* TODO 其他：权限校验，日志记录
+* */
+
+/*
+* TODO mapper 改进为resultMapper sql的*改为指定的列
+* */
+@SpringBootApplication(scanBasePackages = {"com.rookie"})
+//@MapperScan("com.rookie.**.mapper")
 public class RookieApplication {
 
     public static void main(String[] args) {

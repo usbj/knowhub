@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Rookie Admin - Menus</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="brand-mark">R</div>
+          <div><p class="brand-name">Rookie Admin</p><p class="brand-subtitle">后台设计稿</p></div>
+        </div>
+        <nav class="nav-group">
+          <p class="nav-label">总览</p>
+          <a class="nav-item" href="./dashboard.html">工作台</a>
+          <a class="nav-item" href="./users.html">用户管理</a>
+          <a class="nav-item" href="./roles.html">角色与权限</a>
+          <a class="nav-item active" href="./menus.html">菜单配置</a>
+          <a class="nav-item" href="./dict.html">字典配置</a>
+        </nav>
+        <nav class="nav-group">
+          <p class="nav-label">系统</p>
+          <a class="nav-item" href="./settings.html">界面设置</a>
+          <a class="nav-item" href="./index.html">设计目录</a>
+        </nav>
+      </aside>
+
+      <main class="main-area">
+        <div class="shell-header">
+          <header class="topbar">
+            <div class="topbar-left">
+              <div class="crumbs">
+                <p class="section-kicker">System / Menu</p>
+                <h1>菜单配置</h1>
+                <p>菜单树和详情编辑要同时可见，避免管理多层级时丢失空间感。</p>
+              </div>
+              <div class="search-shell">搜索菜单名称、路由地址、权限标识</div>
+            </div>
+            <div class="topbar-right">
+              <button class="ghost-button">发布导航</button>
+              <div class="profile-chip">
+                <span class="avatar">WY</span>
+                <div class="profile-meta"><strong>王宇</strong><span>超级管理员</span></div>
+              </div>
+            </div>
+          </header>
+
+          <div class="tabs-bar">
+            <span class="tab-chip">工作台</span>
+            <span class="tab-chip active">菜单配置</span>
+            <span class="tab-chip">导航预览</span>
+          </div>
+        </div>
+
+        <div class="content-wrap">
+        <section class="page-section split-layout">
+          <article class="panel">
+            <div class="panel-head">
+              <div>
+                <h3>菜单树</h3>
+                <p class="subtle">树结构比表格更适合这个场景</p>
+              </div>
+              <button class="ghost-button">展开全部</button>
+            </div>
+            <div class="stack-list">
+              <div class="stack-item active"><strong>仪表盘</strong><span class="list-meta">/dashboard</span></div>
+              <div class="stack-item"><strong>系统管理</strong><span class="list-meta">/system</span></div>
+              <div class="stack-item indent"><strong>用户管理</strong><span class="list-meta">/system/user</span></div>
+              <div class="stack-item indent"><strong>角色管理</strong><span class="list-meta">/system/role</span></div>
+              <div class="stack-item indent"><strong>菜单管理</strong><span class="list-meta">/system/menu</span></div>
+              <div class="stack-item indent"><strong>字典管理</strong><span class="list-meta">/system/dict</span></div>
+            </div>
+          </article>
+
+          <article class="panel">
+            <div class="panel-head">
+              <div>
+                <h3>菜单详情</h3>
+                <p class="subtle">编辑面板应当解释层级、路由、缓存与展示规则</p>
+              </div>
+              <button class="primary-button">保存修改</button>
+            </div>
+            <div class="form-grid">
+              <div class="form-item">菜单名称<strong>用户管理</strong></div>
+              <div class="form-item">父级节点<strong>系统管理</strong></div>
+              <div class="form-item">路由地址<strong>/system/user</strong></div>
+              <div class="form-item">组件路径<strong>system/user/index</strong></div>
+              <div class="form-item">权限标识<strong>system:user:list</strong></div>
+              <div class="form-item">显示顺序<strong>20</strong></div>
+            </div>
+            <div class="legend-row">
+              <span class="chip">侧边栏可见</span>
+              <span class="chip">固定标签</span>
+              <span class="chip">开启缓存</span>
+              <span class="chip">显示图标</span>
+            </div>
+            <div class="panel" style="margin-top:16px;">
+              <div class="panel-head">
+                <div>
+                  <h3>导航预览</h3>
+                  <p class="subtle">右侧可做桌面端效果预览，方便确认排序和命名</p>
+                </div>
+              </div>
+              <div class="bar-chart">
+                <div class="bar h82"></div>
+                <div class="bar h68"></div>
+                <div class="bar h58"></div>
+              </div>
+            </div>
+          </article>
+        </section>
+        </div>
+      </main>
+    </div>
+  </body>
+</html>

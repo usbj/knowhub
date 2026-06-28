@@ -1,0 +1,484 @@
+@import './base.css';
+
+.el-button {
+  --el-button-bg-color: var(--rookie-card-bg);
+  --el-button-text-color: var(--rookie-text);
+  --el-button-border-color: var(--rookie-border);
+  --el-button-hover-bg-color: var(--rookie-surface-muted);
+  --el-button-hover-text-color: var(--rookie-text);
+  --el-button-hover-border-color: var(--rookie-border-strong);
+  --el-button-active-bg-color: var(--rookie-surface-muted);
+  --el-button-active-text-color: var(--rookie-text);
+  --el-button-active-border-color: var(--rookie-border-strong);
+}
+
+.el-input__wrapper,
+.el-select__wrapper,
+.el-textarea__inner,
+.el-input-number__wrapper,
+.el-date-editor.el-input__wrapper {
+  background: var(--rookie-card-bg) !important;
+  box-shadow: 0 0 0 1px var(--rookie-border) inset !important;
+}
+
+.el-input.is-disabled .el-input__wrapper,
+.el-textarea.is-disabled .el-textarea__inner,
+.el-select .el-select__wrapper.is-disabled,
+.el-date-editor.is-disabled {
+  background: var(--rookie-surface-muted) !important;
+  box-shadow: 0 0 0 1px var(--rookie-border) inset !important;
+}
+
+.el-input__inner,
+.el-select__placeholder,
+.el-textarea__inner,
+.el-date-editor .el-range-input,
+.el-date-editor .el-range-separator,
+.el-select__selected-item,
+.el-input-number__decrease,
+.el-input-number__increase {
+  color: var(--rookie-text) !important;
+}
+
+.el-input-number__decrease,
+.el-input-number__increase {
+  background: var(--rookie-surface-muted) !important;
+  border-color: var(--rookie-border) !important;
+}
+
+.el-input-number__decrease:hover,
+.el-input-number__increase:hover {
+  background: var(--rookie-hover-bg) !important;
+  color: var(--rookie-text) !important;
+}
+
+.el-input__inner::placeholder,
+.el-textarea__inner::placeholder,
+.el-range-input::placeholder {
+  color: var(--rookie-text-tertiary) !important;
+}
+
+.el-dialog,
+.el-dialog__header,
+.el-dialog__body,
+.el-dialog__footer {
+  background: var(--rookie-card-bg) !important;
+  color: var(--rookie-text) !important;
+}
+
+.el-table,
+.el-table__inner-wrapper,
+.el-table th.el-table__cell,
+.el-table tr,
+.el-table__body,
+.el-table__header,
+.el-table__fixed,
+.el-table__fixed-right,
+.el-table__fixed-left {
+  background: var(--rookie-card-bg) !important;
+  color: var(--rookie-text) !important;
+}
+
+.el-table th.el-table__cell {
+  background: var(--rookie-surface-muted) !important;
+}
+
+.el-table--striped .el-table__body tr.el-table__row--striped td.el-table__cell {
+  background: var(--rookie-table-stripe-bg) !important;
+}
+
+.el-table .el-table__body tr:hover > td.el-table__cell {
+  background: var(--rookie-hover-bg) !important;
+}
+
+.el-table td.el-table__cell,
+.el-table th.el-table__cell,
+.el-table--border::after,
+.el-table--border::before,
+.el-table__inner-wrapper::before {
+  border-color: var(--rookie-border) !important;
+}
+
+.el-table::before,
+.el-table__inner-wrapper::before,
+.el-table__border-left-patch {
+  background: var(--rookie-border) !important;
+}
+
+.el-table__fixed-right::before,
+.el-table__fixed-left::before {
+  background: var(--rookie-border) !important;
+}
+
+.el-pagination,
+.el-pagination__total,
+.el-pagination__jump,
+.el-pagination__classifier {
+  color: var(--rookie-text-secondary) !important;
+}
+
+.el-pagination .btn-next,
+.el-pagination .btn-prev,
+.el-pagination .el-pager li,
+.el-pagination .el-input__wrapper,
+.el-pagination .el-select__wrapper {
+  background: var(--rookie-card-bg) !important;
+  color: var(--rookie-text) !important;
+}
+
+.el-pagination button:disabled,
+.el-pagination .btn-prev:disabled,
+.el-pagination .btn-next:disabled {
+  background: var(--rookie-card-bg) !important;
+  color: var(--rookie-text-tertiary) !important;
+}
+
+.el-dialog__title,
+.el-dialog__headerbtn,
+.el-dialog__close,
+.el-form-item__label {
+  color: var(--rookie-text) !important;
+}
+
+.el-form-item__error {
+  color: var(--rookie-danger) !important;
+  background: color-mix(in srgb, var(--rookie-danger) 10%, var(--rookie-card-bg)) !important;
+  border: 1px solid color-mix(in srgb, var(--rookie-danger) 22%, var(--rookie-border)) !important;
+  border-radius: 10px !important;
+  padding: 4px 8px !important;
+  line-height: 1.35 !important;
+  box-shadow: 0 8px 20px rgba(209, 67, 67, 0.08);
+}
+
+.el-form-item.is-error .el-input__wrapper,
+.el-form-item.is-error .el-select__wrapper,
+.el-form-item.is-error .el-textarea__inner,
+.el-form-item.is-error .el-input-number__wrapper,
+.el-form-item.is-error .el-date-editor.el-input__wrapper {
+  box-shadow: 0 0 0 1px var(--rookie-danger-border) inset !important;
+}
+
+.el-form-item.is-error .el-input__wrapper.is-focus,
+.el-form-item.is-error .el-select__wrapper.is-focused,
+.el-form-item.is-error .el-textarea__inner:focus,
+.el-form-item.is-error .el-date-editor.el-input__wrapper.is-focus {
+  box-shadow:
+    0 0 0 1px var(--rookie-danger-border) inset,
+    0 0 0 4px color-mix(in srgb, var(--rookie-danger) 10%, transparent) !important;
+}
+
+.el-select__tags .el-tag,
+.el-tag.el-tag--info {
+  background: var(--rookie-surface-muted) !important;
+  border-color: var(--rookie-border) !important;
+  color: var(--rookie-text) !important;
+}
+
+.el-select__tags .el-tag .el-tag__close,
+.el-tag.el-tag--info .el-tag__close {
+  color: var(--rookie-text-secondary) !important;
+  background: transparent !important;
+}
+
+.el-checkbox {
+  --el-checkbox-input-border: var(--rookie-border);
+  --el-checkbox-bg-color: var(--rookie-card-bg);
+  --el-checkbox-checked-bg-color: var(--rookie-primary);
+  --el-checkbox-checked-input-border-color: var(--rookie-primary);
+  --el-checkbox-checked-text-color: var(--rookie-text);
+  --el-checkbox-input-border-color-hover: var(--rookie-border-strong);
+}
+
+.el-checkbox__inner {
+  background: var(--rookie-card-bg) !important;
+  border-color: var(--rookie-border) !important;
+}
+
+.el-checkbox__input.is-checked .el-checkbox__inner,
+.el-checkbox__input.is-indeterminate .el-checkbox__inner {
+  background: var(--rookie-primary) !important;
+  border-color: var(--rookie-primary) !important;
+}
+
+.el-checkbox__label,
+.el-tree-node__label,
+.el-tree-node__expand-icon {
+  color: var(--rookie-text-secondary) !important;
+}
+
+.el-checkbox__input.is-checked + .el-checkbox__label,
+.el-tree-node.is-current > .el-tree-node__content .el-tree-node__label {
+  color: var(--rookie-text) !important;
+}
+
+.el-tree,
+.el-tree-node__content,
+.el-tree-node,
+.el-tree-node:focus > .el-tree-node__content {
+  background: var(--rookie-card-bg) !important;
+  color: var(--rookie-text) !important;
+}
+
+.el-tree-node__content:hover {
+  background: var(--rookie-hover-bg) !important;
+}
+
+.el-select__caret,
+.el-input__suffix,
+.el-input__prefix,
+.el-range__icon,
+.el-range__close-icon {
+  color: var(--rookie-text-secondary) !important;
+}
+
+.el-overlay-dialog,
+.el-overlay {
+  background: var(--el-overlay-color) !important;
+}
+
+.el-empty {
+  --el-empty-fill-color-0: color-mix(in srgb, var(--rookie-card-bg) 94%, var(--rookie-surface-muted));
+  --el-empty-fill-color-1: color-mix(in srgb, var(--rookie-surface-muted) 92%, var(--rookie-card-bg));
+  --el-empty-fill-color-2: color-mix(in srgb, var(--rookie-bg-elevated) 88%, var(--rookie-card-bg));
+  --el-empty-fill-color-3: color-mix(in srgb, var(--rookie-border) 42%, var(--rookie-card-bg));
+  --el-empty-fill-color-4: color-mix(in srgb, var(--rookie-border-strong) 50%, var(--rookie-card-bg));
+  --el-empty-fill-color-5: color-mix(in srgb, var(--rookie-surface-muted) 76%, var(--rookie-card-bg));
+  --el-empty-fill-color-6: color-mix(in srgb, var(--rookie-bg) 68%, var(--rookie-card-bg));
+  --el-empty-fill-color-7: color-mix(in srgb, var(--rookie-border) 54%, var(--rookie-card-bg));
+  --el-empty-fill-color-8: color-mix(in srgb, var(--rookie-border-strong) 70%, var(--rookie-card-bg));
+  --el-empty-fill-color-9: color-mix(in srgb, var(--rookie-text-tertiary) 28%, var(--rookie-card-bg));
+}
+
+.el-empty__description p {
+  color: var(--rookie-text-secondary) !important;
+}
+
+.el-scrollbar__bar {
+  background: transparent !important;
+}
+
+.el-scrollbar__thumb {
+  background: color-mix(in srgb, var(--rookie-text-tertiary) 70%, transparent) !important;
+}
+
+.el-scrollbar__thumb:hover {
+  background: color-mix(in srgb, var(--rookie-text-secondary) 76%, transparent) !important;
+}
+
+.el-popper.nav-bar-notice-dropdown {
+  transform: translateX(2.25rem);
+  padding: 0 !important;
+  background: var(--rookie-card-bg) !important;
+  border: 1px solid var(--rookie-border) !important;
+  border-radius: var(--rookie-radius-md) !important;
+  box-shadow: var(--rookie-shadow) !important;
+  overflow: visible;
+}
+
+.el-popper.nav-bar-notice-dropdown::before,
+.el-popper.nav-bar-notice-dropdown::after {
+  content: '';
+  position: absolute;
+  right: 2.75rem;
+  width: 0.875rem;
+  height: 0.875rem;
+  transform: rotate(45deg);
+}
+
+.el-popper.nav-bar-notice-dropdown::before {
+  top: -0.5rem;
+  background: var(--rookie-card-bg);
+  border-top: 1px solid var(--rookie-border);
+  border-left: 1px solid var(--rookie-border);
+  z-index: -1;
+}
+
+.el-popper.nav-bar-notice-dropdown::after {
+  top: -0.4375rem;
+  background: var(--rookie-card-bg);
+  z-index: 1;
+}
+
+.el-popper.nav-bar-notice-dropdown .el-dropdown-menu {
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  padding: 0.25rem 0;
+  border-radius: var(--rookie-radius-md);
+  overflow: hidden;
+}
+
+.el-popper.nav-bar-notice-dropdown .el-popper__arrow,
+.el-popper.nav-bar-notice-dropdown .el-popper__arrow::before {
+  display: none !important;
+}
+
+.el-popper.nav-bar-notice-dropdown .el-scrollbar,
+.el-popper.nav-bar-notice-dropdown .el-scrollbar__view,
+.el-popper.nav-bar-notice-dropdown .el-dropdown-menu__list {
+  background: transparent !important;
+}
+
+.el-popper.nav-bar-notice-dropdown .el-dropdown-menu__item {
+  background: transparent;
+  color: var(--rookie-text-secondary);
+}
+
+.el-popper.nav-bar-notice-dropdown .el-dropdown-menu__item:hover,
+.el-popper.nav-bar-notice-dropdown .el-dropdown-menu__item:focus {
+  background: var(--rookie-hover-bg);
+  color: var(--rookie-text);
+}
+
+.el-popper.nav-bar-profile-dropdown {
+  padding: 0.375rem !important;
+  background: var(--rookie-card-bg) !important;
+  border: 1px solid var(--rookie-border) !important;
+  border-radius: var(--rookie-radius-md) !important;
+  box-shadow: var(--rookie-shadow) !important;
+}
+
+.el-popper.nav-bar-profile-dropdown .el-dropdown-menu {
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+}
+
+.el-popper.nav-bar-profile-dropdown .el-dropdown-menu__item {
+  min-width: 148px;
+  border-radius: calc(var(--rookie-radius-md) - 4px);
+  background: transparent !important;
+  color: var(--rookie-text-secondary) !important;
+}
+
+.el-popper.nav-bar-profile-dropdown .el-dropdown-menu__item:hover,
+.el-popper.nav-bar-profile-dropdown .el-dropdown-menu__item:focus {
+  background: var(--rookie-hover-bg) !important;
+  color: var(--rookie-text) !important;
+}
+
+.el-popper.nav-bar-profile-dropdown .el-popper__arrow::before {
+  background: var(--rookie-card-bg) !important;
+  border-color: var(--rookie-border) !important;
+}
+
+/* v-md-editor：编辑器外壳、工具栏、编辑区、预览区统一跟随主题变量，
+   github 主题默认是浅色固定背景，深色模式下需覆盖关键区域避免白底刺眼 */
+.v-md-editor {
+  background: var(--rookie-card-bg) !important;
+  border-color: var(--rookie-border) !important;
+}
+
+.v-md-editor__toolbar {
+  background: var(--rookie-surface-muted) !important;
+  border-color: var(--rookie-border) !important;
+}
+
+.v-md-editor__toolbar-item:hover {
+  background: var(--rookie-hover-bg) !important;
+}
+
+.v-md-editor__toolbar-item--active .v-md-editor__toolbar-item-inner {
+  border-color: var(--rookie-primary) !important;
+}
+
+.v-md-editor__editor-wrapper,
+.v-md-editor__preview-wrapper,
+.v-md-editor__editor-wrapper textarea,
+.v-md-editor__preview-wrapper .v-md-editor__preview {
+  background: var(--rookie-card-bg) !important;
+  color: var(--rookie-text) !important;
+}
+
+.v-md-editor__editor-wrapper textarea::placeholder {
+  color: var(--rookie-text-tertiary) !important;
+}
+
+.v-md-editor__preview-wrapper .github-markdown-body {
+  color: var(--rookie-text);
+}
+
+.v-md-editor__preview-wrapper .github-markdown-body h1,
+.v-md-editor__preview-wrapper .github-markdown-body h2,
+.v-md-editor__preview-wrapper .github-markdown-body h3,
+.v-md-editor__preview-wrapper .github-markdown-body h4,
+.v-md-editor__preview-wrapper .github-markdown-body h5,
+.v-md-editor__preview-wrapper .github-markdown-body h6,
+.v-md-editor__preview-wrapper .github-markdown-body li,
+.v-md-editor__preview-wrapper .github-markdown-body p,
+.v-md-editor__preview-wrapper .github-markdown-body td,
+.v-md-editor__preview-wrapper .github-markdown-body th {
+  color: var(--rookie-text);
+}
+
+.v-md-editor__preview-wrapper .github-markdown-body a {
+  color: var(--rookie-primary);
+}
+
+.v-md-editor__preview-wrapper .github-markdown-body blockquote {
+  color: var(--rookie-text-secondary);
+  border-left-color: var(--rookie-border);
+}
+
+.v-md-editor__preview-wrapper .github-markdown-body hr {
+  background-color: var(--rookie-border);
+}
+
+.v-md-editor__preview-wrapper .github-markdown-body h1,
+.v-md-editor__preview-wrapper .github-markdown-body h2 {
+  border-bottom-color: var(--rookie-border);
+}
+
+.v-md-editor__preview-wrapper .github-markdown-body table tr {
+  background-color: var(--rookie-card-bg);
+  border-top-color: var(--rookie-border);
+}
+
+.v-md-editor__preview-wrapper .github-markdown-body table td,
+.v-md-editor__preview-wrapper .github-markdown-body table th {
+  border-color: var(--rookie-border);
+}
+
+.v-md-editor__preview-wrapper .github-markdown-body table tr:nth-child(2n) {
+  background-color: var(--rookie-surface-muted);
+}
+
+.v-md-editor__preview-wrapper .github-markdown-body code,
+.v-md-editor__preview-wrapper .github-markdown-body tt {
+  background-color: var(--rookie-surface-muted);
+}
+
+.v-md-editor__preview-wrapper .github-markdown-body pre,
+.v-md-editor__preview-wrapper .github-markdown-body div[class*='v-md-pre-wrapper-'] {
+  background-color: var(--rookie-surface-muted) !important;
+}
+
+.v-md-editor__preview-wrapper .github-markdown-body pre code {
+  color: var(--rookie-text);
+}
+
+.v-md-editor__preview-wrapper .github-markdown-body kbd {
+  color: var(--rookie-text-secondary);
+  background-color: var(--rookie-card-bg);
+  border-color: var(--rookie-border);
+  box-shadow: inset 0 -1px 0 var(--rookie-border);
+}
+
+/* 详情弹窗内的预览区去掉 markdown-body 默认左右大内边距，贴合弹窗 */
+.notice-detail .v-md-editor__preview-wrapper .github-markdown-body {
+  padding: 0 4px;
+}
+
+/* highlight.js 代码块：浅色配色默认引入 github.css，深色模式下覆盖背景与基础文字，
+   避免代码块白底刺眼；语法 token 颜色沿用浅色版（在深色背景上对比度仍可读） */
+[data-theme='dark'] .v-md-editor__preview-wrapper .hljs,
+[data-theme='dark'] .v-md-editor .v-md-editor__editor-wrapper .hljs {
+  background: var(--rookie-surface-muted);
+  color: var(--rookie-text);
+}
+
+[data-theme='dark'] .v-md-editor__preview-wrapper .github-markdown-body pre,
+[data-theme='dark'] .v-md-editor__preview-wrapper .github-markdown-body div[class*='v-md-pre-wrapper-'] {
+  background-color: var(--rookie-surface-muted) !important;
+}

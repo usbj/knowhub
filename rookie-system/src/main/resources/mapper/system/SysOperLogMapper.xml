@@ -1,0 +1,96 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.rookie.system.mapper.SysOperLogMapper">
+
+    <!-- 操作日志 -> VO 映射（字段一一对应，errorLogId 由 Service 第二段查询拼装） -->
+    <resultMap id="SysOperLogVoResultMap" type="com.rookie.system.pojo.vo.SysOperLogVo">
+        <id property="operId" column="oper_id"/>
+        <result property="title" column="title"/>
+        <result property="businessType" column="business_type"/>
+        <result property="method" column="method"/>
+        <result property="requestMethod" column="request_method"/>
+        <result property="operName" column="oper_name"/>
+        <result property="operUrl" column="oper_url"/>
+        <result property="operIp" column="oper_ip"/>
+        <result property="operOs" column="oper_os"/>
+        <result property="operBrowser" column="oper_browser"/>
+        <result property="deviceType" column="device_type"/>
+        <result property="operParam" column="oper_param"/>
+        <result property="jsonResult" column="json_result"/>
+        <result property="status" column="status"/>
+        <result property="operTime" column="oper_time"/>
+        <result property="costTime" column="cost_time"/>
+    </resultMap>
+
+    <select id="quarryOperLog" parameterType="com.rookie.system.pojo.quarry.OperLogQuarry" resultMap="SysOperLogVoResultMap">
+        select * from sys_oper_log
+        <where>
+            <if test="title!=null and title!=''">and title like concat('%',#{title},'%')</if>
+            <if test="businessType!=null and businessType!=''">and business_type = #{businessType}</if>
+            <if test="operName!=null and operName!=''">and oper_name like concat('%',#{operName},'%')</if>
+            <if test="status!=null">and status = #{status}</if>
+            <if test="requestMethod!=null and requestMethod!=''">and request_method = #{requestMethod}</if>
+            <if test="beginTime!=null">and oper_time &gt;= #{beginTime}</if>
+            <if test="endTime!=null">and oper_time &lt;= #{endTime}</if>
+        </where>
+        order by oper_time desc, oper_id desc
+    </select>
+
+    <!-- 新增操作日志：动态列 + useGeneratedKeys 回写主键，对齐项目 insert 约定 -->
+    <insert id="addOperLog" parameterType="com.rookie.common.pojo.entity.SysOperLog" useGeneratedKeys="true" keyProperty="operId">
+        insert into sys_oper_log
+        <trim prefix="(" suffix=")" suffixOverrides=",">
+            <if test="title!=null">title,</if>
+            <if test="businessType!=null">business_type,</if>
+            <if test="method!=null">method,</if>
+            <if test="requestMethod!=null">request_method,</if>
+            <if test="operName!=null">oper_name,</if>
+            <if test="operUrl!=null">oper_url,</if>
+            <if test="operIp!=null">oper_ip,</if>
+            <if test="operOs!=null">oper_os,</if>
+            <if test="operBrowser!=null">oper_browser,</if>
+            <if test="deviceType!=null">device_type,</if>
+            <if test="operParam!=null">oper_param,</if>
+            <if test="jsonResult!=null">json_result,</if>
+            <if test="status!=null">status,</if>
+            <if test="operTime!=null">oper_time,</if>
+            <if test="costTime!=null">cost_time,</if>
+        </trim>
+        values
+        <trim prefix="(" suffix=")" suffixOverrides=",">
+            <if test="title!=null">#{title},</if>
+            <if test="businessType!=null">#{businessType},</if>
+            <if test="method!=null">#{method},</if>
+            <if test="requestMethod!=null">#{requestMethod},</if>
+            <if test="operName!=null">#{operName},</if>
+            <if test="operUrl!=null">#{operUrl},</if>
+            <if test="operIp!=null">#{operIp},</if>
+            <if test="operOs!=null">#{operOs},</if>
+            <if test="operBrowser!=null">#{operBrowser},</if>
+            <if test="deviceType!=null">#{deviceType},</if>
+            <if test="operParam!=null">#{operParam},</if>
+            <if test="jsonResult!=null">#{jsonResult},</if>
+            <if test="status!=null">#{status},</if>
+            <if test="operTime!=null">#{operTime},</if>
+            <if test="costTime!=null">#{costTime},</if>
+        </trim>
+    </insert>
+
+    <select id="getOperLogInfoById" parameterType="java.lang.Long" resultMap="SysOperLogVoResultMap">
+        select * from sys_oper_log where oper_id = #{operId}
+    </select>
+
+    <delete id="deleteOperLogByIds">
+        delete from sys_oper_log where oper_id in
+        <foreach collection="operIds" item="operId" open="(" separator="," close=")">
+            #{operId}
+        </foreach>
+    </delete>
+
+    <delete id="cleanOperLog">
+        truncate table sys_oper_log
+    </delete>
+
+</mapper>

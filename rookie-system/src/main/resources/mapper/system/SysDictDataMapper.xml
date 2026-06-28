@@ -1,0 +1,100 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.rookie.system.mapper.SysDictDataMapper">
+
+    <resultMap id="SysDictDataResultMap" type="com.rookie.common.pojo.entity.SysDictData">
+        <id property="dictDataId" column="dict_data_id"/>
+        <result property="dictId" column="dict_id"/>
+        <result property="dictKey" column="dict_key"/>
+        <result property="dictDataLabel" column="dict_data_label"/>
+        <result property="dictDataValue" column="dict_data_value"/>
+        <result property="remark" column="remark"/>
+        <result property="dictDataSort" column="dict_data_sort"/>
+        <result property="tagType" column="tag_type"/>
+        <result property="tagEffect" column="tag_effect"/>
+        <result property="cssClass" column="css_class"/>
+        <result property="extJson" column="ext_json"/>
+        <result property="isDefault" column="is_default"/>
+        <result property="createTime" column="create_time"/>
+        <result property="createBy" column="create_by"/>
+        <result property="updateTime" column="update_time"/>
+        <result property="updateBy" column="update_by"/>
+    </resultMap>
+
+    <select id="quarrySysDictData" parameterType="com.rookie.system.pojo.quarry.DictDataQuarry" resultMap="SysDictDataResultMap">
+        select * from sys_dict_data where 1
+        <if test="dictId!=null">and dict_id = #{dictId}</if>
+        <if test="dictKey!=null and dictKey!=''">and dict_key=#{dictKey}</if>
+        <if test="dictDataLabel!=null and dictDataLabel!=''">and dict_data_label=#{dictDataLabel}</if>
+        order by dict_data_sort
+    </select>
+
+
+    <insert id="addSysDictData" parameterType="com.rookie.common.pojo.entity.SysDictData">
+        insert into sys_dict_data
+        <trim prefix="(" suffix=")" suffixOverrides=",">
+            <if test="dictId!=null">dict_id,</if>
+            <if test="dictKey!=null">dict_key,</if>
+            <if test="dictDataLabel!=null">dict_data_label,</if>
+            <if test="dictDataValue!=null">dict_data_value,</if>
+            <if test="remark!=null">remark,</if>
+            <if test="dictDataSort!=null">dict_data_sort,</if>
+            <if test="tagType!=null">tag_type,</if>
+            <if test="tagEffect!=null">tag_effect,</if>
+            <if test="cssClass!=null">css_class,</if>
+            <if test="extJson!=null">ext_json,</if>
+            create_time, create_by, update_time, update_by
+        </trim>
+        values
+        <trim prefix="(" suffix=")" suffixOverrides=",">
+            <if test="dictId!=null">#{dictId},</if>
+            <if test="dictKey!=null">#{dictKey},</if>
+            <if test="dictDataLabel!=null">#{dictDataLabel},</if>
+            <if test="dictDataValue!=null">#{dictDataValue},</if>
+            <if test="remark!=null">#{remark},</if>
+            <if test="dictDataSort!=null">#{dictDataSort},</if>
+            <if test="tagType!=null">#{tagType},</if>
+            <if test="tagEffect!=null">#{tagEffect},</if>
+            <if test="cssClass!=null">#{cssClass},</if>
+            <if test="extJson!=null">#{extJson},</if>
+            now(), #{createBy}, now(), #{updateBy}
+        </trim>
+    </insert>
+
+    <update id="editSysDictDataInfo" parameterType="com.rookie.common.pojo.entity.SysDictData">
+        update sys_dict_data 
+        set 
+        <if test="dictKey!=null and dictKey!=''"> dict_key = #{dictKey},</if>
+        <if test="dictDataLabel!=null and dictDataLabel!=''">dict_data_label = #{dictDataLabel},</if>
+        <if test="dictDataValue!=null and dictDataValue!=''">dict_data_value = #{dictDataValue},</if>
+        <if test="remark!=null and remark!=''">remark = #{remark},</if>
+        <if test="dictDataSort!=null and dictDataSort!=''"> dict_data_sort = #{dictDataSort},</if>
+        <if test="tagType!=null and tagType!=''">tag_type = #{tagType},</if>
+        <if test="tagEffect!=null and tagEffect!=''">tag_effect = #{tagEffect},</if>
+        <if test="cssClass!=null and cssClass!=''">css_class = #{cssClass},</if>
+        <if test="extJson!=null and extJson!=''">ext_json = #{extJson},</if>
+        <if test="isDefault!=null and isDefault!=''">is_default = #{isDefault},</if>
+        update_by = #{updateBy}, update_time = now()
+        where dict_data_id =#{dictDataId}
+    </update>
+
+    <delete id="deleteSysDictDataByDataId" parameterType="long">
+        delete from sys_dict_data where dict_data_id = #{dictDataId}
+    </delete>
+
+    <select id="getSysDictDataInfoByDataId" parameterType="long" resultMap="SysDictDataResultMap">
+        select * from sys_dict_data where dict_data_id = #{dictDataId}
+    </select>
+
+    <select id="getSysDictDataByDictKey" parameterType="string" resultMap="SysDictDataResultMap">
+        select * from sys_dict_data where dict_key = #{dictKey}
+    </select>
+
+    <update id="updateDictKeyByDictId">
+        update sys_dict_data set dict_key = #{newDictKey} where dict_id = #{dictId}
+    </update>
+
+
+</mapper>

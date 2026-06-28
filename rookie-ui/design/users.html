@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Rookie Admin - Users</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="brand-mark">R</div>
+          <div><p class="brand-name">Rookie Admin</p><p class="brand-subtitle">后台设计稿</p></div>
+        </div>
+        <nav class="nav-group">
+          <p class="nav-label">总览</p>
+          <a class="nav-item" href="./dashboard.html">工作台</a>
+          <a class="nav-item active" href="./users.html">用户管理</a>
+          <a class="nav-item" href="./roles.html">角色与权限</a>
+          <a class="nav-item" href="./menus.html">菜单配置</a>
+          <a class="nav-item" href="./dict.html">字典配置</a>
+        </nav>
+        <nav class="nav-group">
+          <p class="nav-label">系统</p>
+          <a class="nav-item" href="./settings.html">界面设置</a>
+          <a class="nav-item" href="./index.html">设计目录</a>
+        </nav>
+      </aside>
+
+      <main class="main-area">
+        <div class="shell-header">
+          <header class="topbar">
+            <div class="topbar-left">
+              <div class="crumbs">
+                <p class="section-kicker">System / User</p>
+                <h1>用户管理</h1>
+                <p>列表页需要足够稳定，支持检索、筛选、批量动作和不跳页查看详情。</p>
+              </div>
+              <div class="search-shell">搜索用户名 / 手机号 / 邮箱 / 部门</div>
+            </div>
+            <div class="topbar-right">
+              <button class="icon-button">6</button>
+              <button class="ghost-button">导入用户</button>
+              <div class="profile-chip">
+                <span class="avatar">WY</span>
+                <div class="profile-meta"><strong>王宇</strong><span>超级管理员</span></div>
+              </div>
+            </div>
+          </header>
+
+          <div class="tabs-bar">
+            <span class="tab-chip">工作台</span>
+            <span class="tab-chip active">用户管理</span>
+            <span class="tab-chip">用户详情</span>
+          </div>
+        </div>
+
+        <div class="content-wrap">
+        <section class="page-section content-card">
+          <div class="table-toolbar">
+            <div class="search-box">组合查询：用户名 / 姓名 / 邮箱 / 手机号</div>
+            <div class="toolbar">
+              <button class="filter-pill active">全部</button>
+              <button class="filter-pill">启用</button>
+              <button class="filter-pill">冻结</button>
+              <button class="ghost-button">导出</button>
+              <button class="primary-button">新增用户</button>
+            </div>
+          </div>
+
+          <div class="filter-row">
+            <span class="chip">部门: 全部</span>
+            <span class="chip">角色: 超级管理员</span>
+            <span class="chip">最后登录: 近 30 天</span>
+            <span class="chip">数据范围: 全部</span>
+          </div>
+
+          <div class="table-shell">
+            <table>
+              <thead>
+                <tr>
+                  <th>用户</th>
+                  <th>部门</th>
+                  <th>角色</th>
+                  <th>状态</th>
+                  <th>最后登录</th>
+                  <th>登录设备</th>
+                  <th>数据范围</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>
+                    <div class="user-cell">
+                      <span class="avatar">WY</span>
+                      <div><strong>王宇</strong><p class="table-subtext">wy@rookie.local</p></div>
+                    </div>
+                  </td>
+                  <td>平台研发部</td>
+                  <td>超级管理员</td>
+                  <td><span class="status success">启用</span></td>
+                  <td>今天 09:24</td>
+                  <td>Windows · Edge</td>
+                  <td>全部数据</td>
+                  <td class="actions">编辑  重置密码  日志</td>
+                </tr>
+                <tr>
+                  <td>
+                    <div class="user-cell">
+                      <span class="avatar">LQ</span>
+                      <div><strong>李青</strong><p class="table-subtext">liq@rookie.local</p></div>
+                    </div>
+                  </td>
+                  <td>运营中心</td>
+                  <td>运营经理</td>
+                  <td><span class="status warning">冻结</span></td>
+                  <td>昨天 18:42</td>
+                  <td>macOS · Chrome</td>
+                  <td>区域数据</td>
+                  <td class="actions">编辑  解冻  日志</td>
+                </tr>
+                <tr>
+                  <td>
+                    <div class="user-cell">
+                      <span class="avatar">ZH</span>
+                      <div><strong>赵航</strong><p class="table-subtext">zh@rookie.local</p></div>
+                    </div>
+                  </td>
+                  <td>审计组</td>
+                  <td>审计员</td>
+                  <td><span class="status neutral">待激活</span></td>
+                  <td>--</td>
+                  <td>--</td>
+                  <td>只读数据</td>
+                  <td class="actions">编辑  发送邀请  更多</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="page-section split-layout">
+          <article class="panel">
+            <div class="panel-head">
+              <div>
+                <h3>批量操作区</h3>
+                <p class="subtle">批量重置、批量启停、批量导出不要做成隐藏能力</p>
+              </div>
+            </div>
+            <div class="quick-grid">
+              <div class="quick-link"><strong>批量启用</strong><span class="mini-copy">适用于新导入用户</span></div>
+              <div class="quick-link"><strong>批量冻结</strong><span class="mini-copy">异常登录快速处理</span></div>
+              <div class="quick-link"><strong>导出所选</strong><span class="mini-copy">导出当前筛选结果</span></div>
+              <div class="quick-link"><strong>重置密码</strong><span class="mini-copy">邮件或短信通知</span></div>
+            </div>
+          </article>
+
+          <article class="drawer-preview">
+            <div class="drawer-head">
+              <div>
+                <h3>用户详情抽屉</h3>
+                <p class="subtle">建议从右侧滑出，保留列表上下文</p>
+              </div>
+              <button class="ghost-button">查看日志</button>
+            </div>
+            <div class="form-grid">
+              <div class="form-item">姓名<strong>王宇</strong></div>
+              <div class="form-item">手机号<strong>138****1206</strong></div>
+              <div class="form-item">角色<strong>超级管理员</strong></div>
+              <div class="form-item">部门<strong>平台研发部</strong></div>
+              <div class="form-item">最近登录<strong>今天 09:24</strong></div>
+              <div class="form-item">备注<strong>拥有系统全量权限</strong></div>
+            </div>
+          </article>
+        </section>
+        </div>
+      </main>
+    </div>
+  </body>
+</html>

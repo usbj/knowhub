@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.rookie.system.mapper.SysNoticeReadMapper">
+
+    <resultMap id="SysNoticeReadResultMap" type="com.rookie.system.pojo.SysNoticeRead">
+        <id property="id" column="id"/>
+        <result property="noticeId" column="notice_id"/>
+        <result property="userId" column="user_id"/>
+        <result property="readTime" column="read_time"/>
+        <result property="confirmStatus" column="confirm_status"/>
+        <result property="confirmTime" column="confirm_time"/>
+    </resultMap>
+
+    <insert id="addSysNoticeRead" parameterType="com.rookie.system.pojo.SysNoticeRead" useGeneratedKeys="true" keyProperty="id">
+        insert into sys_notice_read
+        <trim prefix="(" suffix=")" suffixOverrides=",">
+            <if test="noticeId!=null">notice_id,</if>
+            <if test="userId!=null">user_id,</if>
+            <if test="readTime!=null">read_time,</if>
+            <if test="confirmStatus!=null">confirm_status,</if>
+            <if test="confirmTime!=null">confirm_time,</if>
+        </trim>
+        values
+        <trim prefix="(" suffix=")" suffixOverrides=",">
+            <if test="noticeId!=null">#{noticeId},</if>
+            <if test="userId!=null">#{userId},</if>
+            <if test="readTime!=null">#{readTime},</if>
+            <if test="confirmStatus!=null">#{confirmStatus},</if>
+            <if test="confirmTime!=null">#{confirmTime},</if>
+        </trim>
+    </insert>
+
+    <update id="editSysNoticeReadInfo" parameterType="com.rookie.system.pojo.SysNoticeRead">
+        update sys_notice_read
+        <set>
+            <if test="noticeId!=null">notice_id = #{noticeId},</if>
+            <if test="userId!=null">user_id = #{userId},</if>
+            <if test="readTime!=null">read_time = #{readTime},</if>
+            <if test="confirmStatus!=null">confirm_status = #{confirmStatus},</if>
+            <if test="confirmTime!=null">confirm_time = #{confirmTime},</if>
+        </set>
+        where id = #{id}
+    </update>
+
+    <delete id="deleteSysNoticeReadById" parameterType="long">
+        delete from sys_notice_read where id = #{id}
+    </delete>
+
+    <delete id="deleteSysNoticeReadByNoticeId" parameterType="long">
+        delete from sys_notice_read where notice_id = #{noticeId}
+    </delete>
+
+    <select id="getSysNoticeReadInfoById" parameterType="long" resultMap="SysNoticeReadResultMap">
+        select * from sys_notice_read where id = #{id}
+    </select>
+
+    <select id="getSysNoticeReadByNoticeId" parameterType="long" resultMap="SysNoticeReadResultMap">
+        select * from sys_notice_read where notice_id = #{noticeId}
+    </select>
+
+    <select id="getSysNoticeReadByUserId" parameterType="long" resultMap="SysNoticeReadResultMap">
+        select * from sys_notice_read where user_id = #{userId}
+    </select>
+
+    <select id="getByNoticeAndUser" parameterType="long" resultMap="SysNoticeReadResultMap">
+        select * from sys_notice_read where notice_id = #{noticeId} and user_id = #{userId}
+    </select>
+
+</mapper>

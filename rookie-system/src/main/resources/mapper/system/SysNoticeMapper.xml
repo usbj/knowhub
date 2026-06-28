@@ -1,0 +1,121 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.rookie.system.mapper.SysNoticeMapper">
+
+    <resultMap id="SysNoticeResultMap" type="com.rookie.common.pojo.entity.SysNotice">
+        <id property="noticeId" column="notice_id"/>
+        <result property="title" column="title"/>
+        <result property="content" column="content"/>
+        <result property="noticeType" column="notice_type"/>
+        <result property="level" column="level"/>
+        <result property="publishScope" column="publish_scope"/>
+        <result property="status" column="status"/>
+        <result property="isTop" column="is_top"/>
+        <result property="needConfirm" column="need_confirm"/>
+        <result property="publishTime" column="publish_time"/>
+        <result property="expireTime" column="expire_time"/>
+        <result property="routePath" column="route_path"/>
+        <result property="remark" column="remark"/>
+        <result property="createBy" column="create_by"/>
+        <result property="createTime" column="create_time"/>
+        <result property="updateBy" column="update_by"/>
+        <result property="updateTime" column="update_time"/>
+        <result property="delete" column="delete"/>
+    </resultMap>
+
+    <select id="quarrySysNotice" parameterType="com.rookie.system.pojo.quarry.NoticeQuarry" resultMap="SysNoticeResultMap">
+        select * from sys_notice
+        where `delete` = 0
+        <if test="title!=null and title!=''">and title like concat('%',#{title},'%')</if>
+        <if test="noticeType!=null and noticeType!=''">and notice_type = #{noticeType}</if>
+        <if test="level!=null and level!=''">and level = #{level}</if>
+        <if test="publishScope!=null and publishScope!=''">and publish_scope = #{publishScope}</if>
+        <if test="status!=null and status!=''">and status = #{status}</if>
+        <if test="beginTime!=null">and publish_time &gt;= #{beginTime}</if>
+        <if test="endTime!=null">and publish_time &lt;= #{endTime}</if>
+        order by is_top desc, publish_time desc, notice_id desc
+    </select>
+
+    <insert id="addSysNotice" parameterType="com.rookie.common.pojo.entity.SysNotice" useGeneratedKeys="true" keyProperty="noticeId">
+        insert into sys_notice
+        <trim prefix="(" suffix=")" suffixOverrides=",">
+            <if test="title!=null">title,</if>
+            <if test="content!=null">content,</if>
+            <if test="noticeType!=null">notice_type,</if>
+            <if test="level!=null">level,</if>
+            <if test="publishScope!=null">publish_scope,</if>
+            <if test="isTop!=null">is_top,</if>
+            <if test="needConfirm!=null">need_confirm,</if>
+            <if test="publishTime!=null">publish_time,</if>
+            <if test="expireTime!=null">expire_time,</if>
+            <if test="routePath!=null">route_path,</if>
+            <if test="remark!=null">remark,</if>
+            create_by, create_time, update_by, update_time
+        </trim>
+        values
+        <trim prefix="(" suffix=")" suffixOverrides=",">
+            <if test="title!=null">#{title},</if>
+            <if test="content!=null">#{content},</if>
+            <if test="noticeType!=null">#{noticeType},</if>
+            <if test="level!=null">#{level},</if>
+            <if test="publishScope!=null">#{publishScope},</if>
+            <if test="isTop!=null">#{isTop},</if>
+            <if test="needConfirm!=null">#{needConfirm},</if>
+            <if test="publishTime!=null">#{publishTime},</if>
+            <if test="expireTime!=null">#{expireTime},</if>
+            <if test="routePath!=null">#{routePath},</if>
+            <if test="remark!=null">#{remark},</if>
+            #{createBy}, now(), #{updateBy}, now()
+        </trim>
+    </insert>
+
+    <update id="editSysNoticeInfo" parameterType="com.rookie.common.pojo.entity.SysNotice">
+        update sys_notice
+        <set>
+            <if test="title!=null and title!=''">title = #{title},</if>
+            <if test="content!=null and content!=''">content = #{content},</if>
+            <if test="noticeType!=null and noticeType!=''">notice_type = #{noticeType},</if>
+            <if test="level!=null and level!=''">level = #{level},</if>
+            <if test="publishScope!=null and publishScope!=''">publish_scope = #{publishScope},</if>
+            <if test="status!=null and status!=''">status = #{status},</if>
+            <if test="isTop!=null">is_top = #{isTop},</if>
+            <if test="needConfirm!=null">need_confirm = #{needConfirm},</if>
+            <if test="publishTime!=null">publish_time = #{publishTime},</if>
+            <if test="expireTime!=null">expire_time = #{expireTime},</if>
+            <if test="routePath!=null and routePath!=''">route_path = #{routePath},</if>
+            <if test="remark!=null and remark!=''">remark = #{remark},</if>
+            <if test="delete!=null">`delete` = #{delete},</if>
+            update_by = #{updateBy},
+            update_time = now()
+        </set>
+        where notice_id = #{noticeId}
+    </update>
+
+    <delete id="deleteSysNoticeById" parameterType="long">
+        delete from sys_notice where notice_id = #{noticeId}
+    </delete>
+
+    <update id="softDeleteSysNotice" parameterType="long">
+        update sys_notice set `delete` = 1 where notice_id = #{noticeId}
+    </update>
+
+    <select id="getSysNoticeInfoById" parameterType="long" resultMap="SysNoticeResultMap">
+        select * from sys_notice where notice_id = #{noticeId}
+    </select>
+
+    <select id="getNoticesForUser" parameterType="long" resultMap="SysNoticeResultMap">
+        select * from sys_notice
+        where `delete` = 0
+          and status = 'PUBLISHED'
+          and (publish_scope = 'ALL'
+               or notice_id in (
+                   select rel.notice_id from sys_notice_group_rel rel
+                   inner join sys_notice_group_member mem on mem.group_id = rel.group_id
+                   where mem.user_id = #{userId}
+               ))
+        order by is_top desc, publish_time desc, notice_id desc
+    </select>
+
+</mapper>
