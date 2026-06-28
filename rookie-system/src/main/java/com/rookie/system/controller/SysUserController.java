@@ -2,6 +2,8 @@ package com.rookie.system.controller;
 
 
 import com.github.pagehelper.PageInfo;
+import com.rookie.common.annotation.Log;
+import com.rookie.common.enums.BusinessType;
 import com.rookie.common.pojo.Result;
 import com.rookie.framework.security.pojo.UserInfo;
 import com.rookie.system.pojo.quarry.UserQuarry;
@@ -34,6 +36,7 @@ public class SysUserController  {
 
     @PutMapping()
     @Operation(summary = "更改用户信息")
+    @Log(title = "用户管理", businessType = BusinessType.UPDATE)
     public Result<Boolean> editSysUserInfo(@RequestBody SysUserVo userVo) {
         Boolean b = sysUserService.editSysUserInfo(userVo);
         return Result.success(b);
@@ -48,6 +51,7 @@ public class SysUserController  {
 
     @PostMapping()
     @Operation(summary = "添加用户")
+    @Log(title = "用户管理", businessType = BusinessType.INSERT)
     public Result<Boolean> addSysUser(@RequestBody SysUserVo userVo) {
         Boolean b = sysUserService.addSysUserInfo(userVo);
         return Result.success(b);
@@ -55,6 +59,7 @@ public class SysUserController  {
 
     @DeleteMapping("/{userIds}")
     @Operation(summary = "删除用户（可批量）")
+    @Log(title = "用户管理", businessType = BusinessType.DELETE)
     public Result<Boolean> deleteSysUsers(@PathVariable Long[] userIds) {
         Boolean b = sysUserService.deleteSysUser(userIds);
         return Result.success(b);
@@ -62,6 +67,7 @@ public class SysUserController  {
 
     @PutMapping("/status")
     @Operation(summary = "更改用户状态")
+    @Log(title = "用户管理", businessType = BusinessType.UPDATE)
     public Result<Boolean> changeSysUserStatus(Long userId, Integer status) {
         Boolean b = sysUserService.chargeSysUserStatus(userId, status);
         return Result.success(b);

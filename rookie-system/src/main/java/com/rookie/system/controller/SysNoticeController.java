@@ -1,6 +1,8 @@
 package com.rookie.system.controller;
 
 import com.github.pagehelper.PageInfo;
+import com.rookie.common.annotation.Log;
+import com.rookie.common.enums.BusinessType;
 import com.rookie.common.pojo.Result;
 import com.rookie.framework.security.pojo.UserInfo;
 import com.rookie.system.pojo.quarry.NoticeQuarry;
@@ -38,6 +40,7 @@ public class SysNoticeController {
 
     @PostMapping()
     @Operation(summary = "添加消息通知")
+    @Log(title = "消息通知", businessType = BusinessType.INSERT)
     public Result<Boolean> addSysNotice(@RequestBody SysNoticeVo vo) {
         Boolean b = sysNoticeService.addSysNoticeInfo(vo);
         return Result.success(b);
@@ -45,6 +48,7 @@ public class SysNoticeController {
 
     @PutMapping()
     @Operation(summary = "编辑消息通知")
+    @Log(title = "消息通知", businessType = BusinessType.UPDATE)
     public Result<Boolean> editSysNotice(@RequestBody SysNoticeVo vo) {
         Boolean b = sysNoticeService.editSysNoticeInfo(vo);
         return Result.success(b);
@@ -52,6 +56,7 @@ public class SysNoticeController {
 
     @DeleteMapping("/{noticeIds}")
     @Operation(summary = "批量删除消息通知")
+    @Log(title = "消息通知", businessType = BusinessType.DELETE)
     public Result<Boolean> deleteSysNotice(@PathVariable Long[] noticeIds) {
         Boolean b = sysNoticeService.deleteSysNoticeInfo(noticeIds);
         return Result.success(b);
@@ -59,6 +64,7 @@ public class SysNoticeController {
 
     @PutMapping("/publish/{noticeId}")
     @Operation(summary = "发布消息通知")
+    @Log(title = "消息通知", businessType = BusinessType.UPDATE)
     public Result<Boolean> publishSysNotice(@PathVariable Long noticeId) {
         Boolean b = sysNoticeService.publishSysNotice(noticeId);
         return Result.success(b);
@@ -66,6 +72,7 @@ public class SysNoticeController {
 
     @PutMapping("/revoke/{noticeId}")
     @Operation(summary = "撤回消息通知")
+    @Log(title = "消息通知", businessType = BusinessType.UPDATE)
     public Result<Boolean> revokeSysNotice(@PathVariable Long noticeId) {
         Boolean b = sysNoticeService.revokeSysNotice(noticeId);
         return Result.success(b);

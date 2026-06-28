@@ -2,6 +2,8 @@ package com.rookie.system.controller;
 
 
 import com.github.pagehelper.PageInfo;
+import com.rookie.common.annotation.Log;
+import com.rookie.common.enums.BusinessType;
 import com.rookie.common.pojo.Result;
 import com.rookie.system.pojo.quarry.RoleQuarry;
 import com.rookie.system.pojo.vo.SysRoleVo;
@@ -42,6 +44,7 @@ public class SysRoleController {
 
     @PutMapping()
     @Operation(summary = "更改角色信息")
+    @Log(title = "角色管理", businessType = BusinessType.UPDATE)
     public Result<Boolean> editSysRoleInfo(@RequestBody SysRoleVo sysRoleVo){
         Boolean b = sysRoleService.editSysRoleInfo(sysRoleVo);
         return Result.success(b);
@@ -50,6 +53,7 @@ public class SysRoleController {
 
     @PostMapping()
     @Operation(summary = "添加角色")
+    @Log(title = "角色管理", businessType = BusinessType.INSERT)
     public Result<Boolean> addSysRoleInfo(@RequestBody SysRoleVo sysRoleVo){
         Boolean b = sysRoleService.addSysRoleInfo(sysRoleVo);
         return Result.success(b);
@@ -57,6 +61,7 @@ public class SysRoleController {
 
     @DeleteMapping("/{roleIds}")
     @Operation(summary = "批量删除角色")
+    @Log(title = "角色管理", businessType = BusinessType.DELETE)
     public Result<Boolean> deleteSysRoleInfo(@PathVariable Long[] roleIds) {
         Boolean b = sysRoleService.deleteSysRoleInfo(roleIds);
         return Result.success(b);
@@ -64,6 +69,7 @@ public class SysRoleController {
 
     @PutMapping("/status")
     @Operation(summary = "更改角色状态")
+    @Log(title = "角色管理", businessType = BusinessType.UPDATE)
     public Result<Boolean> changeSysRoleStatus(Long roleId,Integer status){
         Boolean b = sysRoleService.changeSysRoleStatus(roleId, status);
         return Result.success(b);
@@ -71,6 +77,7 @@ public class SysRoleController {
 
     @PutMapping("/default/{roleId}")
     @Operation(summary = "设置默认角色")
+    @Log(title = "角色管理", businessType = BusinessType.GRANT)
     public Result<Boolean> setTheDefaultRole(@PathVariable Long roleId){
         Boolean b = sysRoleService.setTheDefaultRole(roleId);
         return Result.success(b);

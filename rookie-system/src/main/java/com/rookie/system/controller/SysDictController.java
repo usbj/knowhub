@@ -2,6 +2,8 @@ package com.rookie.system.controller;
 
 
 import com.github.pagehelper.PageInfo;
+import com.rookie.common.annotation.Log;
+import com.rookie.common.enums.BusinessType;
 import com.rookie.common.pojo.Result;
 import com.rookie.system.pojo.quarry.DictQuarry;
 import com.rookie.system.pojo.vo.SysDictVO;
@@ -27,18 +29,21 @@ public class SysDictController {
     }
 
     @PostMapping()
+    @Log(title = "字典管理", businessType = BusinessType.INSERT)
     public Result<Boolean> addSysDict(@RequestBody SysDictVO dictVo){
         Boolean b = sysDictService.addSysDict(dictVo);
         return Result.success(b);
     }
 
     @PutMapping()
+    @Log(title = "字典管理", businessType = BusinessType.UPDATE)
     public Result<Boolean> editSysDict(@RequestBody SysDictVO dictVo){
         Boolean b = sysDictService.editSysDictInfo(dictVo);
         return Result.success(b);
     }
 
     @DeleteMapping("/{dictId}")
+    @Log(title = "字典管理", businessType = BusinessType.DELETE)
     public Result<Boolean> deleteSysDictById(@PathVariable Long dictId){
         Boolean b = sysDictService.deleteSysDictById(dictId);
         return Result.success(b);

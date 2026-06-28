@@ -2,6 +2,8 @@ package com.rookie.system.controller;
 
 
 import com.github.pagehelper.PageInfo;
+import com.rookie.common.annotation.Log;
+import com.rookie.common.enums.BusinessType;
 import com.rookie.common.pojo.Result;
 import com.rookie.system.pojo.quarry.DictDataQuarry;
 import com.rookie.system.pojo.vo.SysDictDataVo;
@@ -30,18 +32,21 @@ public class SysDictDataController {
     }
 
     @PostMapping()
+    @Log(title = "字典数据", businessType = BusinessType.INSERT)
     public Result<Boolean> addSysDictData(@RequestBody SysDictDataVo dictDataVo){
         Boolean b = sysDictDataService.addSysDictData(dictDataVo);
         return Result.success(b);
     }
 
     @PutMapping()
+    @Log(title = "字典数据", businessType = BusinessType.UPDATE)
     public Result<Boolean> editSysDictData(@RequestBody SysDictDataVo dictDataVo){
         Boolean b = sysDictDataService.editSysDictDataInfo(dictDataVo);
         return Result.success(b);
     }
 
     @DeleteMapping("/{dictDataId}")
+    @Log(title = "字典数据", businessType = BusinessType.DELETE)
     public Result<Boolean> deleteSysDictDataByDataId(@PathVariable Long dictDataId){
         Boolean b = sysDictDataService.deleteSysDictDataByDataId(dictDataId);
         return Result.success(b);

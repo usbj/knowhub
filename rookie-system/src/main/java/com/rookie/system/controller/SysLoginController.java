@@ -1,6 +1,8 @@
 package com.rookie.system.controller;
 
 
+import com.rookie.common.annotation.Log;
+import com.rookie.common.enums.BusinessType;
 import com.rookie.common.pojo.Result;
 import com.rookie.framework.security.pojo.UserInfo;
 import com.rookie.system.pojo.LoginBody;
@@ -30,6 +32,7 @@ public class SysLoginController {
 
     @PostMapping("/login")
     @Operation(summary = "登录")
+    @Log(title = "登录管理", businessType = BusinessType.OTHER)
     public Result<String> login(@RequestBody LoginBody loginBody){
         String token = sysLoginService.loginVerification(loginBody);
         return Result.success(token);
@@ -46,6 +49,7 @@ public class SysLoginController {
 
     @PutMapping("/person")
     @Operation(summary = "更改个人数据")
+    @Log(title = "个人信息", businessType = BusinessType.UPDATE)
     public Result<Boolean> modifyPersonalDetails(@RequestBody SysUserVo sysUserVo) {
         UserInfo userInfo = (UserInfo) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
         sysUserVo.setUserId(userInfo.getUserId());

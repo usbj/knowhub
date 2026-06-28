@@ -22,6 +22,11 @@
             <artifactId>rookie-common</artifactId>
         </dependency>
 
+        <!-- AOP：支撑 @Log 切面（操作日志同步采集/异步落库） -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-aop</artifactId>
+        </dependency>
 
     </dependencies>
 

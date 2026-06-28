@@ -1,6 +1,8 @@
 package com.rookie.system.controller;
 
 
+import com.rookie.common.annotation.Log;
+import com.rookie.common.enums.BusinessType;
 import com.rookie.common.pojo.Result;
 import com.rookie.system.pojo.quarry.MenuQuarry;
 import com.rookie.system.pojo.vo.SysMenuVo;
@@ -30,6 +32,7 @@ public class SysMenuController {
 
     @PostMapping()
     @Operation(summary = "添加菜单")
+    @Log(title = "菜单管理", businessType = BusinessType.INSERT)
     public Result<Boolean> addSysMenu(@RequestBody SysMenuVo menuVo) {
         Boolean b = sysMenuService.addSysMenu(menuVo);
         return Result.success(b);
@@ -37,6 +40,7 @@ public class SysMenuController {
 
     @PutMapping()
     @Operation(summary = "更改菜单信息")
+    @Log(title = "菜单管理", businessType = BusinessType.UPDATE)
     public Result<Boolean> editSysMenu(@RequestBody SysMenuVo menuVo){
         Boolean b = sysMenuService.editSysMenu(menuVo);
         return Result.success(b);
@@ -51,6 +55,7 @@ public class SysMenuController {
 
     @DeleteMapping("/{menuIds}")
     @Operation(summary = "删除菜单信息")
+    @Log(title = "菜单管理", businessType = BusinessType.DELETE)
     public Result<Boolean> deleteSysMenu(@PathVariable Integer[] menuIds){
         Boolean b = sysMenuService.deleteSysMenuInfo(menuIds);
         return Result.success(b);
@@ -58,6 +63,7 @@ public class SysMenuController {
 
     @PutMapping("/status")
     @Operation(summary = "更改菜单状态")
+    @Log(title = "菜单管理", businessType = BusinessType.UPDATE)
     public Result<Boolean> changeSysMenuStatus(Integer menuId,Integer status){
         Boolean b = sysMenuService.changeSysMenuStatus(menuId, status);
         return Result.success(b);

@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.rookie.system.mapper.SysErrorLogMapper">
+
+    <resultMap id="SysErrorLogVoResultMap" type="com.rookie.system.pojo.vo.SysErrorLogVo">
+        <id property="errorId" column="error_id"/>
+        <result property="sourceType" column="source_type"/>
+        <result property="operLogId" column="oper_log_id"/>
+        <result property="title" column="title"/>
+        <result property="operName" column="oper_name"/>
+        <result property="exceptionType" column="exception_type"/>
+        <result property="exceptionMsg" column="exception_msg"/>
+        <result property="exceptionStack" column="exception_stack"/>
+        <result property="errorTime" column="error_time"/>
+    </resultMap>
+
+    <select id="quarryErrorLog" parameterType="com.rookie.system.pojo.quarry.ErrorLogQuarry" resultMap="SysErrorLogVoResultMap">
+        select * from sys_error_log
+        <where>
+            <if test="sourceType!=null and sourceType!=''">and source_type = #{sourceType}</if>
+            <if test="title!=null and title!=''">and title like concat('%',#{title},'%')</if>
+            <if test="operName!=null and operName!=''">and oper_name like concat('%',#{operName},'%')</if>
+            <if test="exceptionType!=null and exceptionType!=''">and exception_type like concat('%',#{exceptionType},'%')</if>
+            <if test="beginTime!=null">and error_time &gt;= #{beginTime}</if>
+            <if test="endTime!=null">and error_time &lt;= #{endTime}</if>
+        </where>
+        order by error_time desc, error_id desc
+    </select>
+
+    <!-- 第二段：按操作日志主键批量查关联错误日志，只取 error_id/oper_log_id 两列即可拼装跳转按钮 -->
+    <select id="getErrorLogByOperLogIds" resultMap="SysErrorLogVoResultMap">
+        select error_id, oper_log_id from sys_error_log
+        where oper_log_id in
+        <foreach collection="operLogIds" item="operLogId" open="(" separator="," close=")">
+            #{operLogId}
+        </foreach>
+    </select>
+
+    <insert id="addErrorLog" parameterType="com.rookie.common.pojo.entity.SysErrorLog" useGeneratedKeys="true" keyProperty="errorId">
+        insert into sys_error_log
+        <trim prefix="(" suffix=")" suffixOverrides=",">
+            <if test="sourceType!=null">source_type,</if>
+            <if test="operLogId!=null">oper_log_id,</if>
+            <if test="title!=null">title,</if>
+            <if test="operName!=null">oper_name,</if>
+            <if test="exceptionType!=null">exception_type,</if>
+            <if test="exceptionMsg!=null">exception_msg,</if>
+            <if test="exceptionStack!=null">exception_stack,</if>
+            <if test="errorTime!=null">error_time,</if>
+        </trim>
+        values
+        <trim prefix="(" suffix=")" suffixOverrides=",">
+            <if test="sourceType!=null">#{sourceType},</if>
+            <if test="operLogId!=null">#{operLogId},</if>
+            <if test="title!=null">#{title},</if>
+            <if test="operName!=null">#{operName},</if>
+            <if test="exceptionType!=null">#{exceptionType},</if>
+            <if test="exceptionMsg!=null">#{exceptionMsg},</if>
+            <if test="exceptionStack!=null">#{exceptionStack},</if>
+            <if test="errorTime!=null">#{errorTime},</if>
+        </trim>
+    </insert>
+
+    <select id="getErrorLogInfoById" parameterType="java.lang.Long" resultMap="SysErrorLogVoResultMap">
+        select * from sys_error_log where error_id = #{errorId}
+    </select>
+
+    <delete id="deleteErrorLogByIds">
+        delete from sys_error_log where error_id in
+        <foreach collection="errorIds" item="errorId" open="(" separator="," close=")">
+            #{errorId}
+        </foreach>
+    </delete>
+
+    <delete id="cleanErrorLog">
+        truncate table sys_error_log
+    </delete>
+
+</mapper>

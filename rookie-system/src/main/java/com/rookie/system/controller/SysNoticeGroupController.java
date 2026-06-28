@@ -1,6 +1,8 @@
 package com.rookie.system.controller;
 
 import com.github.pagehelper.PageInfo;
+import com.rookie.common.annotation.Log;
+import com.rookie.common.enums.BusinessType;
 import com.rookie.common.pojo.Result;
 import com.rookie.system.pojo.quarry.NoticeGroupQuarry;
 import com.rookie.system.pojo.vo.SysNoticeGroupVo;
@@ -36,6 +38,7 @@ public class SysNoticeGroupController {
 
     @PostMapping()
     @Operation(summary = "添加通知分组")
+    @Log(title = "通知分组", businessType = BusinessType.INSERT)
     public Result<Boolean> addSysNoticeGroup(@RequestBody SysNoticeGroupVo vo) {
         Boolean b = sysNoticeGroupService.addSysNoticeGroupInfo(vo);
         return Result.success(b);
@@ -43,6 +46,7 @@ public class SysNoticeGroupController {
 
     @PutMapping()
     @Operation(summary = "编辑通知分组")
+    @Log(title = "通知分组", businessType = BusinessType.UPDATE)
     public Result<Boolean> editSysNoticeGroup(@RequestBody SysNoticeGroupVo vo) {
         Boolean b = sysNoticeGroupService.editSysNoticeGroupInfo(vo);
         return Result.success(b);
@@ -50,6 +54,7 @@ public class SysNoticeGroupController {
 
     @DeleteMapping("/{groupIds}")
     @Operation(summary = "批量删除通知分组")
+    @Log(title = "通知分组", businessType = BusinessType.DELETE)
     public Result<Boolean> deleteSysNoticeGroup(@PathVariable Long[] groupIds) {
         Boolean b = sysNoticeGroupService.deleteSysNoticeGroupInfo(groupIds);
         return Result.success(b);
@@ -57,6 +62,7 @@ public class SysNoticeGroupController {
 
     @PostMapping("/{groupId}/members")
     @Operation(summary = "向分组批量添加成员")
+    @Log(title = "通知分组", businessType = BusinessType.INSERT)
     public Result<Boolean> addMembers(@PathVariable Long groupId, @RequestBody List<Long> userIds) {
         Boolean b = sysNoticeGroupService.addMembers(groupId, userIds);
         return Result.success(b);
@@ -64,6 +70,7 @@ public class SysNoticeGroupController {
 
     @DeleteMapping("/{groupId}/members")
     @Operation(summary = "批量移除分组成员")
+    @Log(title = "通知分组", businessType = BusinessType.DELETE)
     public Result<Boolean> removeMembers(@PathVariable Long groupId, @RequestBody List<Long> memberIds) {
         Boolean b = sysNoticeGroupService.removeMembers(groupId, memberIds);
         return Result.success(b);
