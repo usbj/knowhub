@@ -1,365 +1,95 @@
-# Rookie 项目介绍
+# Rookie
 
-## 文档说明
+> 基于 Spring Boot 3 + Vue 3 的前后端分离后台管理基础框架。
+> 围绕「用户 - 角色 - 菜单 - 字典 - 权限」体系展开，提供可复用的后台工作台与权限基础设施。
 
-这是一份面向后续开发者、协作者和新会话的项目总览文档。
+本项目为同仓库前后端并存工程：后端为 Maven 多模块，前端为独立 Vue 3 工程挂在 `rookie-ui/` 下。
 
-建议后续进入本仓库时，优先阅读本文件，再查看具体模块代码与 `graphify-out` 分析产物。
+---
 
-## 1. 项目定位
+## ✨ 功能特性
 
-`rookie` 是一个基于 Spring Boot 3 的前后端分离后台管理/基础业务框架项目，当前后端代码已经在同一仓库内并存：
+- **用户与角色**：用户管理、角色管理、用户-角色关联、角色默认项
+- **菜单与权限**：菜单树管理、按钮级权限点、动态路由按菜单注册
+- **字典系统**：字典 + 字典数据的统一管理，标签 / 下拉样式由数据项驱动，全枚举走字典映射
+- **认证授权**：JWT 鉴权（`Token` 请求头，无 Bearer 前缀）、Spring Security 方法级权限
+- **消息通知**：通知全生命周期管理、分组投递、我的通知、已读 / 确认
+- **日志管理**：操作日志（@Log 切面采集，含设备 / IP / 耗时）、错误日志（多来源：请求 / 异步 / 定时等）、操作-错误日志关联跳转
+- **基础设施**：统一返回结构、全局异常处理、PageHelper 分页、Redis 缓存、请求体可缓存包装
 
-- 后端：Java 17 + Spring Boot 3.4.0 + Maven 多模块
-- 前端：Vue 3 + TypeScript + Vite，目录为 `rookie-ui`
+## 🧰 技术栈
 
-从当前代码结构看，这个项目更偏向“后台管理基础框架”，已经具备以下典型能力：
+**后端**
 
-- 用户管理
-- 角色管理
-- 菜单管理
-- 字典管理
-- 登录认证
-- 权限控制
-- Redis 缓存支持
-- MyBatis 数据访问
-- 分页、统一返回、全局异常处理等基础设施
+- Java 17 · Spring Boot 3.4.0 · Spring Security · Spring Data Redis
+- MyBatis · PageHelper · MySQL · JWT · Hutool · Knife4j / OpenAPI
 
-同时，项目后续还计划继续补齐更多后台常见能力，当前你已明确提出的规划项包括：
+**前端**
 
-- 日志记录模块
-- 通知公告模块
-- 异常管理模块
+- Vue 3 · TypeScript · Vite · Pinia · Vue Router · Element Plus
+- @kangc/v-md-editor（Markdown 编辑 / 预览）· Axios
 
-## 2. 仓库结构
-
-根目录关键结构如下：
+## 📦 仓库结构
 
 ```text
 rookie/
-├─ rookie-admin/       后端启动与控制器入口模块
-├─ rookie-common/      公共基础能力模块
-├─ rookie-framework/   框架配置与安全等通用框架层
-├─ rookie-system/      系统业务模块
-├─ rookie-ui/          Vue 3 前端项目
-├─ sql/                数据库脚本
-├─ doc/                协作过程中产生的本地说明文档（已加入 .gitignore）
-├─ graphify-out/       项目知识图谱分析产物（已加入 .gitignore）
-├─ pom.xml             Maven 聚合工程
-└─ README.md           当前项目介绍文档
+├─ rookie-admin/       后端启动与接口暴露层（启动类 com.rookie.admin.RookieApplication）
+├─ rookie-common/      公共基础能力：工具类、缓存、实体、统一返回、异常、分页、JWT
+├─ rookie-framework/   框架层：Security 配置、鉴权衔接、AOP、日志切面、异步配置
+├─ rookie-system/      系统业务：用户/角色/菜单/字典/通知/日志的 Service、Mapper、Controller
+├─ rookie-ui/          Vue 3 前端工程（独立于 Maven 多模块）
+├─ sql/                数据库脚本（建表 / 字典 / 菜单初始化）
+├─ pom.xml             Maven 聚合配置
+└─ README.dev.md       面向开发者的详细文档（协作约定、模块边界、主题适配清单等）
 ```
 
-## 3. 后端模块说明
+> 各模块的职责边界、协作约定、前端主题适配清单等开发细节，见 [`README.dev.md`](./README.dev.md)；
+> 前端工程的目录结构与实现约定见 [`rookie-ui/README.dev.md`](./rookie-ui/README.dev.md)。
 
-### `rookie-admin`
+## 🚀 快速开始
 
-后端启动与接口暴露层，职责主要包括：
+### 环境要求
 
-- 应用启动入口
-- Controller 控制器
-- 对外提供管理端接口
-
-它依赖：
-
-- `rookie-framework`
-- `rookie-system`
-
-可以把它理解为“把框架层和业务层组装起来，对外提供 Web 能力”的模块。
-
-### `rookie-common`
-
-公共基础模块，是当前项目里最底层、最通用的一层，包含的内容通常有：
-
-- 通用工具类
-- 缓存封装
-- 基础实体类
-- 统一返回结构
-- 异常类
-- 分页工具
-- Servlet 相关工具
-- JWT、Redis、Hutool 等基础能力封装
-
-这是很多其他模块都会依赖的地基模块。
-
-### `rookie-framework`
-
-框架配置层，位于公共能力和业务能力之间，主要承担：
-
-- Spring Security 相关配置
-- 鉴权流程衔接
-- 登录上下文/用户详情装配
-- 框架级统一配置
-
-它依赖 `rookie-common`。
-
-### `rookie-system`
-
-系统业务模块，承载核心管理业务数据和服务逻辑，当前从代码图谱中可以看出主要围绕以下领域展开：
-
-- 用户
-- 角色
-- 菜单
-- 字典
-- 用户角色关系
-- 角色菜单关系
-
-这一层更接近具体业务对象、Mapper、Service 与业务规则。
-
-## 4. 前端模块说明
-
-### `rookie-ui`
-
-当前仓库中已经存在一个独立的 Vue 3 前端项目，技术栈为：
-
-- Vue 3
-- TypeScript
-- Vite
-- Pinia
-- Vue Router
-
-注意事项：
-
-- `rookie-ui` 当前是仓库内独立目录，不属于 Maven 多模块体系
-- 它与后端是同仓库并存关系，不是通过 `pom.xml` 聚合管理
-- 前端依赖目录如 `node_modules/` 已通过 `.gitignore` 忽略
-
-## 5. doc 目录说明
-
-`doc/` 是仓库根目录下的本地文档目录，用于在协作过程中沉淀各类过程性说明文档（设计草稿、模块分析、决策记录、接口文档、对接说明等）。
-
-关键约定：
-
-- 该目录**已加入 `.gitignore`**，不会进入 Git 版本历史
-- 文档默认按"模块名/话题名"分子目录组织，命名使用小写英文加连字符
-- 这里的内容多为本地语境下的临时文档，**不作为对外正式说明**；需要长期保留的部分应整理后合并到根 `README.md` 或对应模块说明，再从 `doc/` 中归档或删除
-- 与 `graphify-out/` 的区别：`graphify-out/` 由工具自动生成且不可手改，`doc/` 由人工撰写并持续沉淀
-
-当前主要文件：
-
-- `doc/README.md` — 目录使用约定（建议优先阅读）
-- `doc/api.md` — **前端对接接口文档**，按模块划分记录已完成的后端接口（请求方式、参数、响应示例）
-- `doc/devlog.md` — **开发日志**，按"日期 → 时间-任务简介"格式记录已完成的代码开发任务（变更内容、涉及文件）；非代码任务（规则探讨、规划等）不在此记录
-
-`api.md` 和 `devlog.md` 是协作过程中使用的文档产物，约定如下：
-- 单次接口更新推荐覆盖 5–8 个接口或一个模块的完整变更，不满时可先暂存再合并为正式日志
-- devlog 只记录产生实际文件/代码变动的任务，时间精确到分钟
-- 每次完成代码开发任务后需同步更新 `doc/devlog.md`
-- 每次新增或修改后端接口后需同步更新 `doc/api.md`
-- 接口文档每个接口统一四段式（基本信息 / 请求头 / 请求体含参数表格 / 响应示例），无内容写"无"；参数说明一律使用表格
-- 认证 Token 的请求头名称为 `Token`（无 Bearer 前缀），由 `TokenVerifyFilter` 从请求头 `Token` 字段直接取 JWT 值
-- 新增文档前先阅读 `doc/README.md`
-
-### 当前其他注意事项
-
-- 系统使用了装饰器模式（如 `SysNoticeGroupServiceImpl` 中 `addMembersInternal` 内部调用 `addMembers` → `insert`），勿在透明代理场景下跨代理调用私有方法，否则可能导致事务失效
-- Mapper XML 中所有 insert 语句均已改为 `<trim>` + `<if>` 动态列模式，避免前端漏传有默认值的列时插入空值报错
-- 根据 `constraints.md` 约定，非代码任务（规则探讨、项目规划等）不写入 `devlog.md`，也不通过后台启动验证改动
-- 记录格式为 “## 日期” → “### 时间-任务简介” → 变更清单
-
-## 6. 当前技术栈
+- JDK 17+
+- Maven 3.8+
+- MySQL 8+ · Redis
+- Node.js 18+
 
 ### 后端
 
-- Java 17
-- Spring Boot 3.4.0
-- Spring Web
-- Spring Security
-- Spring Data Redis
-- MyBatis
-- PageHelper
-- MySQL
-- Knife4j / OpenAPI
-- Hutool
-- JWT
+```bash
+# 1. 初始化数据库（在 MySQL 中执行 sql/ 下脚本）
+# 2. 按需修改 rookie-admin/src/main/resources/application.yml 的数据源与 Redis 配置
+# 3. 编译并启动
+./mvnw clean install -DskipTests
+cd rookie-admin && ../mvnw spring-boot:run
+# 默认监听 http://localhost:8080
+```
+
+> 注：前端开发联调时通过 Vite 代理把 `/api` 转发到 `http://localhost:8080`（见 `rookie-ui/vite.config.ts`）。
 
 ### 前端
 
-- Vue 3
-- TypeScript
-- Vite
-- Pinia
-- Vue Router
+```bash
+cd rookie-ui
+npm install
+npm run dev          # 开发
+npm run build        # 构建产物
+npm run type-check   # 类型检查
+```
 
-## 7. 当前业务理解
+## 🔐 鉴权约定
 
-结合现有代码和知识图谱分析，这个项目当前最明确的业务主线是一个管理后台基础框架，围绕“用户 - 角色 - 菜单 - 权限 - 字典”展开。
+- 登录成功后由 `Token` 请求头携带 JWT（**无 Bearer 前缀**），后端 `TokenVerifyFilter` 直接读取该字段校验
+- 接口鉴权使用 Spring Security `@PreAuthorize`，权限点与菜单 `perm_key` 对齐
 
-其中比较核心的对象包括：
+## 📖 文档指引
 
-- `SysUser`
-- `SysRole`
-- `SysMenu`
-- `SysDictData`
-- `UserInfo`
+| 文档 | 说明 |
+| --- | --- |
+| [`README.dev.md`](./README.dev.md) | 面向开发者的详细总览：模块边界、协作约定、主题适配清单 |
+| [`rookie-ui/README.dev.md`](./rookie-ui/README.dev.md) | 前端工程结构与实现约定 |
 
-可以把系统粗略理解为：
+## 📄 License
 
-1. 用户登录
-2. 安全框架完成认证与鉴权
-3. 用户关联角色
-4. 角色关联菜单和权限
-5. 菜单/字典等基础配置支撑后台管理功能
-
-## 8. 规划中的功能模块
-
-除了当前已经比较明确的用户、角色、菜单、字典、登录认证与权限能力外，项目后续还计划继续扩展以下模块：
-
-- 日志记录模块
-- 通知公告模块
-- 异常管理模块
-
-这些模块目前应视为“项目规划中的目标能力”，而不是现阶段已经完整落地的既有模块。后续在新增代码、设计库表、整理接口边界时，建议将它们作为系统模块扩展方向统一纳入考虑。
-
-## 9. 项目中的知识图谱约定
-
-本仓库已经生成过一份 `graphify` 分析结果，输出目录在：
-
-- `graphify-out/graph.html`
-- `graphify-out/graph.json`
-- `graphify-out/GRAPH_REPORT.md`
-
-建议后续会话或协作者在需要快速理解项目结构时：
-
-1. 先看本 `README.md`
-2. 再看 `graphify-out/GRAPH_REPORT.md`
-3. 必要时打开 `graphify-out/graph.html` 进行结构浏览
-
-当前约定是：**后续技术沟通可优先结合 graphify 结果理解该项目。**
-
-## 10. 开发与维护建议
-
-### 推荐的理解顺序
-
-如果是第一次接触本项目，建议按下面顺序阅读：
-
-1. `README.md`
-2. 根 `pom.xml`
-3. `rookie-admin`
-4. `rookie-framework`
-5. `rookie-system`
-6. `rookie-common`
-7. `rookie-ui`
-
-### 当前结构特点
-
-这个项目目前具备比较典型的后台管理框架雏形，但也有几个需要长期留意的点：
-
-- 一部分工具类和 Spring Bean 的边界需要继续收敛
-- 缓存与数据库一致性策略需要统一
-- 前后端目录虽然同仓，但工程边界仍然是分离的
-- 业务对象、VO、Query 对象较多，后续适合持续整理命名和职责边界
-- 后续新增的日志、通知公告、异常管理等模块，建议在设计阶段就明确与现有用户、权限、菜单体系之间的关系
-
-## 11. 协作与修改约定
-
-以下约定适用于后续在本仓库中的协作开发、AI 辅助修改与日常维护：
-
-### 范围控制
-
-- 只修改当前明确提出的需求范围
-- 如果发现额外的优化点、扩展点、重构机会、清理项或行为调整建议，不应直接动手实现
-- 需要先向需求提出者说明，再在得到明确确认后继续修改
-
-### 尊重已有改动
-
-- 如果代码已经被项目维护者或其他协作者改过，不应擅自回退、覆盖、改名回去或删除
-- 如果历史 AI 改动与用户后续新改动冲突，应默认以后者为准，除非项目维护者明确说明例外
-
-### 修改前沟通
-
-- 对需求是否包含某项改动存在疑问时，应先确认，不要自行假设
-- 某些改动即使看起来“顺手优化会更好”，只要不是当前明确需求，也应先提议再执行
-
-## 12. 前端主题适配清单
-
-当前 `rookie-ui` 已经建立了一套围绕 `useThemePreferenceStore` 和 CSS 变量的明暗主题体系。后续新增页面、弹窗或组件时，建议默认按下面清单检查，而不是只看主体区域颜色是否正确。
-
-### 当前主题变量入口
-
-- 主题设置状态：`rookie-ui/src/stores/themePreference.ts`
-- 基础变量定义：`rookie-ui/src/assets/base.css`
-- Element Plus 全局覆写：`rookie-ui/src/assets/main.css`
-
-### 当前已完成适配的区域
-
-- 页面基础背景、文字、边框、阴影
-- Element Plus 常用表单控件：
-  - 输入框
-  - 选择器
-  - 日期范围
-  - 数字输入框
-  - 文本域
-- Element Plus 弹窗与遮罩：
-  - `ElDialog`
-  - `ElDrawer`
-  - overlay / mask
-- Element Plus 数据展示控件：
-  - `ElTable`
-  - `ElPagination`
-  - `ElTag`
-  - `ElCheckbox`
-  - `ElTree`
-  - `ElDescriptions`
-- Markdown 编辑/预览（@kangc/v-md-editor@next + highlight.js）：
-  - 编辑器外壳与工具栏
-  - 编辑区、预览区背景与文字
-  - 代码块（highlight.js github 配色，深色模式覆盖背景）
-  - 表格、引用块、分隔线、行内代码
-  - 深色模式下统一跟随主题变量
-- 顶部导航区：
-  - 搜索框
-  - 图标按钮
-  - 当前用户入口
-  - 标签操作按钮
-- 顶部下拉弹层：
-  - 通知下拉
-  - 当前用户下拉
-  - 标签操作下拉
-- 菜单管理图标选择器：
-  - 触发按钮
-  - 搜索框
-  - 弹层背景与箭头
-  - 图标网格项
-  - 弹层内滚动条
-- 滚动条：
-  - 浏览器原生滚动条
-  - Element Plus `ElScrollbar` 的 thumb / track
-
-### 当前主题适配时需要重点检查的高风险区域
-
-这些位置最容易在新增功能时漏掉主题样式，后续开发时应优先自查：
-
-- `ElPopover` / `ElTooltip` / `ElDropdown` / `ElSelect` 这类 teleported 到 `body` 的浮层
-- 各种带滚动容器的面板：
-  - `ElScrollbar`
-  - 原生 `overflow: auto`
-  - 表格固定列或自定义滚动区
-- 带箭头的 popper 类组件
-- 自定义按钮外壳里再包 Element Plus 组件的场景
-- 明暗主题切换后仍保留默认白底的组件：
-  - 下拉菜单
-  - 空状态
-  - 颜色选择器面板
-  - 日期面板
-  - 级联面板
-
-### 后续新增前端组件时的主题检查步骤
-
-建议每次新增或修改前端交互后，至少检查下面几项：
-
-1. 在浅色和深色模式各看一遍
-2. 检查组件本体、hover、focus、disabled、active 状态
-3. 检查 teleported 浮层是否仍然是默认浅色
-4. 检查滚动条轨道和 thumb 是否仍出现白底
-5. 检查边框、阴影、遮罩、箭头和空状态文案颜色
-6. 检查弹窗、抽屉、下拉、popover、树、表格内部是否存在局部未适配区域
-
-### 当前约定
-
-- 新增前端交互组件时，主题适配视为默认验收项之一
-- 只要组件会弹出浮层、面板或滚动容器，就应同时补齐深浅主题
-- 如果某个组件需要单独的 `popper-class` 或全局样式覆盖，应优先记录在对应组件文件和本 README 中
-
-## 13. 一句话总结
-
-`rookie` 是一个以 Spring Boot 3 为后端核心、以 Vue 3 为前端界面的后台管理基础框架项目，当前重点围绕用户、角色、菜单、字典、认证与权限体系展开，并计划继续扩展日志记录、通知公告、异常管理等后台常见模块，适合作为管理系统或通用后台能力的基础工程继续演进。
+本项目为个人 / 团队内部学习与演进用途，暂未指定开源协议，使用前请联系维护者。

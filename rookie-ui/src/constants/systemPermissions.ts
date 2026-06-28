@@ -36,4 +36,16 @@ export const SYSTEM_PERMISSION_KEYS = {
     delete: ['system:noticeGroup:delete', 'sys:noticeGroup:delete'],
     member: ['system:noticeGroup:member', 'sys:noticeGroup:member'],
   },
+  operLog: {
+    quarry: ['system:operLog:quarry'],
+    info: ['system:operLog:info'],
+    delete: ['system:operLog:delete'],
+    clean: ['system:operLog:clean'],
+  },
+  errorLog: {
+    quarry: ['system:errorLog:quarry'],
+    info: ['system:errorLog:info'],
+    delete: ['system:errorLog:delete'],
+    clean: ['system:errorLog:clean'],
+  },
 } as const

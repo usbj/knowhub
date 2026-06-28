@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { Lock, User } from '@element-plus/icons-vue'
 import { loginApi } from '@/api/system/login'
 import { useUserStore } from '@/stores/user'
@@ -19,11 +19,12 @@ const loading = ref(false)
 /**
  * 登录表单数据。
  * 账号字段最终会映射为后端需要的 username。
+ * 不再提供"记住本次登录"：后端 token 自带过期时间，前端切换存储范围无意义；
+ * 账号也不回填本地浏览器，避免在本机暴露登录账号带来安全问题。
  */
 const form = reactive({
   username: 'admin',
   password: 'rookie',
-  remember: true,
 })
 
 /**
@@ -62,6 +63,23 @@ const handleLogin = async () => {
   } finally {
     loading.value = false
   }
+}
+
+/**
+ * 处理"忘记密码"操作。
+ * 当前本系统后端未提供自助找回 / 重置密码接口，也无邮件、短信等通知通道，
+ * 因此不引导用户进入任何"自助找回"表单，避免提交后接口报错形成误导。
+ * 这里只给出明确的兜底提示，让用户联系系统管理员重置密码。
+ */
+const handleForgotPassword = () => {
+  ElMessageBox.alert(
+    '本系统暂未开放自助找回密码通道，请联系系统管理员重置密码。',
+    '忘记密码',
+    {
+      confirmButtonText: '我知道了',
+      type: 'info',
+    },
+  )
 }
 </script>
 
@@ -137,11 +155,13 @@ const handleLogin = async () => {
         </label>
 
         <div class="login-view__options">
-          <label class="login-view__remember">
-            <input v-model="form.remember" type="checkbox" />
-            <span>记住本次登录</span>
-          </label>
-          <button class="login-view__text-action" type="button">忘记密码</button>
+          <button
+            class="login-view__text-action"
+            type="button"
+            @click="handleForgotPassword"
+          >
+            忘记密码
+          </button>
         </div>
 
         <button class="login-view__submit" type="submit" :disabled="loading">
@@ -354,16 +374,7 @@ const handleLogin = async () => {
 .login-view__options {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.login-view__remember {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  color: var(--rookie-text-secondary);
-  font-size: var(--rookie-font-size-sm);
+  justify-content: flex-end;
 }
 
 .login-view__text-action {

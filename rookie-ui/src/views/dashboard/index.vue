@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { DataLine, Files, Grid, Lightning, User } from '@element-plus/icons-vue'
+import { useRouter } from 'vue-router'
+import { Document, Setting, Tools, User } from '@element-plus/icons-vue'
 import BaseCard from '@/components/BaseCard.vue'
 import { useLayoutNavigationStore } from '@/stores/navigation'
 import { useUserStore } from '@/stores/user'
@@ -8,7 +9,16 @@ import type { NavigationMenuItem } from '@/types/components/navigation'
 
 const userStore = useUserStore()
 const layoutNavigationStore = useLayoutNavigationStore()
+const router = useRouter()
 
+/**
+ * 方法效果：
+ * 将树形菜单扁平化成一维数组，便于统计与按类型过滤。
+ * 参数：
+ * - `menus`：树形菜单节点。
+ * 返回值：
+ * - 含自身与所有后代节点的一维数组。
+ */
 const flattenMenus = (menus: NavigationMenuItem[]): NavigationMenuItem[] =>
   menus.flatMap((menu) => [menu, ...flattenMenus(menu.children ?? [])])
 
@@ -19,56 +29,28 @@ const directoryCount = computed(() => flatMenus.value.filter((item) => item.menu
 const permissionCount = computed(() => layoutNavigationStore.buttonPermissionKeys.size)
 const roleCount = computed(() => userStore.profileSummary?.roleNames.length ?? 0)
 
-const quickEntries = computed(() => {
-  const entries = [
-    {
-      title: '个人中心',
-      description: '维护昵称、手机号和登录密码',
-      route: '/account/profile',
-    },
-    ...flatMenus.value
-      .filter((item) => item.menuType === 2 && item.route)
-      .slice(0, 5)
-      .map((item) => ({
-        title: item.menuName,
-        description: item.permKey || '可访问业务页面',
-        route: item.route,
-      })),
-  ]
-
-  return entries
-})
-
-const topModules = computed(() =>
-  layoutNavigationStore.menuTree.slice(0, 6).map((item) => ({
-    menuId: item.menuId,
-    title: item.menuName,
-    description:
-      item.children.length > 0
-        ? `包含 ${item.children.filter((child) => child.menuType === 2).length} 个页面入口`
-        : item.permKey || '可直接进入的系统页面',
-    route: item.menuType === 2 ? item.route : item.children.find((child) => child.menuType === 2)?.route || '',
-  })),
-)
-
+/**
+ * 概览 KPI 卡：当前账号的量化概览，提供整页的第一眼信息密度。
+ * 每张卡固定「图标 + 数值 + 标题 + 说明」四要素，深浅色统一走主题变量。
+ */
 const summaryCards = computed(() => [
   {
     title: '可访问页面',
     value: pageCount.value,
     caption: '当前账号已加载的菜单页面',
-    icon: Grid,
+    icon: Document,
   },
   {
     title: '目录分组',
     value: directoryCount.value,
     caption: '侧边导航中的目录数量',
-    icon: Files,
+    icon: Tools,
   },
   {
     title: '按钮权限',
     value: permissionCount.value,
     caption: '当前登录角色拥有的权限点',
-    icon: Lightning,
+    icon: Setting,
   },
   {
     title: '账号角色',
@@ -77,90 +59,192 @@ const summaryCards = computed(() => [
     icon: User,
   },
 ])
+
+/**
+ * 快捷入口：作为与"模块概览"对称的一栏，这里放与管理动作挂钩的高频入口，
+ * 而不与模块概览抢同一批菜单项，避免一边挤一边空。
+ * 两栏共用同一种"小卡 + auto-fill 网格"渲染，项数各自自适应，密度天然对齐。
+ * 当前所有动作都可在前端闭环：个人中心、刷新概览、退出登录。
+ */
+type QuickEntry = {
+  title: string
+  description: string
+  action: 'navigate' | 'reload' | 'logout'
+  route?: string
+}
+
+const quickEntries = computed<QuickEntry[]>(() => [
+  {
+    title: '个人中心',
+    description: '维护昵称、手机号与登录密码',
+    action: 'navigate',
+    route: '/account/profile',
+  },
+  {
+    title: '刷新概览',
+    description: '重新拉取菜单与个人资料',
+    action: 'reload',
+  },
+  {
+    title: '退出登录',
+    description: '清除当前登录态并返回登录页',
+    action: 'logout',
+  },
+])
+
+/**
+ * 方法效果：
+ * 统一处理快捷入口点击，按动作类型分派到导航、刷新或登出，
+ * 保持每个入口的交互语义在前端闭环，不依赖后端接口。
+ * 参数：
+ * - `entry`：被点击的快捷入口配置。
+ * 返回值：
+ * - 无返回值；副作用是触发路由跳转、页面刷新或登出流程。
+ */
+const handleQuickEntry = (entry: QuickEntry) => {
+  if (entry.action === 'navigate' && entry.route) {
+    router.push(entry.route).catch(() => undefined)
+    return
+  }
+
+  if (entry.action === 'reload') {
+    window.location.reload()
+    return
+  }
+
+  if (entry.action === 'logout') {
+    userStore.logout()
+    router.replace({ path: '/login' })
+  }
+}
+
+/**
+ * 模块概览：展示当前账号菜单树下所有可见的一级模块，
+ * 每项标注其下页面入口数量，点击进入该模块第一个可访问页面。
+ * 不再截断到固定数量，让多账号场景都能自然排布。
+ */
+const topModules = computed(() =>
+  layoutNavigationStore.menuTree.map((item) => ({
+    menuId: item.menuId,
+    icon: item.iconComponent,
+    title: item.menuName,
+    pageTotal: item.children.filter((child) => child.menuType === 2).length,
+    route:
+      item.menuType === 2
+        ? item.route
+        : item.children.find((child) => child.menuType === 2)?.route || '',
+  })),
+)
+
+/**
+ * 方法效果：
+ * 点击模块项时若该模块存在可访问页面再跳转，避免跳到空路由。
+ * 参数：
+ * - `route`：目标模块可访问页面路由，可能为空字符串。
+ * 返回值：
+ * - 无返回值；副作用是有路由时触发跳转。
+ */
+const handleModuleClick = (route: string) => {
+  if (!route) {
+    return
+  }
+  router.push(route).catch(() => undefined)
+}
+
+/**
+ * 顶部账户信息行：把原 hero 右侧散落的两个身份盒子收敛为一行 pill 标签，
+ * 与问候语同行展示，结构更克制、信息密度更高。
+ */
+const accountPills = computed(() => [
+  { label: '登录账号', value: userStore.profileSummary?.username || '--' },
+  { label: '角色', value: userStore.profileSummary?.roleNames.join('、') || '未分配角色' },
+  { label: '可访问页面', value: String(pageCount.value) },
+  { label: '按钮权限', value: String(permissionCount.value) },
+])
+
+/**
+ * 方法效果：
+ * 按当前小时生成问候语，让落地页首行更有温度。
+ * 参数：
+ * - 无。
+ * 返回值：
+ * - 「上午/下午/晚上」的问候词。
+ */
+const greeting = computed(() => {
+  const hour = new Date().getHours()
+  if (hour < 6) return '凌晨好'
+  if (hour < 12) return '上午好'
+  if (hour < 14) return '中午好'
+  if (hour < 18) return '下午好'
+  return '晚上好'
+})
 </script>
 
 <template>
   <section class="dashboard-view">
+    <!-- 顶部欢迎区：问候 + 账户信息收敛为一行 pill，结构克制有重心 -->
     <section class="dashboard-view__hero">
       <div class="dashboard-view__hero-copy">
         <span class="dashboard-view__eyebrow">系统首页</span>
-        <h1>{{ userStore.displayName }}</h1>
-        <p>
-          当前账号可直接进入已授权模块，常用入口和权限概览都放在这里，适合做后台落地页。
-        </p>
+        <h1>{{ greeting }}，{{ userStore.displayName }}</h1>
+        <p>已授权模块与权限概览集中在这里，可作为后台工作起点。</p>
       </div>
-
-      <div class="dashboard-view__hero-side">
-        <div class="dashboard-view__identity">
-          <span>登录账号</span>
-          <strong>{{ userStore.profileSummary?.username || '--' }}</strong>
-        </div>
-        <div class="dashboard-view__identity">
-          <span>角色</span>
-          <strong>{{ userStore.profileSummary?.roleNames.join('、') || '未分配角色' }}</strong>
-        </div>
-      </div>
+      <ul class="dashboard-view__pills">
+        <li v-for="pill in accountPills" :key="pill.label" class="dashboard-view__pill">
+          <span>{{ pill.label }}</span>
+          <strong>{{ pill.value }}</strong>
+        </li>
+      </ul>
     </section>
 
+    <!-- 量化概览：四张 KPI 卡，深浅色统一走主题变量 -->
     <section class="dashboard-view__metrics">
       <article v-for="item in summaryCards" :key="item.title" class="dashboard-view__metric">
         <div class="dashboard-view__metric-head">
           <span>{{ item.title }}</span>
-          <component :is="item.icon" />
+          <component :is="item.icon" class="dashboard-view__metric-icon" />
         </div>
         <strong>{{ item.value }}</strong>
         <p>{{ item.caption }}</p>
       </article>
     </section>
 
+    <!-- 快捷入口 / 模块概览：同一套小卡网格，auto-fill 自适应排布，密度天然对齐 -->
     <section class="dashboard-view__grid">
-      <BaseCard title="快捷入口" description="把高频页面收拢在固定首页，减少来回展开菜单。">
-        <div class="dashboard-view__quick-list">
-          <RouterLink
-            v-for="item in quickEntries"
-            :key="item.route"
-            :to="item.route"
-            class="dashboard-view__quick-item"
+      <BaseCard title="快捷入口" description="常驻后台的高频动作入口。">
+        <div class="dashboard-view__tiles">
+          <button
+            v-for="entry in quickEntries"
+            :key="entry.title"
+            type="button"
+            class="dashboard-view__tile"
+            @click="handleQuickEntry(entry)"
           >
-            <strong>{{ item.title }}</strong>
-            <span>{{ item.description }}</span>
-          </RouterLink>
+            <span class="dashboard-view__tile-title">{{ entry.title }}</span>
+            <span class="dashboard-view__tile-desc">{{ entry.description }}</span>
+          </button>
         </div>
       </BaseCard>
 
       <BaseCard title="模块概览" description="当前账号菜单树中可见的一级模块。">
-        <div class="dashboard-view__module-list">
-          <RouterLink
+        <div class="dashboard-view__tiles">
+          <div
             v-for="item in topModules"
             :key="item.menuId"
-            :to="item.route || '/'"
-            class="dashboard-view__module-item"
+            class="dashboard-view__tile"
+            :class="{ 'is-clickable': Boolean(item.route) }"
+            :role="item.route ? 'link' : undefined"
+            :tabindex="item.route ? 0 : undefined"
+            @click="handleModuleClick(item.route)"
+            @keydown.enter="handleModuleClick(item.route)"
           >
-            <strong>{{ item.title }}</strong>
-            <span>{{ item.description }}</span>
-          </RouterLink>
+            <component :is="item.icon" class="dashboard-view__tile-icon" />
+            <span class="dashboard-view__tile-title">{{ item.title }}</span>
+            <span class="dashboard-view__tile-desc">{{ item.pageTotal }} 个页面入口</span>
+          </div>
         </div>
       </BaseCard>
     </section>
-
-    <BaseCard title="使用提示" description="这些不是产品说明，而是当前系统里最实用的日常动作。">
-      <div class="dashboard-view__tips">
-        <div class="dashboard-view__tip">
-          <DataLine />
-          <div>
-            <strong>先从首页进常用页</strong>
-            <span>顶部标签会记住已打开页面，适合在用户、角色、菜单之间来回切换。</span>
-          </div>
-        </div>
-        <div class="dashboard-view__tip">
-          <User />
-          <div>
-            <strong>个人资料单独维护</strong>
-            <span>昵称、手机号和密码统一在个人中心处理，不混进权限菜单。</span>
-          </div>
-        </div>
-      </div>
-    </BaseCard>
   </section>
 </template>
 
@@ -172,7 +256,6 @@ const summaryCards = computed(() => [
 
 .dashboard-view__hero {
   display: grid;
-  grid-template-columns: minmax(0, 1.3fr) minmax(280px, 0.7fr);
   gap: 18px;
   padding: 24px 26px;
   border: 1px solid var(--rookie-border);
@@ -183,7 +266,7 @@ const summaryCards = computed(() => [
 
 .dashboard-view__hero-copy {
   display: grid;
-  gap: 10px;
+  gap: 8px;
 }
 
 .dashboard-view__eyebrow {
@@ -195,7 +278,8 @@ const summaryCards = computed(() => [
 .dashboard-view__hero-copy h1 {
   margin: 0;
   color: var(--rookie-text);
-  font-size: 28px;
+  font-size: 26px;
+  line-height: 1.2;
 }
 
 .dashboard-view__hero-copy p {
@@ -204,35 +288,34 @@ const summaryCards = computed(() => [
   max-width: 680px;
 }
 
-.dashboard-view__hero-side {
-  display: grid;
-  gap: 12px;
-  align-content: start;
+/* 账户信息收敛为一行 pill：替代原右侧散落的两个身份盒子 */
+.dashboard-view__pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
 
-.dashboard-view__identity {
+.dashboard-view__pill {
   display: grid;
-  gap: 6px;
-  padding: 16px;
+  gap: 2px;
+  padding: 10px 16px;
   border: 1px solid var(--rookie-border);
   border-radius: var(--rookie-radius-md);
   background: var(--rookie-surface-weak);
 }
 
-.dashboard-view__identity span,
-.dashboard-view__metric p,
-.dashboard-view__quick-item span,
-.dashboard-view__module-item span,
-.dashboard-view__tip span {
-  color: var(--rookie-text-secondary);
-  font-size: var(--rookie-font-size-sm);
+.dashboard-view__pill span {
+  color: var(--rookie-text-tertiary);
+  font-size: var(--rookie-font-size-xs);
 }
 
-.dashboard-view__identity strong,
-.dashboard-view__quick-item strong,
-.dashboard-view__module-item strong,
-.dashboard-view__tip strong {
+.dashboard-view__pill strong {
   color: var(--rookie-text);
+  font-size: var(--rookie-font-size-md);
+  font-weight: 600;
 }
 
 .dashboard-view__metrics {
@@ -260,8 +343,7 @@ const summaryCards = computed(() => [
   font-size: var(--rookie-font-size-sm);
 }
 
-.dashboard-view__metric-head :deep(svg),
-.dashboard-view__tip :deep(svg) {
+.dashboard-view__metric-icon {
   width: 18px;
   height: 18px;
   color: var(--rookie-primary);
@@ -275,6 +357,8 @@ const summaryCards = computed(() => [
 
 .dashboard-view__metric p {
   margin: 0;
+  color: var(--rookie-text-secondary);
+  font-size: var(--rookie-font-size-sm);
 }
 
 .dashboard-view__grid {
@@ -283,58 +367,67 @@ const summaryCards = computed(() => [
   gap: 18px;
 }
 
-.dashboard-view__quick-list,
-.dashboard-view__module-list {
+/*
+  统一的小卡网格：快捷入口与模块概览共用，auto-fill 自适应排布。
+  项多则多排、项少则少排，两栏密度天然对齐，从根本上解决"一边挤一边空"。
+*/
+.dashboard-view__tiles {
   display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
   gap: 12px;
 }
 
-.dashboard-view__quick-item,
-.dashboard-view__module-item {
+.dashboard-view__tile {
   display: grid;
+  align-content: start;
   gap: 6px;
   padding: 16px;
   border: 1px solid var(--rookie-border);
   border-radius: var(--rookie-radius-md);
   background: var(--rookie-surface-weak);
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
   transition:
     border-color 0.2s ease,
     background-color 0.2s ease;
 }
 
-.dashboard-view__quick-item:hover,
-.dashboard-view__module-item:hover {
+.dashboard-view__tile.is-clickable:hover,
+.dashboard-view__tile:hover {
   border-color: var(--rookie-primary-border);
   background: var(--rookie-hover-bg);
 }
 
-.dashboard-view__tips {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 14px;
+/* 模块概览项带图标，与标题横向排布 */
+.dashboard-view__tile-icon {
+  width: 18px;
+  height: 18px;
+  color: var(--rookie-primary);
 }
 
-.dashboard-view__tip {
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
-  padding: 16px;
-  border: 1px solid var(--rookie-border);
-  border-radius: var(--rookie-radius-md);
-  background: var(--rookie-surface-weak);
+.dashboard-view__tile-title {
+  color: var(--rookie-text);
+  font-size: var(--rookie-font-size-md);
+  font-weight: 600;
 }
 
-.dashboard-view__tip div {
-  display: grid;
-  gap: 6px;
+.dashboard-view__tile-desc {
+  color: var(--rookie-text-secondary);
+  font-size: var(--rookie-font-size-sm);
 }
 
 @media (max-width: 1024px) {
-  .dashboard-view__hero,
-  .dashboard-view__grid,
-  .dashboard-view__tips,
-  .dashboard-view__metrics {
+  .dashboard-view__metrics,
+  .dashboard-view__grid {
     grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 640px) {
+  .dashboard-view__metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 </style>
