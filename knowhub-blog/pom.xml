@@ -9,8 +9,9 @@
         <version>0.0.1</version>
     </parent>
 
-    <artifactId>rookie-system</artifactId>
-    <version>1.0.1</version>
+    <groupId>com.knowhub</groupId>
+    <artifactId>knowhub-blog</artifactId>
+    <version>0.0.1</version>
 
     <properties>
         <maven.compiler.source>17</maven.compiler.source>

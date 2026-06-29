@@ -5,10 +5,11 @@
     <modelVersion>4.0.0</modelVersion>
     <parent>
         <groupId>com.rookie</groupId>
-        <artifactId>rookie</artifactId>
-        <version>1.0.1</version>
+        <artifactId>knowhub</artifactId>
+        <version>0.0.1</version>
     </parent>
     <artifactId>rookie-framework</artifactId>
+    <version>1.0.1</version>
 
     <properties>
         <maven.compiler.source>17</maven.compiler.source>

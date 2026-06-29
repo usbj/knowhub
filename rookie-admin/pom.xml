@@ -5,13 +5,14 @@
     <modelVersion>4.0.0</modelVersion>
     <parent>
         <groupId>com.rookie</groupId>
-        <artifactId>rookie</artifactId>
-        <version>1.0.1</version>
+        <artifactId>knowhub</artifactId>
+        <version>0.0.1</version>
     </parent>
 
     <packaging>jar</packaging>
 
     <artifactId>rookie-admin</artifactId>
+    <version>1.0.1</version>
 
     <properties>
         <maven.compiler.source>17</maven.compiler.source>
@@ -29,6 +30,11 @@
         <dependency>
             <groupId>com.rookie</groupId>
             <artifactId>rookie-system</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>com.knowhub</groupId>
+            <artifactId>knowhub-blog</artifactId>
         </dependency>
 
         <dependency>
