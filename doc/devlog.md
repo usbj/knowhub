@@ -18,6 +18,11 @@
 - `rookie-system/src/main/java/com/rookie/system/service/impl/SysMenuServiceImpl.java` — buildMenuTree 顶级判定处补注释说明 parentId=-1 约定（不改逻辑）
 - `rookie-ui/src/assets/main.css` — .el-form-item__error 去掉背景/边框/圆角/阴影/padding，改为纯文字提示（danger 色 + xs 字号）；错误提示用绝对定位脱离文档流（top:100%），校验出现/消失不改变 form-item 高度与 margin，下方输入框不跳动；文字在默认 18px 下间隙内垂直居中（行高 12px + padding-top 3px）
 
+### 21:48 — 管理员直通权限加载去掉 system: 前缀限制
+
+- `rookie-framework/src/main/resources/mapper/security/UserInfoMapper.xml` — selectAllPermKey 去掉 `perm_key like 'system:%:%'` 前缀过滤，改为 `menu_type = 3`（按钮型）+ status=1 + delete=0 + perm_key 非空，覆盖任意前缀模块的按钮权限键
+- `rookie-framework/src/main/java/com/rookie/framework/security/mapper/UserInfoMapper.java` — selectAllPermKey 方法注释同步更新（不限前缀）
+
 ## 2026-06-20
 ### 18:30 — 消息通知模块 Service、Controller、Mapper 补全 + 实体清理
 
