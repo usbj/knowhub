@@ -140,21 +140,21 @@
   color: var(--rookie-text) !important;
 }
 
+/* 错误提示用绝对定位脱离文档流：校验出现/消失都不改变 form-item 高度与 margin，
+   下方输入框位置始终不跳动。文字落在 form-item 默认 18px 下间隙内垂直居中
+   （间隙 18px，行高 12px，上下各留 3px），不贴当前输入框、不压下一行输入框。 */
 .el-form-item__error {
+  position: absolute;
+  top: 100%;
+  left: 0;
   color: var(--rookie-danger) !important;
   font-size: var(--rookie-font-size-xs) !important;
-  line-height: 18px !important;
-  padding-top: 2px !important;
+  line-height: 12px !important;
+  padding-top: 3px !important;
   background: none !important;
   border: none !important;
   box-shadow: none !important;
   border-radius: 0 !important;
-}
-
-/* 校验态下给 form-item 多留一行间隙，让错误文字垂直落在上下输入框之间的留白正中，
-   不贴当前输入框底部、不压下一行输入框顶部。 */
-.el-form-item.is-error {
-  margin-bottom: 28px !important;
 }
 
 .el-form-item.is-error .el-input__wrapper,
