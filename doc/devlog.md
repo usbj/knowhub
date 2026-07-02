@@ -10,6 +10,14 @@
 
 ---
 
+## 2026-07-02
+### 20:03 — 菜单管理 parentId 约定修复 + 公共表单校验提示去框
+
+- `rookie-ui/src/views/system/menu/config.ts` — createDefaultMenuForm 默认 parentId 由 0 改为 -1，与后端 buildMenuTree 顶级约定对齐
+- `rookie-ui/src/views/system/menu/index.vue` — parentMenuOptions「顶级目录」选项值由 0 改为 -1，避免选中顶级后存盘导致菜单从列表消失
+- `rookie-system/src/main/java/com/rookie/system/service/impl/SysMenuServiceImpl.java` — buildMenuTree 顶级判定处补注释说明 parentId=-1 约定（不改逻辑）
+- `rookie-ui/src/assets/main.css` — .el-form-item__error 去掉背景/边框/圆角/阴影/padding，改为纯文字提示（danger 色 + xs 字号）；新增 .el-form-item.is-error margin-bottom: 28px，让错误文字垂直落在上下输入框之间的留白正中
+
 ## 2026-06-20
 ### 18:30 — 消息通知模块 Service、Controller、Mapper 补全 + 实体清理
 

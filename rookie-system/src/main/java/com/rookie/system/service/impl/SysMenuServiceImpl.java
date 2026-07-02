@@ -119,6 +119,8 @@ public class SysMenuServiceImpl implements SysMenuService {
         }
         List<SysMenuVo> menuVos = new ArrayList<>();
         for (SysMenuVo sysMenuVo : sysMenuVos) {
+            // 顶级菜单约定 parentId = -1：与 sys_menu 表 parent_id DEFAULT '-1' 及种子数据一致。
+            // 前端菜单管理「上级菜单」选项框中「顶级目录」对应值必须为 -1，否则存盘后该菜单不会进入此顶层列表。
             Long id = sysMenuVo.getParentId();
             if (id == null || id == -1L){
                 menuVos.add(sysMenuVo);
