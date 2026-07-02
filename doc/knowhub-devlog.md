@@ -141,3 +141,45 @@
 - 未修改 `rookie-framework`/`rookie-system`/`rookie-common` 任何既有代码/配置（@MapperScan/springdoc/@EnableScheduling 全走 knowhub 模块自带配置类自注册，框架未开 @EnableScheduling 由本模块 SchedulingConfig 开启）；未动 `sql/rookie.sql`/`sql/knowhub-blog.sql`。
 - 白名单/上限走字典、读取收口于 `StorageConfigReader`，业务侧禁直接 `DictUtil`，遵守「全局开关落地约定」。
 - 字典 SQL 两表备注字段拼写：`sys_dict.remake` / `sys_dict_data.remark`（沿用 blog 踩点）。
+
+## 2026-07-02
+
+### 19:02 knowhub 博客/标签/文件三模块前端管理页落地
+
+后端三模块（博客文章 /blog、受控标签 /tag、文件存储 /file）此前已落地，本次按现有系统管理页（notice/dict/dict-data）的页面风格补齐对应前端管理页，复用 rookie-ui 既有公共组件，不改任何原组件。路由由后端 `sys_menu` 树驱动，组件靠菜单 `path` 匹配 `src/views`，无需手写路由注册。
+
+**类型与接口（新建 knowhub 模块目录）**
+- `rookie-ui/src/types/api/knowhub/{blog,tag,file}.ts`：对齐后端 BlogVo/TagVo/FileObjectVo 及 BlogQuarry/FileQuarry/UploadApplyVo/UploadTokenVo/DownloadVo/BindVo/ReviewVo；TagRecord.status 为 number（0禁1启），标签列表不分页返回 `TagRecord[]`。
+- `rookie-ui/src/api/knowhub/{blog,tag,file}.ts`：博客 8 个方法（getBlogPage/getBlogDetail/createBlog/updateBlog/deleteBlogs/publishBlog/revokeBlog/reviewBlog，toggleLike/toggleCollect 属读者侧不挂）、标签 5 个（getTagList 不分页返 `ApiResult<TagRecord[]>`/getTagDetail/createTag/updateTag/deleteTags）、文件 8 个（applyUploadToken/confirmUpload/getDownloadUrl/getFilePage/getFileDetail/bindBizRef/deleteFileObjects + buildFilePublicUrl 拼相对路径不调后端）。
+
+**预签名直传工具与公共组件**
+- `rookie-ui/src/utils/upload.ts`（新建，不触既有 utils）：`presignedUploadFlow` 封装「申请令牌→PUT 直传 RustFS→confirm」三步，直传用原生 XMLHttpRequest 支持 onprogress，带 Content-Type/Content-Length、不带 Token（预签名自带鉴权）；PUBLIC 回填 `/file/public/{objectId}` 供 <img> 直引；导出 buildFilePublicUrl 复用。
+- `rookie-ui/src/components/FileUploadButton.vue`（新建公共组件）：文件管理页「上传文件」测试入口，弹窗选业务类型(file_business_type 字典)/访问语义(file_access 字典，按业务类型默认值回填)/选文件+进度，调 presignedUploadFlow，成功 emit uploaded。标注为**临时测试入口，后期可整块移除**，与父页仅通过 uploaded 事件耦合。
+
+**权限常量**
+- `rookie-ui/src/constants/systemPermissions.ts`：追加 `blog`(create/edit/delete/publish/revoke/review/info)、`tag`(create/edit/delete/info)、`file`(upload/download/delete/info) 三组双值数组，对齐 `sys_menu` 中 `knowhub:blog:*`/`knowhub:tag:*`/`knowhub:file:*` perm_key。SQL 里 `knowhub:file:review` 无后端对应接口，前端不挂该按钮。
+
+**博客文章管理页 `rookie-ui/src/views/blog/`**
+- `index.vue` + `config.ts`：列表/筛选（title/keyword/tagIds 多选/status 字典 blog_status/reviewStatus 字典 review_status/createBy/日期区间）/分页/新增/编辑/发布（status≠PUBLISHED 可见）/撤回（status=PUBLISHED 可见）/审核（status=PENDING_REVIEW 可见，独立审核弹窗收 pass/advice，驳回 advice 必填）/删除/只读详情。tagIds 在筛选与表单均用 `#field-tagIds` 插槽接管为 ElSelect multiple；coverUrl 用 `#field-coverUrl` 插槽接管为封面上传组件；content 走 SharedFormPanel 内置的 markdown 输入。表格不展示封面列（SharedTablePanel 单元格不支持 custom 插槽、不改原组件），封面仅在表单上传与详情弹窗展示。
+- `components/BlogCoverUploader.vue`（页面组件）：封面上传，固定 businessType=BLOG_COVER/access=PUBLIC，预签名直传后回填 coverUrl；已有封面展示预览+重新上传/清除。
+- `components/BlogDetailDialog.vue`（页面组件）：详情只读弹窗，复用 MarkdownPreview 渲染正文 + DictTag 渲染状态/审核状态 + 封面预览 + 元信息（作者/时间/标签/统计/审核信息），仿通知详情排版。
+- `components/BlogReviewDialog.vue`（页面组件）：审核弹窗，单选通过/驳回 + 审核意见文本域，驳回必填，emit submit({blogId,pass,advice})。
+
+**博客标签管理页 `rookie-ui/src/views/blog/tag/`**
+- `index.vue` + `config.ts`：标签列表**不分页**（后端返全量 List），不传 pagination 给 SharedTablePanel（组件 total=0 不渲染分页条）；CRUD（add/edit/delete），status 为 int 用静态 options 0禁用/1启用（与 dict 页口径一致），sort 用 number 输入。照 dict/index.vue 结构。
+
+**文件管理页 `rookie-ui/src/views/file/`**
+- `index.vue` + `config.ts`：列表/筛选（businessType/uploadStatus/access 三字典 + createBy/日期区间）/分页/下载/详情/删除。顶部工具栏放 FileUploadButton（测试入口，uploaded 后刷新列表）。文件无编辑表单，SharedTablePanel 不传 form-visible。下载：PUBLIC 对象直接 window.open(/file/public/{id}) 走 302；PRIVATE 对象调 getDownloadUrlApi 拿预签名 downloadUrl 后 window.open。contentLength 用本地 formatFileSize 友好化 KB/MB。bizRefId 空值展示占位。
+- `components/FileDetailDialog.vue`（页面组件）：详情只读弹窗，ElDescriptions 展示元数据 + DictTag 渲染 businessType/access/uploadStatus；PUBLIC 图片对象展示 /file/public/{id} 缩略图预览。
+
+**遵守约定**
+- 未修改 rookie-ui 任何既有组件（BaseCard/SearchFilterPanel/SharedTablePanel/SharedFormPanel/DictTag/MarkdownEditor/MarkdownPreview 等）、`base.css`/`main.css`、router、stores、utils 既有文件；仅 `systemPermissions.ts` 在既有结构内追加常量。新工具 `utils/upload.ts` 为新建文件不触既有 utils。
+- 字典（blog_status/review_status/file_business_type/file_access/upload_status）登录后由 `stores/dict.ts` 自动预加载，页面配 dictKey 即用；封面对象走 `/file/public/{id}` 相对路径，dev 环境 `/file` 代理已在 vite.config.ts 配好。
+- 未启动 dev server（README.dev.md 约定），仅做 type-check。
+- 新增浮层（上传弹窗/审核弹窗/详情弹窗）均用 base.css 的 --rookie-* 变量适配深浅模式。
+
+**校验**
+- `rookie-ui` `npm run type-check`（vue-tsc --build）通过，EXIT=0。
+- 路由落位：菜单 path `/blog/index`→`views/blog/index.vue`、`/blog/tag/index`→`views/blog/tag/index.vue`、`/file/index`→`views/file/index.vue`，由 dynamicRoutes.ts 自动匹配，无需手写路由。
+
+**待用户人工验证**：登录 admin → 侧边栏「博客管理」下文章/标签/文件三页走查列表/筛选/新增/编辑/删除/发布/撤回/审核/封面上传/文件上传/下载/详情，深浅模式各看一遍。本次无后端接口变更，`doc/knowhub-api.md` 无需更新。

@@ -48,4 +48,27 @@ export const SYSTEM_PERMISSION_KEYS = {
     delete: ['system:errorLog:delete'],
     clean: ['system:errorLog:clean'],
   },
+  // ---- knowhub 二开新增业务模块（博客文章 / 受控标签 / 文件存储）----
+  // 权限键三段式 knowhub:模块:动作，与 sys_menu 中 knowhub:* 行的 perm_key 首值对齐。
+  blog: {
+    create: ['knowhub:blog:add'],
+    edit: ['knowhub:blog:edit'],
+    delete: ['knowhub:blog:delete'],
+    publish: ['knowhub:blog:publish'],
+    revoke: ['knowhub:blog:revoke'],
+    review: ['knowhub:blog:review'],
+    info: ['knowhub:blog:info'],
+  },
+  tag: {
+    create: ['knowhub:tag:add'],
+    edit: ['knowhub:tag:edit'],
+    delete: ['knowhub:tag:delete'],
+    info: ['knowhub:tag:info'],
+  },
+  file: {
+    upload: ['knowhub:file:upload'],
+    download: ['knowhub:file:download'],
+    delete: ['knowhub:file:delete'],
+    info: ['knowhub:file:info'],
+  },
 } as const
