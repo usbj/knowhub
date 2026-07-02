@@ -102,7 +102,8 @@ const parentMenuOptions = computed(() => {
       ]
     })
 
-  return [{ label: '顶级目录', value: 0 }, ...flattenMenus(menuTree.value)]
+  // 顶级目录用 -1 与后端 buildMenuTree 约定对齐（0 会导致存盘后菜单从列表消失）。
+  return [{ label: '顶级目录', value: -1 }, ...flattenMenus(menuTree.value)]
 })
 
 const canCreateMenu = computed(() => hasPermission(SYSTEM_PERMISSION_KEYS.menu.create))
