@@ -10,7 +10,7 @@
     </parent>
 
     <groupId>com.knowhub</groupId>
-    <artifactId>knowhub-blog</artifactId>
+    <artifactId>knowhub</artifactId>
     <version>0.0.1</version>
 
     <properties>
@@ -23,6 +23,12 @@
         <dependency>
             <groupId>com.rookie</groupId>
             <artifactId>rookie-framework</artifactId>
+        </dependency>
+
+        <!--s3 sdk（版本由根 pom 的 software.amazon.awssdk:bom 统一管理；预签名 S3Presigner 类同在此 jar 内）-->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>s3</artifactId>
         </dependency>
     </dependencies>
 

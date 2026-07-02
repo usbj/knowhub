@@ -14,8 +14,8 @@ SET FOREIGN_KEY_CHECKS = 0;
 -- ----------------------------------------------------------------------------
 -- 库与编码
 -- ----------------------------------------------------------------------------
-CREATE DATABASE IF NOT EXISTS `rookie` DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;
-USE `rookie`;
+# CREATE DATABASE IF NOT EXISTS `rookie` DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;
+# USE `rookie`;
 
 -- ----------------------------------------------------------------------------
 -- 建表 DDL（14 张表）

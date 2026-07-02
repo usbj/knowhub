@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.knowhub.mapper.BlogTagMapper">
+
+    <resultMap id="BlogTagResultMap" type="com.knowhub.pojo.entity.BlogTag">
+        <id property="blogId" column="blog_id"/>
+        <id property="tagId" column="tag_id"/>
+        <result property="createTime" column="create_time"/>
+    </resultMap>
+
+    <insert id="insertBlogTags">
+        insert into blog_tag(blog_id, tag_id) values
+        <foreach collection="list" item="item" separator=",">
+            (#{item.blogId}, #{item.tagId})
+        </foreach>
+    </insert>
+
+    <delete id="deleteBlogTagByBlogId" parameterType="long">
+        delete from blog_tag where blog_id = #{blogId}
+    </delete>
+
+    <delete id="deleteBlogTagByTagId" parameterType="long">
+        delete from blog_tag where tag_id = #{tagId}
+    </delete>
+
+    <select id="getTagIdsByBlogId" parameterType="long" resultType="long">
+        select tag_id from blog_tag where blog_id = #{blogId}
+    </select>
+
+    <select id="getBlogTagsByBlogIds" resultMap="BlogTagResultMap">
+        select * from blog_tag where blog_id in
+        <foreach collection="blogIds" item="bid" open="(" separator="," close=")">#{bid}</foreach>
+    </select>
+
+</mapper>

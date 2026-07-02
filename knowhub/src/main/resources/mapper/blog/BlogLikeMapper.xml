@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.knowhub.mapper.BlogLikeMapper">
+
+    <resultMap id="BlogLikeResultMap" type="com.knowhub.pojo.entity.BlogLike">
+        <id property="blogId" column="blog_id"/>
+        <id property="userId" column="user_id"/>
+        <result property="createTime" column="create_time"/>
+    </resultMap>
+
+    <insert id="addBlogLike" parameterType="com.knowhub.pojo.entity.BlogLike">
+        insert ignore into blog_like(blog_id, user_id) values (#{blogId}, #{userId})
+    </insert>
+
+    <delete id="deleteBlogLike" parameterType="com.knowhub.pojo.entity.BlogLike">
+        delete from blog_like where blog_id = #{blogId} and user_id = #{userId}
+    </delete>
+
+    <select id="getBlogLike" parameterType="com.knowhub.pojo.entity.BlogLike" resultMap="BlogLikeResultMap">
+        select * from blog_like where blog_id = #{blogId} and user_id = #{userId}
+    </select>
+
+</mapper>

@@ -1,0 +1,64 @@
+# doc 目录说明
+
+本目录用于存放 rookie 项目在协作过程中产生的各类**临时/本地说明文档**（设计草稿、模块分析、决策记录、对接说明等）。这些内容通常带有较强的时效性和本地语境，不适合直接进入仓库的版本历史。
+
+## 为什么被 Git 忽略
+
+根目录的 `.gitignore` 中已包含 `/doc/` 入口，将这个目录从 Git 跟踪中排除。这样做的考虑是：
+
+- 这里的内容多为过程性文档，频繁改动会污染提交历史
+- 部分文档可能涉及本地配置、临时结论，不适合对外公开
+- 真正需要长期保存并对外披露的稳定文档，应写入仓库内对应的 `README.md` 或独立目录（如模块各自的说明）
+
+## 目录结构约定
+
+后续新增文档时，建议按以下方式组织：
+
+```
+doc/
+├── README.md         本说明文件
+├── <模块名>/         按后端模块划分，如 notice/、user/、dict/
+├── <话题名>/         按跨模块话题划分，如 design/、migration/、troubleshooting/
+└── archive/          归档的过期文档
+```
+
+文件命名建议：
+
+- 使用小写英文 + 连字符命名（如 `notice-module-design.md`）
+- 日期信息建议放到文件内容首部，而非文件名
+- 单文件过长时优先拆成多文件而非长文件
+
+## 与 graphify-out 的关系
+
+`doc/` 与 `graphify-out/` 都是本地忽略目录，但定位不同：
+
+- `graphify-out/` —— graphify 工具自动生成的项目知识图谱产物，由工具维护，**不要手动编辑**
+- `doc/` —— 人工撰写的过程性文档，协作过程中持续沉淀
+
+两目录互不引用，但 `doc/` 下的设计文档可以引导 README 中要长期保留的内容沉淀方向。
+
+## 与根 README 的衔接
+
+当某份 `doc/` 文档经过验证、需要长期保留时，应将其核心内容整理后合并到根 `README.md` 或对应模块的说明中，再从 `doc/` 删除或移入 `doc/archive/`。避免稳定的对外说明长期只存在于本地忽略目录里。
+
+## 全局开关落地约定
+
+后续 knowhub 阶段若需要"管理员可在后台改、全站生效"的全局布尔开关（如博客审核开关 `blog_review_enabled`），**统一走 `sys_dict` + `sys_dict_data` 字典机制**：
+- 在 `sys_dict` 新增一条 `dict_key` 作为开关字典，在 `sys_dict_data` 用对称的 `"true"/"false"` 两条数据项表达开关状态。
+- 后端通过现成的 `DictUtil.getDictData(dictKey)` 读 Redis 缓存，编辑开关后必须像字典 add/edit 那样主动 `DictUtil.setDictData` 刷缓存；前端用现成的 `useDict()` 渲染与切换。
+- **不新建系统配置表**。若未来博客配置项膨胀到大批键值对、字典不再适合承载时，再单独评估建系统设置表；届时迁移成本可控的前提是——开关的读取统一收口到一个读取方法/类（如 `BlogConfigReader.isReviewEnabled()`），业务侧不直接调用 `DictUtil`，从而换存储时只需改该类内部实现，调用方零改动。
+
+## rookie 框架代码修改禁令
+
+**未经用户明确许可，不得修改 `rookie-*` 模块的任何代码与配置**（`rookie-admin`、`rookie-framework`、`rookie-system`、`rookie-common`，包括其中的 `application.yml`、`ApplicationConfig` 等框架级文件）。新模块（如 `knowhub-blog`）的全部产物应在属于自己的模块目录内，避免触碰上游框架层。若某项能力确实需要改框架才能实现，必须先向用户说明并取得同意后再动手。
+
+### knowhub 业务产物不得放入 rookie 模块
+
+**knowhub 阶段新增的业务产物（实体类、DTO、Mapper、Service、Controller、配置类、工具类等）一律放在对应的 knowhub 模块内，严禁放进 `rookie-*` 模块。** `rookie-*` 是上游框架层，承载通用基础设施（用户/角色/菜单/字典/通知/日志等）；knowhub 二开新增的博客/文档/项目/资源/审核等业务内容，归属在自己的模块（如 `knowhub-blog`）对应的包下。
+
+具体落地：
+- 业务实体放在模块内 `com.knowhub.<模块>.pojo.entity.*`（与 `pojo.vo`/`pojo.quarry` 并列），**不要**塞进 `com.rookie.common.pojo.entity`。
+- 业务 Mapper/Service/Controller/配置同理，全部归模块自身包。
+- 业务实体仍可**继承/引用** `com.rookie.common.pojo.BaseEntity` 等框架公共基类（这属于引用框架、不是在框架里加内容，不违规）；但**不得向 `rookie-*` 新增任何类、接口、配置**。
+- 违规示例：把 `Blog` 实体建到 `rookie-common/.../pojo/entity/Blog.java` —— 错。应建 `knowhub-blog/.../pojo/entity/Blog.java`。
+- 判定口径：凡文件物理路径落在 `rookie-*` 模块目录下的新增 `.java`/`.xml`/`.yml`，都视为违反本禁令，除非已获用户明确同意。

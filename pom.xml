@@ -18,7 +18,7 @@
         <module>rookie-common</module>
         <module>rookie-system</module>
         <module>rookie-admin</module>
-        <module>knowhub-blog</module>
+        <module>knowhub</module>
     </modules>
     <packaging>pom</packaging>
 
@@ -32,6 +32,7 @@
         <knife4j.version>4.4.0</knife4j.version>
         <lombok.version>1.18.34</lombok.version>
         <jwt.version>4.4.0</jwt.version>
+        <amazon.s3.version>2.25.27</amazon.s3.version>
     </properties>
 
     <dependencyManagement>
@@ -57,7 +58,7 @@
 
             <dependency>
                 <groupId>com.knowhub</groupId>
-                <artifactId>knowhub-blog</artifactId>
+                <artifactId>knowhub</artifactId>
                 <version>${knowhub.version}</version>
             </dependency>
 
@@ -100,6 +101,14 @@
                 <version>${jwt.version}</version>
             </dependency>
 
+            <!--amazon s3依赖版本-->
+            <dependency>
+                <groupId>software.amazon.awssdk</groupId>
+                <artifactId>bom</artifactId>
+                <version>${amazon.s3.version}</version> <!-- 版本只在BOM中定义一次 -->
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
         </dependencies>
     </dependencyManagement>
 

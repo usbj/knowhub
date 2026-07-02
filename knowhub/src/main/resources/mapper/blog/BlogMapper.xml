@@ -1,0 +1,139 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.knowhub.mapper.BlogMapper">
+
+    <resultMap id="BlogResultMap" type="com.knowhub.pojo.entity.Blog">
+        <id property="blogId" column="blog_id"/>
+        <result property="title" column="title"/>
+        <result property="content" column="content"/>
+        <result property="summary" column="summary"/>
+        <result property="coverUrl" column="cover_url"/>
+        <result property="status" column="status"/>
+        <result property="publishTime" column="publish_time"/>
+        <result property="viewCount" column="view_count"/>
+        <result property="likeCount" column="like_count"/>
+        <result property="collectCount" column="collect_count"/>
+        <result property="reviewStatus" column="review_status"/>
+        <result property="reviewer" column="reviewer"/>
+        <result property="reviewTime" column="review_time"/>
+        <result property="reviewAdvice" column="review_advice"/>
+        <result property="createBy" column="create_by"/>
+        <result property="createTime" column="create_time"/>
+        <result property="updateBy" column="update_by"/>
+        <result property="updateTime" column="update_time"/>
+        <result property="deleted" column="deleted"/>
+    </resultMap>
+
+    <!--
+      列表查询：支持 fulltext(keyword) + 标签(tagIds) 复合筛选。
+      - tagIds 非空时，join blog_tag 要求同时命中全部所选标签
+        （GROUP BY blog_id HAVING COUNT(DISTINCT tag_id) = tagIds.size）。
+      - tagIds 为空时不 join，避免影响 fulltext 与其它过滤。
+    -->
+    <select id="quarryBlog" parameterType="com.knowhub.pojo.quarry.BlogQuarry" resultMap="BlogResultMap">
+        select b.* from blog b
+        <if test="tagIds != null and tagIds.size() > 0">
+            inner join blog_tag bt on bt.blog_id = b.blog_id
+        </if>
+        where b.deleted = 0
+        <if test="title != null and title != ''">and b.title like concat('%', #{title}, '%')</if>
+        <if test="keyword != null and keyword != ''">
+            and MATCH(b.title, b.content) AGAINST(#{keyword} IN BOOLEAN MODE)
+        </if>
+        <if test="status != null and status != ''">and b.status = #{status}</if>
+        <if test="reviewStatus != null and reviewStatus != ''">and b.review_status = #{reviewStatus}</if>
+        <if test="createBy != null and createBy != ''">and b.create_by = #{createBy}</if>
+        <if test="beginTime != null">and b.create_time &gt;= #{beginTime}</if>
+        <if test="endTime != null">and b.create_time &lt;= #{endTime}</if>
+        <if test="tagIds != null and tagIds.size() > 0">
+            and bt.tag_id in
+            <foreach collection="tagIds" item="tid" open="(" separator="," close=")">#{tid}</foreach>
+            group by b.blog_id
+            having count(distinct bt.tag_id) = #{tagIds.size()}
+        </if>
+        order by b.publish_time desc, b.blog_id desc
+    </select>
+
+    <select id="getBlogInfoById" parameterType="long" resultMap="BlogResultMap">
+        select * from blog where blog_id = #{blogId} and deleted = 0
+    </select>
+
+    <insert id="addBlog" parameterType="com.knowhub.pojo.entity.Blog" useGeneratedKeys="true" keyProperty="blogId">
+        insert into blog
+        <trim prefix="(" suffix=")" suffixOverrides=",">
+            <if test="title != null">title,</if>
+            <if test="content != null">content,</if>
+            <if test="summary != null">summary,</if>
+            <if test="coverUrl != null">cover_url,</if>
+            <if test="status != null">status,</if>
+            <if test="publishTime != null">publish_time,</if>
+            <if test="viewCount != null">view_count,</if>
+            <if test="likeCount != null">like_count,</if>
+            <if test="collectCount != null">collect_count,</if>
+            <if test="reviewStatus != null">review_status,</if>
+            <if test="reviewer != null">reviewer,</if>
+            <if test="reviewTime != null">review_time,</if>
+            <if test="reviewAdvice != null">review_advice,</if>
+            create_by, create_time, update_by, update_time
+        </trim>
+        values
+        <trim prefix="(" suffix=")" suffixOverrides=",">
+            <if test="title != null">#{title},</if>
+            <if test="content != null">#{content},</if>
+            <if test="summary != null">#{summary},</if>
+            <if test="coverUrl != null">#{coverUrl},</if>
+            <if test="status != null">#{status},</if>
+            <if test="publishTime != null">#{publishTime},</if>
+            <if test="viewCount != null">#{viewCount},</if>
+            <if test="likeCount != null">#{likeCount},</if>
+            <if test="collectCount != null">#{collectCount},</if>
+            <if test="reviewStatus != null">#{reviewStatus},</if>
+            <if test="reviewer != null">#{reviewer},</if>
+            <if test="reviewTime != null">#{reviewTime},</if>
+            <if test="reviewAdvice != null">#{reviewAdvice},</if>
+            #{createBy}, now(), #{updateBy}, now()
+        </trim>
+    </insert>
+
+    <update id="editBlogInfo" parameterType="com.knowhub.pojo.entity.Blog">
+        update blog
+        <set>
+            <if test="title != null and title != ''">title = #{title},</if>
+            <if test="content != null and content != ''">content = #{content},</if>
+            <if test="summary != null">summary = #{summary},</if>
+            <if test="coverUrl != null">cover_url = #{coverUrl},</if>
+            <if test="status != null and status != ''">status = #{status},</if>
+            <if test="publishTime != null">publish_time = #{publishTime},</if>
+            <if test="viewCount != null">view_count = #{viewCount},</if>
+            <if test="likeCount != null">like_count = #{likeCount},</if>
+            <if test="collectCount != null">collect_count = #{collectCount},</if>
+            <if test="reviewStatus != null">review_status = #{reviewStatus},</if>
+            <if test="reviewer != null">reviewer = #{reviewer},</if>
+            <if test="reviewTime != null">review_time = #{reviewTime},</if>
+            <if test="reviewAdvice != null">review_advice = #{reviewAdvice},</if>
+            <if test="deleted != null">deleted = #{deleted},</if>
+            update_by = #{updateBy},
+            update_time = now()
+        </set>
+        where blog_id = #{blogId}
+    </update>
+
+    <update id="softDeleteBlog" parameterType="long">
+        update blog set deleted = 1, update_time = now() where blog_id = #{blogId}
+    </update>
+
+    <update id="incrViewCount">
+        update blog set view_count = view_count + #{delta} where blog_id = #{blogId}
+    </update>
+
+    <update id="incrLikeCount">
+        update blog set like_count = like_count + #{delta} where blog_id = #{blogId}
+    </update>
+
+    <update id="incrCollectCount">
+        update blog set collect_count = collect_count + #{delta} where blog_id = #{blogId}
+    </update>
+
+</mapper>
