@@ -15,6 +15,14 @@
 
 ## 接口更新日志
 
+### 2026-07-03 — 系统设置模块（system_config）
+
+本批次新增系统设置模块的完整接口，包括分页查询、详情、新增、编辑、删除、刷新缓存。
+
+- 系统设置（6 个）
+
+系统设置为键值型，值类型由 `value_type` 标识（STRING/BOOLEAN/NUMBER/JSON）。数据库为唯一源，Redis 为永久缓存副本（key 前缀 `sys_config:`），工具类 `SysConfigUtil` 只读缓存、不走数据库，启动时由 `SysConfigWarmUpRunner` 预热。内置项（`is_system=1`）受保护：禁止删除、禁止修改 `configKey` 与 `valueType`、禁止停用，仅可改值/名称/备注。「刷新缓存」接口清空后立即从数据库重新预热全部启用项。所有接口均经 `@PreAuthorize` 鉴权，权限 key 与 `sql/sys_config.sql` 中的按钮权限对齐（`system:systemConfig:*`）。
+
 ### 2026-06-28 — 后端鉴权补齐：业务接口 @PreAuthorize + admin 直通兜底
 
 本批次给此前仅有 `@PreAuthorize` 的日志模块之外的 7 个业务 controller 全量补齐 endpoint 级鉴权，并在权限加载层实现 admin 直通兜底。
@@ -1597,4 +1605,192 @@ PUBLISHED → REVOKED | **响应：** `Result<Boolean>`
 无
 
 #### 4.4 响应示例
+`Result<Boolean>`
+
+---
+
+# 系统设置模块
+
+## 一、系统设置
+
+### 1. 获取系统设置列表
+
+#### 1.1 基本信息
+**请求接口：** `/sys/system-config/list`
+**请求方式：** GET
+**所需权限：** `system:systemConfig:quarry`
+**基本信息：** 分页查询系统设置列表，支持按设置键、设置名称、状态、创建时间范围筛选
+
+#### 1.2 请求头
+| 参数名 | 参数说明           | 参数类型 | 是否必填 |
+| ------ | ------------------ | -------- | -------- |
+| Token  | JWT 令牌（无前缀） | string   | 是       |
+
+#### 1.3 请求体（查询参数）
+
+| 参数名     | 参数说明                       | 参数类型 | 是否必填 |
+| ---------- | ------------------------------ | -------- | -------- |
+| configKey  | 设置键（模糊）                 | string   | 否       |
+| configName | 设置名称（模糊）               | string   | 否       |
+| status     | 状态：1 启用 0 停用            | integer  | 否       |
+| beginTime  | 创建起始时间                   | string   | 否       |
+| endTime    | 创建截止时间                   | string   | 否       |
+| pageNum    | 页码                           | integer  | 否       |
+| pageSize   | 每页条数                       | integer  | 否       |
+
+#### 1.4 响应示例
+`Result<PageInfo<SysConfigVo>>`
+
+```json
+{
+  "code": 200,
+  "msg": "请求成功",
+  "data": {
+    "list": [
+      {
+        "configId": 1,
+        "configKey": "sys.user.initPassword",
+        "configName": "用户初始密码",
+        "configValue": "123456",
+        "valueType": "STRING",
+        "isSystem": 1,
+        "remark": "新建用户与重置密码时的初始密码",
+        "status": 1,
+        "createTime": "2026-07-03 10:00:00",
+        "updateTime": "2026-07-03 10:00:00"
+      }
+    ],
+    "total": 3,
+    "pageNum": 1,
+    "pageSize": 10
+  }
+}
+```
+
+---
+
+### 2. 获取系统设置详情
+
+#### 2.1 基本信息
+**请求接口：** `/sys/system-config/{configId}`
+**请求方式：** GET
+**所需权限：** `system:systemConfig:info`
+**基本信息：** 获取指定系统设置的详细信息
+
+#### 2.2 请求头
+| 参数名 | 参数说明           | 参数类型 | 是否必填 |
+| ------ | ------------------ | -------- | -------- |
+| Token  | JWT 令牌（无前缀） | string   | 是       |
+
+#### 2.3 请求体（路径参数）
+
+| 参数名   | 参数说明       | 参数类型 | 是否必填 |
+| -------- | -------------- | -------- | -------- |
+| configId | 设置项主键 ID  | long     | 是       |
+
+#### 2.4 响应示例
+`Result<SysConfigVo>`
+
+---
+
+### 3. 新增系统设置
+
+#### 3.1 基本信息
+**请求接口：** `/sys/system-config`
+**请求方式：** POST
+**所需权限：** `system:systemConfig:add`
+**基本信息：** 新增系统设置项并立即写入 Redis 缓存。新增项强制 `is_system=0`（内置项只能由初始化脚本写入）
+
+#### 3.2 请求头
+| 参数名 | 参数说明           | 参数类型 | 是否必填 |
+| ------ | ------------------ | -------- | -------- |
+| Token  | JWT 令牌（无前缀） | string   | 是       |
+
+#### 3.3 请求体
+
+| 参数名       | 参数说明                                              | 参数类型 | 是否必填 |
+| ------------ | ----------------------------------------------------- | -------- | -------- |
+| configKey    | 设置键（业务唯一，推荐「模块.子项.用途」点号分层）    | string   | 是       |
+| configName   | 设置名称                                              | string   | 是       |
+| configValue  | 设置值（按 valueType 解释）                           | string   | 否       |
+| valueType    | 值类型：STRING/BOOLEAN/NUMBER/JSON                    | string   | 是       |
+| remark       | 备注说明                                              | string   | 否       |
+| status       | 状态：1 启用 0 停用                                   | integer  | 是       |
+
+#### 3.4 响应示例
+`Result<Boolean>`
+
+---
+
+### 4. 编辑系统设置
+
+#### 4.1 基本信息
+**请求接口：** `/sys/system-config`
+**请求方式：** PUT
+**所需权限：** `system:systemConfig:edit`
+**基本信息：** 编辑系统设置并刷新缓存。内置项（is_system=1）禁止修改 configKey/valueType、禁止停用，仅可改值/名称/备注
+
+#### 4.2 请求头
+| 参数名 | 参数说明           | 参数类型 | 是否必填 |
+| ------ | ------------------ | -------- | -------- |
+| Token  | JWT 令牌（无前缀） | string   | 是       |
+
+#### 4.3 请求体
+
+| 参数名       | 参数说明                                              | 参数类型 | 是否必填 |
+| ------------ | ----------------------------------------------------- | -------- | -------- |
+| configId     | 设置项主键 ID                                         | long     | 是       |
+| configKey    | 设置键（内置项不可改）                                | string   | 否       |
+| configName   | 设置名称                                              | string   | 否       |
+| configValue  | 设置值                                                | string   | 否       |
+| valueType    | 值类型（内置项不可改）                                | string   | 否       |
+| remark       | 备注说明                                              | string   | 否       |
+| status       | 状态（内置项不可停用）                                | integer  | 否       |
+
+#### 4.4 响应示例
+`Result<Boolean>`
+
+---
+
+### 5. 删除系统设置
+
+#### 5.1 基本信息
+**请求接口：** `/sys/system-config/{configId}`
+**请求方式：** DELETE
+**所需权限：** `system:systemConfig:delete`
+**基本信息：** 删除系统设置并清除缓存。内置项（is_system=1）禁止删除
+
+#### 5.2 请求头
+| 参数名 | 参数说明           | 参数类型 | 是否必填 |
+| ------ | ------------------ | -------- | -------- |
+| Token  | JWT 令牌（无前缀） | string   | 是       |
+
+#### 5.3 请求体（路径参数）
+
+| 参数名   | 参数说明       | 参数类型 | 是否必填 |
+| -------- | -------------- | -------- | -------- |
+| configId | 设置项主键 ID  | long     | 是       |
+
+#### 5.4 响应示例
+`Result<Boolean>`
+
+---
+
+### 6. 刷新系统设置缓存
+
+#### 6.1 基本信息
+**请求接口：** `/sys/system-config/refresh`
+**请求方式：** POST
+**所需权限：** `system:systemConfig:refresh`
+**基本信息：** 清空 Redis 中全部系统设置缓存，并立即从数据库重新预热全部启用项。与字典刷新（前端本地缓存）不同，系统设置缓存在后端 Redis
+
+#### 6.2 请求头
+| 参数名 | 参数说明           | 参数类型 | 是否必填 |
+| ------ | ------------------ | -------- | -------- |
+| Token  | JWT 令牌（无前缀） | string   | 是       |
+
+#### 6.3 请求体
+无
+
+#### 6.4 响应示例
 `Result<Boolean>`

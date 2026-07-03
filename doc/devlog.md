@@ -10,6 +10,30 @@
 
 ---
 
+## 2026-07-03
+### 18:27 — 系统设置（system_config）模块后端 + 前端 + SQL 全量落地
+
+新增系统设置模块：键值型设置项，值类型由 value_type 标识（STRING/BOOLEAN/NUMBER/JSON）。数据库为唯一源，Redis 为永久缓存副本（key 前缀 `sys_config:`），工具类 `SysConfigUtil` 只读缓存、不走数据库，启动时由 `SysConfigWarmUpRunner` 预热全部启用项；增改删由 Service 同步维护缓存，「刷新缓存」接口清空后立即重新预热。内置项（is_system=1）受保护：禁止删除、禁止改 configKey/valueType、禁止停用，仅可改值/名称/备注。
+
+- `sql/sys_config.sql` — 新建。建表 sys_config（键值型，继承审计四列，不软删除，靠 is_system 保护内置项）+ 3 条内置设置项初始化数据（sys.user.initPassword / sys.user.registerEnabled / sys.notice.keepDays）+ 值类型字典 sys_config_value_type 及 4 条字典数据 + 菜单 69~75（系统设置二级菜单 + 6 个按钮权限 quarry/info/add/edit/delete/refresh）+ admin 授权；INSERT...ON DUPLICATE KEY UPDATE 幂等
+- `rookie-common/src/main/java/com/rookie/common/pojo/entity/SysConfig.java` — 新建，系统设置实体，继承 BaseEntity，字段 configId/configKey/configName/configValue/valueType/isSystem/remark/status
+- `rookie-common/src/main/java/com/rookie/common/util/SysConfigUtil.java` — 新建，系统设置缓存工具（对标 DictUtil，static 方法）。setConfig/getConfig(只读缓存)/removeConfig/clearAllConfig + 类型化读取 getString/getBoolean/getNumber/getObject/getList（带 defaultValue，转换失败/停用/缓存未命中回落默认值，不走数据库）
+- `rookie-system/src/main/java/com/rookie/system/pojo/vo/SysConfigVo.java` — 新建，系统设置 VO
+- `rookie-system/src/main/java/com/rookie/system/pojo/quarry/SysConfigQuarry.java` — 新建，列表查询条件（configKey/configName/status）
+- `rookie-system/src/main/java/com/rookie/system/mapper/SysConfigMapper.java` — 新建，6 个方法（quarry/add/edit/delete/getById/getAll）
+- `rookie-system/src/main/resources/mapper/system/SysConfigMapper.xml` — 新建，insert 用 trim+if 动态列 + useGeneratedKeys 回写主键，update 用 set+if 动态列，getAllSysConfig 供启动预热与刷新预热
+- `rookie-system/src/main/java/com/rookie/system/service/SysConfigService.java` — 新建，6 方法接口
+- `rookie-system/src/main/java/com/rookie/system/service/impl/SysConfigServiceImpl.java` — 新建，增改删事务内操作 DB 后同步缓存；内置项保护校验（删除抛 ServiceException、编辑禁改键/类型/停用）；新增强制 isSystem=0；refreshCache 清空后重新预热全部启用项
+- `rookie-system/src/main/java/com/rookie/system/controller/SysConfigController.java` — 新建，6 接口（list/info/add/edit/delete/refresh），写操作加 @Log + @PreAuthorize，权限码 system:systemConfig:*
+- `rookie-system/src/main/java/com/rookie/system/runner/SysConfigWarmUpRunner.java` — 新建，ApplicationRunner 启动预热钩子，启动时查全部启用设置项写入 Redis，预热失败不阻断启动仅记日志
+- `rookie-ui/src/types/api/system/system-config.ts` — 新建，SysConfigRecord/SysConfigListQuery/SysConfigPageResult，对齐后端 SysConfigVo/SysConfigQuarry
+- `rookie-ui/src/api/system/system-config.ts` — 新建，6 接口封装（list/get/create/update/delete + refreshSysConfigCacheApi），对标 dict.ts
+- `rookie-ui/src/constants/systemPermissions.ts` — 追加 systemConfig 组（create/edit/delete/refresh，双权限码格式）
+- `rookie-ui/src/views/system/system-config/config.ts` — 新建，查询/表单 schema、默认值、校验规则；createSysConfigSchema 按 mode/isSystem/valueType 动态生成（configValue 控件随 valueType 切换 text/switch/number/textarea，内置项编辑禁用 configKey/valueType/status）；SysConfigFormModel 把 configValue 放宽为 string|number|boolean 适配不同控件
+- `rookie-ui/src/views/system/system-config/index.vue` — 新建，系统设置页，仿 dict index.vue；列表 CRUD + 刷新缓存按钮（调后端 refreshSysConfigCacheApi，与字典刷新走前端本地缓存不同）；内置项行隐藏删除按钮；BOOLEAN 类型 configValue 回显归一化为布尔、提交转回 "true"/"false" 字符串；watch valueType 变化重置 configValue 初值；onMounted 预加载值类型字典；vue-tsc type-check 通过
+- `doc/api.md` — 接口更新日志追加 2026-07-03 系统设置模块条目；末尾新增「系统设置模块」章节共 6 个接口四段式文档
+- 补充：设置值 configValue 调整为必填——后端 addSysConfig/editSysConfig 增加空值校验（BOOLEAN 的 "false"、NUMBER 的 "0" 非空放行），前端 sysConfigFormRules 增加 configValue required 规则
+
 ## 2026-07-02
 ### 20:03 — 菜单管理 parentId 约定修复 + 公共表单校验提示去框
 
@@ -22,6 +46,10 @@
 
 - `rookie-framework/src/main/resources/mapper/security/UserInfoMapper.xml` — selectAllPermKey 去掉 `perm_key like 'system:%:%'` 前缀过滤，改为 `menu_type = 3`（按钮型）+ status=1 + delete=0 + perm_key 非空，覆盖任意前缀模块的按钮权限键
 - `rookie-framework/src/main/java/com/rookie/framework/security/mapper/UserInfoMapper.java` — selectAllPermKey 方法注释同步更新（不限前缀）
+
+### 22:04 — 补齐字典数据模块权限点（独立 SQL 脚本）
+
+- `sql/dict-data-permission.sql` — 新建文件。新增「字典数据」二级菜单节点（menu_id=63，挂在字典管理 23 下，path=/system/dict-data/index）及 5 个按钮权限点（64-68：system:dictData:quarry/info/edit/add/delete），perm_key 与后端 SysDictDataController 的 @PreAuthorize 对齐；并给 admin 角色（role_id=1）补 role_menu 关联。全量 INSERT...WHERE NOT EXISTS 幂等写法
 
 ## 2026-06-20
 ### 18:30 — 消息通知模块 Service、Controller、Mapper 补全 + 实体清理
