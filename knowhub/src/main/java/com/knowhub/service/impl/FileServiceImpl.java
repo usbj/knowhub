@@ -6,6 +6,7 @@ import com.github.pagehelper.PageInfo;
 import com.knowhub.config.StorageConfigReader;
 import com.knowhub.config.StorageProperties;
 import com.knowhub.enums.FileAccess;
+import com.knowhub.enums.FileAccessMode;
 import com.knowhub.enums.FileBusinessType;
 import com.knowhub.enums.UploadStatus;
 import com.knowhub.mapper.FileObjectMapper;
@@ -14,6 +15,7 @@ import com.knowhub.pojo.quarry.FileQuarry;
 import com.knowhub.pojo.vo.BindVo;
 import com.knowhub.pojo.vo.DownloadVo;
 import com.knowhub.pojo.vo.FileObjectVo;
+import com.knowhub.pojo.vo.PublicObjectStream;
 import com.knowhub.pojo.vo.UploadApplyVo;
 import com.knowhub.pojo.vo.UploadTokenVo;
 import com.knowhub.service.FileService;
@@ -25,9 +27,11 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import software.amazon.awssdk.core.ResponseInputStream;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
+import software.amazon.awssdk.services.s3.model.GetObjectResponse;
 import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
 import software.amazon.awssdk.services.s3.model.HeadObjectResponse;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
@@ -127,8 +131,17 @@ public class FileServiceImpl implements FileService {
                 .putObjectRequest(putReq)
                 .signatureDuration(Duration.ofMinutes(expireMinutes)));
 
+        // 按访问模式决定给前端的 uploadUrl：
+        // - TRANSFER：填后端代理上传接口 /file/proxy-upload/{objectId}（前端 PUT 字节到后端，后端转发到 OSS）
+        // - DIRECT：填直链预签名绝对 URL（host 用 directBaseUrl，前端直连 nginx 代理/OSS，需 CORS）
+        String uploadUrl;
+        if (storageConfigReader.accessMode() == FileAccessMode.TRANSFER) {
+            uploadUrl = "/file/proxy-upload/" + fileObject.getObjectId();
+        } else {
+            uploadUrl = rewriteHostToDirect(presigned.url().toString());
+        }
         return new UploadTokenVo(
-                presigned.url().toString(),
+                uploadUrl,
                 objectKey,
                 fileObject.getObjectId(),
                 expireMinutes * 60);
@@ -194,22 +207,112 @@ public class FileServiceImpl implements FileService {
     // ================================ PUBLIC 回显 ================================
 
     @Override
-    public String getPublicUrl(Long objectId) {
+    public PublicObjectStream streamPublicObject(Long objectId) {
+        FileObject fileObject = fileObjectMapper.getFileObjectById(objectId);
+        if (fileObject == null) {
+            throw new ServiceException(404, "文件对象不存在");
+        }
+        if (!FileAccess.PUBLIC.getCode().equals(fileObject.getAccess())) {
+            throw new ServiceException(403, "非公开对象，不可走 public 接口");
+        }
+        if (!UploadStatus.CONFIRMED.getCode().equals(fileObject.getUploadStatus())) {
+            // 对外视作不存在，避免状态枚举探测
+            throw new ServiceException(404, "文件未确认");
+        }
+        // 用 s3Client.getObject 拉字节流；NoSuchKeyException（元数据与对象不一致）不在此 catch，
+        // 向上抛由 Controller 兜底映射 404
+        ResponseInputStream<GetObjectResponse> ris = s3Client.getObject(GetObjectRequest.builder()
+                .bucket(fileObject.getBucket())
+                .key(fileObject.getObjectKey())
+                .build());
+        GetObjectResponse resp = ris.response();
+        // Content-Type 优先用元数据存的，避免 RustFS 默认 octet-stream 导致 <img> 裂图；
+        // contentLength/etag 用 S3 实际响应兜底
+        String contentType = fileObject.getContentType() != null && !fileObject.getContentType().isEmpty()
+                ? fileObject.getContentType()
+                : resp.contentType();
+        long contentLength = resp.contentLength() > 0 ? resp.contentLength() : fileObject.getContentLength();
+        return new PublicObjectStream(contentType, contentLength, resp.eTag(), ris);
+    }
+
+    // ================================ 中转下载（PUBLIC + PRIVATE） ================================
+
+    @Override
+    public PublicObjectStream streamDownloadObject(Long objectId) {
+        FileObject fileObject = fileObjectMapper.getFileObjectById(objectId);
+        if (fileObject == null) {
+            throw new ServiceException(404, "文件对象不存在");
+        }
+        if (!UploadStatus.CONFIRMED.getCode().equals(fileObject.getUploadStatus())) {
+            throw new ServiceException(404, "文件未确认");
+        }
+        // PRIVATE 走鉴权（上传人/管理员）；PUBLIC 无鉴权（中转下载接口本身已 permitAll 或走权限键，见 Controller）
+        if (FileAccess.PRIVATE.getCode().equals(fileObject.getAccess())) {
+            checkOwnerOrAdmin(fileObject);
+        }
+        // 拉字节流；NoSuchKeyException（元数据与对象不一致）不在此 catch，向上抛由 Controller 兜底 404
+        ResponseInputStream<GetObjectResponse> ris = s3Client.getObject(GetObjectRequest.builder()
+                .bucket(fileObject.getBucket())
+                .key(fileObject.getObjectKey())
+                .build());
+        GetObjectResponse resp = ris.response();
+        String contentType = fileObject.getContentType() != null && !fileObject.getContentType().isEmpty()
+                ? fileObject.getContentType()
+                : resp.contentType();
+        long contentLength = resp.contentLength() > 0 ? resp.contentLength() : fileObject.getContentLength();
+        // PRIVATE 中转下载带 attachment;filename 强制下载（防浏览器直显私有文件）；PUBLIC 回显走 streamPublicObject 不带
+        String disposition = "attachment;filename=\"" + sanitizeFilename(fileObject.getOriginalName()) + "\"";
+        return new PublicObjectStream(contentType, contentLength, resp.eTag(), disposition, ris);
+    }
+
+    @Override
+    @Transactional
+    public Boolean proxyUpload(Long objectId, java.io.InputStream in, long contentLength, String contentType) {
         FileObject fileObject = fileObjectMapper.getFileObjectById(objectId);
         if (fileObject == null) {
             throw new ServiceException(500, "文件对象不存在");
         }
-        if (!FileAccess.PUBLIC.getCode().equals(fileObject.getAccess())) {
-            throw new ServiceException(500, "非公开对象，不可走 public 接口");
+        if (!UploadStatus.PENDING.getCode().equals(fileObject.getUploadStatus())) {
+            throw new ServiceException(500, "文件状态非待确认，无法代理上传: " + fileObject.getUploadStatus());
         }
-        if (!UploadStatus.CONFIRMED.getCode().equals(fileObject.getUploadStatus())) {
-            throw new ServiceException(500, "文件未确认，暂不可访问");
+        // 仅上传人或管理员可代理上传（防他人往已签发的 PENDING 行塞字节）
+        checkOwnerOrAdmin(fileObject);
+        // 写入 OSS：用前端声明的 contentType（须与申请令牌时一致）；contentLength 传给 SDK 以正确分块
+        try {
+            s3Client.putObject(PutObjectRequest.builder()
+                            .bucket(fileObject.getBucket())
+                            .key(fileObject.getObjectKey())
+                            .contentType(contentType)
+                            .contentLength(contentLength)
+                            .build(),
+                    software.amazon.awssdk.core.sync.RequestBody.fromInputStream(in, contentLength));
+        } catch (Exception e) {
+            // 写入失败 → 置 FAILED，由 GC 清理（对象可能部分写入，DeleteObject 兜底）
+            markFailed(fileObject);
+            throw new ServiceException(500, "代理上传写入 OSS 失败", e.getMessage());
         }
-        // 公开桶直拼；否则签短期 GET 预签名
-        if (storageConfigReader.publicBucketReadable()) {
-            return buildDirectUrl(fileObject);
+        // 写入成功后走 confirm 核对真实值并置 CONFIRMED（复用既有逻辑：HeadObject 校验类型/大小）
+        return confirmUpload(objectId, null);
+    }
+
+    // ================================ PUBLIC 回显链接（按模式） ================================
+
+    @Override
+    public String getPublicAccessUrl(Long objectId) {
+        FileObject fileObject = fileObjectMapper.getFileObjectById(objectId);
+        if (fileObject == null) {
+            // 元数据不存在时回退中转相对路径——访问时由 Controller 返回 404，前端拿到的是同源链接不会暴露状态
+            return "/file/public/" + objectId;
         }
-        return presignGet(fileObject, null).url().toString();
+        // 非 PUBLIC 或未确认时回退中转相对路径——由中转接口映射 403/404，不在此抛异常（供 VO 填充场景，避免单条记录异常影响整页）
+        boolean accessible = FileAccess.PUBLIC.getCode().equals(fileObject.getAccess())
+                && UploadStatus.CONFIRMED.getCode().equals(fileObject.getUploadStatus());
+        if (storageConfigReader.accessMode() == FileAccessMode.DIRECT && accessible) {
+            // 直链模式：拼公开读直链 {directBaseUrl}/{bucket}/{objectKey}（不带签名，永不过期，依赖 OSS 桶公开可读）
+            return storageConfigReader.directBaseUrl() + "/" + fileObject.getBucket() + "/" + fileObject.getObjectKey();
+        }
+        // 中转模式或不可访问：回退后端中转接口（不可访问时由 Controller 返 403/404）
+        return "/file/public/" + objectId;
     }
 
     // ================================ PRIVATE 下载 ================================
@@ -230,7 +333,16 @@ public class FileServiceImpl implements FileService {
         // 签短期 GET 预签名，带 attachment;filename 强制下载
         PresignedGetObjectRequest presigned = presignGet(fileObject, fileObject.getOriginalName());
         long expires = storageProperties.getDownloadExpireMinutes() * 60;
-        return new DownloadVo(presigned.url().toString(), expires, fileObject.getOriginalName());
+        // 按访问模式决定给前端的 downloadUrl：
+        // - TRANSFER：填后端中转下载接口 /file/proxy/{id}（后端拉 OSS 字节回写，同源无 CORS）
+        // - DIRECT：填直链预签名绝对 URL（host 用 directBaseUrl，前端直连 nginx 代理/OSS）
+        String downloadUrl;
+        if (storageConfigReader.accessMode() == FileAccessMode.TRANSFER) {
+            downloadUrl = "/file/proxy/" + objectId;
+        } else {
+            downloadUrl = rewriteHostToDirect(presigned.url().toString());
+        }
+        return new DownloadVo(downloadUrl, expires, fileObject.getOriginalName());
     }
 
     // ================================ 查询 ================================
@@ -338,13 +450,44 @@ public class FileServiceImpl implements FileService {
         return originalName.substring(dot + 1).toLowerCase();
     }
 
-    /** 拼公开读直链：{endpoint}/{bucket}/{objectKey} */
-    private String buildDirectUrl(FileObject fo) {
+    /**
+     * 把预签名绝对 URL 的 host 替换为直链模式对外暴露的 base（directBaseUrl），
+     * 保留桶名/对象 key/签名查询串原样，得到给前端的直链地址。
+     * <p>
+     * 形如 http://100.82.86.85:9000/knowhub/blog_cover/.../x.png?X-Amz-...
+     * → {directBaseUrl}/knowhub/blog_cover/.../x.png?X-Amz-...
+     * （directBaseUrl 通常是 nginx 公网反代域名，nginx 再转发到内网 OSS）。
+     * <p>
+     * 仅用于直链模式（DIRECT）：上传 PUT 与 PRIVATE 下载的预签名绝对 URL。
+     * 若 url 不以配置 endpoint 开头（切到其他 OSS 等），原样返回不强制改写；
+     * directBaseUrl 为空时回退用 yml endpoint（仅同网络段用户可达）。
+     */
+    private String rewriteHostToDirect(String absoluteUrl) {
+        if (absoluteUrl == null || absoluteUrl.isEmpty()) {
+            return absoluteUrl;
+        }
         String endpoint = storageProperties.getEndpoint();
+        if (endpoint == null || endpoint.isEmpty()) {
+            return absoluteUrl;
+        }
+        String directBase = storageConfigReader.directBaseUrl();
+        if (directBase == null || directBase.isEmpty()) {
+            // 字典未配 directBaseUrl，回退用 yml endpoint（同网络段可达）
+            directBase = endpoint;
+        }
         if (endpoint.endsWith("/")) {
             endpoint = endpoint.substring(0, endpoint.length() - 1);
         }
-        return endpoint + "/" + fo.getBucket() + "/" + fo.getObjectKey();
+        if (directBase.endsWith("/")) {
+            directBase = directBase.substring(0, directBase.length() - 1);
+        }
+        if (absoluteUrl.startsWith(endpoint + "/")) {
+            return directBase + absoluteUrl.substring(endpoint.length());
+        }
+        if (absoluteUrl.startsWith(endpoint)) {
+            return directBase + absoluteUrl.substring(endpoint.length());
+        }
+        return absoluteUrl;
     }
 
     /** 签 GET 预签名；originalName 非空时带 attachment;filename 强制下载 */

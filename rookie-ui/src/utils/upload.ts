@@ -1,16 +1,18 @@
 /**
  * 文件作用：
- * 封装文件预签名直传流程（申请令牌 → PUT 直传 RustFS → 确认），
- * 供博客封面上传、文件管理页上传入口等场景复用。
+ * 封装文件上传流程（申请令牌 → PUT 上传 → 确认 → 取回显链接），供博客封面上传、文件管理页上传等场景复用。
  * 关键约定：
- * - 直传用原生 XMLHttpRequest（支持 upload.onprogress 进度回调），
- *   带 Content-Type / Content-Length 头，**不带 Token 头**——RustFS 预签名自带鉴权，
- *   带 Token 反而可能被预签名条件校验拒绝。
- * - PUBLIC 对象上传成功后回填 /file/public/{objectId} 供 <img> 直引；
- *   PRIVATE 对象只返回 objectId，取用走 /file/download/{id} 鉴权预签名。
+ * - 上传目标由后端按访问模式决定（前端不关心 OSS 地址）：
+ *   · 中转模式：uploadUrl 为 /file/proxy-upload/{objectId}（同源后端鉴权接口），PUT 需带 Token 头；
+ *   · 直链模式：uploadUrl 为预签名绝对 URL（OSS/nginx），PUT 不带 Token（预签名自带鉴权，带反被拒）。
+ *   putToPresignedUrl 按链接形态（相对/绝对）自动决定带不带 Token，调用方无感。
+ * - 上传用原生 XMLHttpRequest（支持 upload.onprogress 进度回调），带 Content-Type 头。
+ * - PUBLIC 对象上传成功后调 /file/url/{id} 取按模式的回显链接回填（中转→/file/public/{id}；直链→OSS 直链），
+ *   接口异常时回退 /file/public/{id}（中转接口两种模式都可用）；PRIVATE 对象只返回 objectId，取用走下载接口。
  * - 这是 knowhub 二开新增工具，不修改任何既有 utils 文件。
  */
-import { applyUploadTokenApi, confirmUploadApi, buildFilePublicUrl } from '@/api/knowhub/file'
+import { applyUploadTokenApi, confirmUploadApi, getPublicAccessUrlApi, buildFilePublicUrl } from '@/api/knowhub/file'
+import { USER_TOKEN_STORAGE_KEY } from '@/stores/user'
 import type { UploadApplyPayload } from '@/types/api/knowhub/file'
 
 /** 上传进度回调参数，取值 0–100。 */
@@ -65,8 +67,19 @@ const putToPresignedUrl = (
   new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest()
     xhr.open('PUT', uploadUrl, true)
-    // Content-Type 必须与申请令牌时一致，否则预签名条件校验失败
+    // Content-Type 必须与申请令牌时一致，否则预签名条件校验失败 / 后端代理写入类型不符
     xhr.setRequestHeader('Content-Type', contentType)
+
+    // 链接形态决定是否带 Token：
+    // - 相对路径（/file/proxy-upload/{id}，中转模式）：同源后端鉴权接口，必须带 Token 头，否则 401
+    // - 绝对 URL（直链模式，预签名 OSS/nginx）：预签名自带鉴权，带 Token 反被预签名条件校验拒绝，不带
+    const isRelative = !/^https?:\/\//i.test(uploadUrl)
+    if (isRelative) {
+      const token = localStorage.getItem(USER_TOKEN_STORAGE_KEY)
+      if (token) {
+        xhr.setRequestHeader('Token', token)
+      }
+    }
 
     if (onProgress) {
       xhr.upload.onprogress = (event) => {
@@ -80,11 +93,11 @@ const putToPresignedUrl = (
       if (xhr.status >= 200 && xhr.status < 300) {
         resolve()
       } else {
-        reject(new Error(`直传失败：HTTP ${xhr.status} ${xhr.statusText}`))
+        reject(new Error(`上传失败：HTTP ${xhr.status} ${xhr.statusText}`))
       }
     }
 
-    xhr.onerror = () => reject(new Error('直传失败：网络异常'))
+    xhr.onerror = () => reject(new Error('上传失败：网络异常'))
     xhr.send(file)
   })
 
@@ -132,11 +145,22 @@ export const presignedUploadFlow = async (
   // 3. 上传确认：后端 HeadObject 核对真实值并置 CONFIRMED
   await confirmUploadApi(token.objectId, bizRefId)
 
-  // 4. PUBLIC 对象回填回显相对路径供 <img> 直引
+  // 4. PUBLIC 对象取按当前访问模式的回显链接回填（中转模式→/file/public/{id}；直链模式→OSS/nginx 直链）
+  //    调 /file/url/{id} 由后端按模式决定地址，前端不关心 OSS 地址、迁移零改动；
+  //    接口异常时回退中转相对路径 buildFilePublicUrl（中转接口两种模式都可用，保证回显不中断）
+  let publicUrl: string | undefined
+  if (access === 'PUBLIC') {
+    try {
+      const urlResult = await getPublicAccessUrlApi(token.objectId)
+      publicUrl = urlResult.data ?? buildFilePublicUrl(token.objectId)
+    } catch {
+      publicUrl = buildFilePublicUrl(token.objectId)
+    }
+  }
   return {
     objectId: token.objectId,
     objectKey: token.objectKey,
-    publicUrl: access === 'PUBLIC' ? buildFilePublicUrl(token.objectId) : undefined,
+    publicUrl,
   }
 }
 

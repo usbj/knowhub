@@ -50,7 +50,7 @@ const isImagePreviewable = computed(() => {
 })
 
 /**
- * PUBLIC 图片预览地址：/file/public/{objectId} 相对路径，靠 /file 代理 302 到 RustFS。
+ * PUBLIC 图片预览地址：/file/public/{objectId} 相对路径，靠 /file 代理到后端中转回写字节流。
  */
 const previewUrl = computed(() =>
   props.fileObject?.objectId ? buildFilePublicUrl(props.fileObject.objectId) : '',
@@ -62,6 +62,7 @@ const previewUrl = computed(() =>
     :model-value="visible"
     title="文件详情"
     width="640px"
+    class="file-detail-dialog"
     destroy-on-close
     @update:model-value="emit('update:visible', $event)"
   >
@@ -71,9 +72,16 @@ const previewUrl = computed(() =>
         <img :src="previewUrl" alt="文件预览" />
       </div>
 
+      <!--
+        元数据描述列表：
+        - :column="2" 两列布局，短字段一行两个；长字段（文件名/校验值/对象 key/MIME）用 :span="2" 独占整行
+          并加 class-name="file-detail__cell-break" 强制长字符串换行，避免撑破弹窗宽度。
+        - 长字段独占整行而非两列，是因为 objectKey（含日期/uuid 路径）、checksum（32 位 hash）、
+          contentType（如 image/png; charset=...）等连续字符串不可自然断词，两列下会更窄更易溢出。
+      -->
       <ElDescriptions :column="2" border>
         <ElDescriptionsItem label="对象编号">{{ fileObject.objectId ?? '--' }}</ElDescriptionsItem>
-        <ElDescriptionsItem label="文件名">{{ fileObject.originalName || '--' }}</ElDescriptionsItem>
+        <ElDescriptionsItem label="大小">{{ formatFileSize(fileObject.contentLength) }}</ElDescriptionsItem>
         <ElDescriptionsItem label="业务类型">
           <DictTag dict-key="file_business_type" :value="fileObject.businessType" />
         </ElDescriptionsItem>
@@ -83,13 +91,21 @@ const previewUrl = computed(() =>
         <ElDescriptionsItem label="上传状态">
           <DictTag dict-key="upload_status" :value="fileObject.uploadStatus" />
         </ElDescriptionsItem>
-        <ElDescriptionsItem label="大小">{{ formatFileSize(fileObject.contentLength) }}</ElDescriptionsItem>
-        <ElDescriptionsItem label="MIME 类型">{{ fileObject.contentType || '--' }}</ElDescriptionsItem>
         <ElDescriptionsItem label="业务关联">{{ fileObject.bizRefId ?? '--' }}</ElDescriptionsItem>
-        <ElDescriptionsItem label="校验值" :span="2">{{ fileObject.checksum || '--' }}</ElDescriptionsItem>
-        <ElDescriptionsItem label="对象 key" :span="2">{{ fileObject.objectKey || '--' }}</ElDescriptionsItem>
         <ElDescriptionsItem label="上传人">{{ fileObject.createBy || '--' }}</ElDescriptionsItem>
         <ElDescriptionsItem label="创建时间">{{ formatTime(fileObject.createTime) }}</ElDescriptionsItem>
+        <ElDescriptionsItem label="文件名" :span="2" class-name="file-detail__cell-break">
+          {{ fileObject.originalName || '--' }}
+        </ElDescriptionsItem>
+        <ElDescriptionsItem label="MIME 类型" :span="2" class-name="file-detail__cell-break">
+          {{ fileObject.contentType || '--' }}
+        </ElDescriptionsItem>
+        <ElDescriptionsItem label="对象 key" :span="2" class-name="file-detail__cell-break">
+          {{ fileObject.objectKey || '--' }}
+        </ElDescriptionsItem>
+        <ElDescriptionsItem label="校验值" :span="2" class-name="file-detail__cell-break">
+          {{ fileObject.checksum || '--' }}
+        </ElDescriptionsItem>
       </ElDescriptions>
     </div>
 
@@ -102,6 +118,15 @@ const previewUrl = computed(() =>
 </template>
 
 <style scoped>
+/*
+ * 弹窗体限高 + 滚动：内容超长（长 objectKey / 大预览图）时不撑出视口，
+ * 滚动条跟随主题变量。ElDialog body 由 :deep() 命中 Element Plus 内部类。
+ */
+.file-detail-dialog :deep(.el-dialog__body) {
+  max-height: 70vh;
+  overflow-y: auto;
+}
+
 .file-detail {
   display: grid;
   gap: 16px;
@@ -119,6 +144,17 @@ const previewUrl = computed(() =>
   width: 100%;
   max-height: 280px;
   object-fit: contain;
+}
+
+/*
+ * 长字符串单元格强制换行：
+ * word-break: break-all 允许在任意字符间断行（连续 hash / 路径无自然断词点），
+ * overflow-wrap: break-all 兜底极长单词；配合 td 自身布局防溢出。
+ * class-name 加在 ElDescriptionsItem 内容 td 上，scoped 下需 :deep() 穿透。
+ */
+.file-detail-dialog :deep(.file-detail__cell-break) {
+  word-break: break-all;
+  overflow-wrap: break-anywhere;
 }
 
 .file-detail__footer {

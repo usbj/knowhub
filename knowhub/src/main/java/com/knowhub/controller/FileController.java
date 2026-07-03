@@ -5,17 +5,23 @@ import com.knowhub.pojo.quarry.FileQuarry;
 import com.knowhub.pojo.vo.BindVo;
 import com.knowhub.pojo.vo.DownloadVo;
 import com.knowhub.pojo.vo.FileObjectVo;
+import com.knowhub.pojo.vo.PublicObjectStream;
 import com.knowhub.pojo.vo.UploadApplyVo;
 import com.knowhub.pojo.vo.UploadTokenVo;
 import com.knowhub.service.FileService;
 import com.rookie.common.annotation.Log;
 import com.rookie.common.enums.BusinessType;
+import com.rookie.common.exception.ServiceException;
 import com.rookie.common.pojo.Result;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.CacheControl;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -27,17 +33,25 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody;
+
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import java.util.concurrent.TimeUnit;
 
 /**
  * 文件存储接口。路由 /file，权限键三段式 knowhub:file:*。
  * 预签名直传：POST /file/upload-token 签发令牌 → 前端直传 RustFS → POST /file/confirm/{id} 确认。
- * PUBLIC 回显走 GET /file/public/{id} 302 重定向（供 Markdown <img> 直接引用）。
+ * PUBLIC 回显走 GET /file/public/{id} 后端中转字节流（s3Client.getObject 拉流，StreamingResponseBody 回写，
+ *   供 Markdown <img>、封面对话框等直接引用；无鉴权，由 SecurityConfig permitAll 放行）。
  * PRIVATE 下载走 GET /file/download/{id} 返回预签名 URL（带 attachment;filename）。
  */
 @Tag(name = "文件存储", description = "文件上传令牌/确认/回显/下载/管理相关接口")
 @RestController
 @RequestMapping("/file")
 public class FileController {
+
+    private static final Logger log = LoggerFactory.getLogger(FileController.class);
 
     @Autowired
     private FileService fileService;
@@ -62,12 +76,46 @@ public class FileController {
     }
 
     @GetMapping("/public/{objectId}")
-    @Operation(summary = "PUBLIC 对象回显（302 重定向到 RustFS）")
-    public ResponseEntity<Void> getPublic(@PathVariable Long objectId) {
-        String url = fileService.getPublicUrl(objectId);
-        return ResponseEntity.status(HttpStatus.FOUND)
-                .header(HttpHeaders.LOCATION, url)
-                .build();
+    @Operation(summary = "PUBLIC 对象回显（后端中转字节流，无鉴权）")
+    public ResponseEntity<StreamingResponseBody> getPublic(@PathVariable Long objectId) {
+        PublicObjectStream pos;
+        try {
+            pos = fileService.streamPublicObject(objectId);
+        } catch (ServiceException e) {
+            // 业务校验失败 → 映射对应 HTTP 状态码，返回纯状态码空体，
+            // 绝不冒泡到 GlobalExceptionHandler（@RestControllerAdvice 会包成 Result JSON，对 <img> 无效）
+            int code = e.getCode() == null ? 500 : e.getCode();
+            HttpStatus status = switch (code) {
+                case 404 -> HttpStatus.NOT_FOUND;
+                case 403 -> HttpStatus.FORBIDDEN;
+                default -> HttpStatus.INTERNAL_SERVER_ERROR;
+            };
+            return ResponseEntity.status(status).build();
+        } catch (Exception e) {
+            // s3Client.getObject 抛 NoSuchKeyException / S3Exception 等触网异常兜底
+            log.warn("[PUBLIC 回显] 拉取对象失败 objectId={} reason={}", objectId, e.getMessage());
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).build();
+        }
+
+        // 流式回写：try-with-resources 关闭 ResponseInputStream，归还 SDK 连接池，不依赖 GC
+        StreamingResponseBody body = out -> {
+            try (var in = pos.getStream()) {
+                // JDK 17 InputStream.transferTo，内部 8KB 缓冲逐块拷贝，大图不进内存
+                in.transferTo(out);
+            } catch (Exception e) {
+                // 客户端中途断开等，仅日志；此时已无法再写响应，不能抛
+                log.warn("[PUBLIC 回显] 流式拷贝中断 objectId={} reason={}", objectId, e.getMessage());
+            }
+        };
+
+        return ResponseEntity.ok()
+                .contentType(MediaType.parseMediaType(pos.getContentType()))
+                .contentLength(pos.getContentLength())
+                // PUBLIC 对象不修改、删除走 GC 不复用 id，可安全强缓存 7 天 + immutable
+                .cacheControl(CacheControl.maxAge(7, TimeUnit.DAYS).cachePublic().immutable())
+                .eTag(pos.getEtag())
+                .header(HttpHeaders.ACCEPT_RANGES, "none") // 首版不支持 Range
+                .body(body);
     }
 
     @GetMapping("/download/{objectId}")
@@ -76,6 +124,85 @@ public class FileController {
     public Result<DownloadVo> getDownloadUrl(@PathVariable Long objectId) {
         DownloadVo vo = fileService.getDownloadUrl(objectId);
         return Result.success(vo);
+    }
+
+    /**
+     * 中转下载（TRANSFER 模式 PRIVATE 下载用）：后端用 s3Client.getObject 拉字节流回写，
+     * 同源无 CORS、地址不暴露 OSS。PRIVATE 走下载鉴权 + 服务端再校验上传人/管理员。
+     * 响应头带 attachment;filename 强制下载（防浏览器直显私有文件）。
+     * <p>
+     * 实现用同步写 HttpServletResponse（非 StreamingResponseBody）：StreamingResponseBody 走异步 dispatch，
+     * 异步分发回来时 SecurityContext 不传播，AuthorizationFilter 会因 anyRequest().authenticated() 失败抛
+     * AuthorizationDeniedException（即使同步阶段 @PreAuthorize 已通过）。同步写在原 servlet 线程完成，
+     * filter 链只过一次，@PreAuthorize 在方法入口同步校验，无异步 dispatch 授权问题。
+     */
+    @GetMapping("/proxy/{objectId}")
+    @Operation(summary = "中转下载（后端代理回写字节流，PRIVATE 鉴权）")
+    @PreAuthorize("hasAuthority('knowhub:file:download')")
+    public void proxyDownload(@PathVariable Long objectId, HttpServletResponse response) {
+        PublicObjectStream pos;
+        try {
+            pos = fileService.streamDownloadObject(objectId);
+        } catch (ServiceException e) {
+            int code = e.getCode() == null ? 500 : e.getCode();
+            response.setStatus(switch (code) {
+                case 404 -> HttpServletResponse.SC_NOT_FOUND;
+                case 403 -> HttpServletResponse.SC_FORBIDDEN;
+                default -> HttpServletResponse.SC_INTERNAL_SERVER_ERROR;
+            });
+            return;
+        } catch (Exception e) {
+            log.warn("[中转下载] 拉取对象失败 objectId={} reason={}", objectId, e.getMessage());
+            response.setStatus(HttpServletResponse.SC_NOT_FOUND);
+            return;
+        }
+
+        // 设置响应头：Content-Type/Length/Cache-Control/Content-Disposition
+        response.setStatus(HttpServletResponse.SC_OK);
+        response.setContentType(pos.getContentType());
+        response.setContentLengthLong(pos.getContentLength());
+        response.setHeader(HttpHeaders.ACCEPT_RANGES, "none");
+        response.setHeader(HttpHeaders.CACHE_CONTROL, "no-cache");
+        if (pos.getContentDisposition() != null && !pos.getContentDisposition().isEmpty()) {
+            response.setHeader(HttpHeaders.CONTENT_DISPOSITION, pos.getContentDisposition());
+        }
+
+        // 同步流式拷贝：try-with-resources 关闭 S3 ResponseInputStream 归还连接池；客户端断开仅日志
+        try (var in = pos.getStream(); var out = response.getOutputStream()) {
+            in.transferTo(out);
+            out.flush();
+        } catch (Exception e) {
+            log.warn("[中转下载] 流式拷贝中断 objectId={} reason={}", objectId, e.getMessage());
+        }
+    }
+
+    /**
+     * 后端代理转发上传（TRANSFER 模式上传用）：前端把文件字节流 PUT 到本接口，
+     * 后端用 s3Client.putObject 写入 OSS，再走 confirm 核对置 CONFIRMED。
+     * 前端拿不到 OSS 直连地址时的兜底上传通道，后端经上传字节流。
+     * 请求体即文件字节，Content-Type/Content-Length 由前端 PUT 时带（须与申请令牌时一致）。
+     */
+    @PutMapping("/proxy-upload/{objectId}")
+    @Operation(summary = "后端代理转发上传（接收字节流写入 OSS）")
+    @Log(title = "文件对象", businessType = BusinessType.INSERT)
+    @PreAuthorize("hasAuthority('knowhub:file:upload')")
+    public Result<Boolean> proxyUpload(@PathVariable Long objectId,
+                                       HttpServletRequest request) throws java.io.IOException {
+        long contentLength = request.getContentLengthLong();
+        String contentType = request.getContentType();
+        Boolean b = fileService.proxyUpload(objectId, request.getInputStream(), contentLength, contentType);
+        return Result.success(b);
+    }
+
+    /**
+     * 取 PUBLIC 对象回显链接（按当前访问模式）：
+     * TRANSFER → /file/public/{id}（后端中转）；DIRECT → {directBaseUrl}/{bucket}/{objectKey}（公开读直链）。
+     * 供不便在详情接口顺带返回链接的场景主动取用（多数场景由详情接口 coverUrl/previewUrl 顺带返回）。
+     */
+    @GetMapping("/url/{objectId}")
+    @Operation(summary = "取 PUBLIC 回显链接（按访问模式）")
+    public Result<String> getPublicAccessUrl(@PathVariable Long objectId) {
+        return Result.success(fileService.getPublicAccessUrl(objectId));
     }
 
     @GetMapping("/list")

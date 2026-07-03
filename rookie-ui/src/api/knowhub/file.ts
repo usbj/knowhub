@@ -105,10 +105,22 @@ export const deleteFileObjectsApi = (objectIds: number[]) =>
 /**
  * 方法效果：
  * 拼接 PUBLIC 对象的回显相对路径，供博客封面 <img>、文件预览等直接引用。
- * 不调后端，靠浏览器对 /file/public/{id} 的 302 重定向自动去 RustFS 拉图。
+ * 不调后端，靠浏览器对 /file/public/{id} 的同源请求拉取后端中转回写的图片字节流。
  * 参数：
  * - `objectId`：文件对象主键。
  * 返回值：
  * - 形如 /file/public/{objectId} 的相对路径。
  */
 export const buildFilePublicUrl = (objectId: number): string => `/file/public/${objectId}`
+
+/**
+ * 方法效果：
+ * 取 PUBLIC 对象按当前访问模式的回显链接（中转模式→/file/public/{id}；直链模式→OSS/nginx 直链地址）。
+ * 上传成功后调此接口拿按模式的链接回填，使前端不关心 OSS 地址、迁移零改动。
+ * 参数：
+ * - `objectId`：文件对象主键。
+ * 返回值：
+ * - 后端 Result 包裹的回显链接字符串。
+ */
+export const getPublicAccessUrlApi = (objectId: number) =>
+  get<ApiResult<string>>(`/file/url/${objectId}`)

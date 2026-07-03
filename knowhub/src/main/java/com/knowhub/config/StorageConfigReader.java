@@ -1,5 +1,6 @@
 package com.knowhub.config;
 
+import com.knowhub.enums.FileAccessMode;
 import com.knowhub.enums.FileBusinessType;
 import com.rookie.common.pojo.entity.SysDictData;
 import com.rookie.common.util.DictUtil;
@@ -29,6 +30,12 @@ public class StorageConfigReader {
 
     /** 字典键：各业务类型允许的扩展名/MIME 白名单（label=业务类型 code，value=逗号分隔） */
     public static final String DICT_KEY_TYPE_WHITELIST = "file_type_whitelist";
+
+    /** 字典键：文件访问模式（value=transfer/direct，见 FileAccessMode 枚举） */
+    public static final String DICT_KEY_ACCESS_MODE = "file_access_mode";
+
+    /** 字典键：直链模式对外暴露的 OSS 地址 base（value=nginx 公网反代域名或 OSS 公网 endpoint） */
+    public static final String DICT_KEY_DIRECT_BASE_URL = "file_direct_base_url";
 
     /** 默认体积上限（MB），字典缺失时回退 */
     private static final long DEFAULT_SIZE_LIMIT_MB = 10;
@@ -110,6 +117,60 @@ public class StorageConfigReader {
     /** PUBLIC 对象是否直拼公开读 URL（false 则也走预签名 GET） */
     public boolean publicBucketReadable() {
         return storageProperties.isPublicBucketReadable();
+    }
+
+    /**
+     * 文件访问模式：TRANSFER（中转）/ DIRECT（直链）。
+     * <p>
+     * 当前实现走字典 sys_dict['file_access_mode']，运维后台改、复用 DictUtil 缓存、运行时生效；
+     * 字典缺失或读取异常时默认 TRANSFER（中转模式更通用，不依赖 OSS 公网可达 / CORS）。
+     * <p>
+     * 将来迁系统设置表时，仅需改本方法内部实现（直接读设置值而非遍历字典列表），签名与调用方零改动。
+     */
+    public FileAccessMode accessMode() {
+        try {
+            List<SysDictData> data = DictUtil.getDictData(DICT_KEY_ACCESS_MODE);
+            if (data != null && !data.isEmpty()) {
+                // 取首条数据项的 value 作为模式 code
+                for (SysDictData d : data) {
+                    FileAccessMode mode = FileAccessMode.ofCode(d.getDictDataValue());
+                    if (mode != null) {
+                        return mode;
+                    }
+                }
+            }
+        } catch (Exception ignored) {
+            // 字典缓存未加载等异常，降级为中转模式
+        }
+        return FileAccessMode.TRANSFER;
+    }
+
+    /**
+     * 直链模式对外暴露的 OSS 地址 base（如 nginx 公网反代域名 https://your-domain.com/rustfs，
+     * 或 OSS 公网 endpoint）。直链模式下后端用它拼出给前端的直链 URL。
+     * <p>
+     * 当前实现走字典 sys_dict['file_direct_base_url']（单值，取首条数据项 value）；
+     * 字典缺失或为空时回退到 storageProperties.endpoint（即与后端连 OSS 的内网地址相同——
+     * 仅适用于用户与后端同网络段的场景，公网用户需配置此字典项指向可达的 nginx/OSS 公网地址）。
+     * <p>
+     * 将来迁系统设置表时，仅需改本方法内部实现，签名与调用方零改动。
+     */
+    public String directBaseUrl() {
+        try {
+            List<SysDictData> data = DictUtil.getDictData(DICT_KEY_DIRECT_BASE_URL);
+            if (data != null && !data.isEmpty()) {
+                for (SysDictData d : data) {
+                    String v = d.getDictDataValue();
+                    if (v != null && !v.trim().isEmpty()) {
+                        return v.trim().replaceAll("/+$", "");
+                    }
+                }
+            }
+        } catch (Exception ignored) {
+            // 字典缓存未加载等异常，降级为 yml endpoint
+        }
+        String endpoint = storageProperties.getEndpoint();
+        return endpoint == null ? "" : endpoint.replaceAll("/+$", "");
     }
 
     public StorageProperties getProperties() {

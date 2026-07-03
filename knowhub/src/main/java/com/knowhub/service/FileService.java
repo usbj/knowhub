@@ -6,6 +6,7 @@ import com.knowhub.pojo.quarry.FileQuarry;
 import com.knowhub.pojo.vo.BindVo;
 import com.knowhub.pojo.vo.DownloadVo;
 import com.knowhub.pojo.vo.FileObjectVo;
+import com.knowhub.pojo.vo.PublicObjectStream;
 import com.knowhub.pojo.vo.UploadApplyVo;
 import com.knowhub.pojo.vo.UploadTokenVo;
 
@@ -21,8 +22,34 @@ public interface FileService {
     /** 上传确认：HeadObject 核对真实值 → 置 CONFIRMED 并回填校验值；可选回填 bizRefId */
     Boolean confirmUpload(Long objectId, Long bizRefId);
 
-    /** PUBLIC 回显：返回真实 URL（公开桶直拼 或 短期 GET 预签名），Controller 用它做 302 */
-    String getPublicUrl(Long objectId);
+    /** PUBLIC 回显：校验 PUBLIC + CONFIRMED 后用 s3Client.getObject 拉字节流，
+     *  返回含元数据 + ResponseInputStream 的载体；stream 的 close 责任在 Controller（try-with-resources）。
+     *  对象不存在/非公开/未确认抛 ServiceException(404/403)，由 Controller 映射 HTTP 状态码。 */
+    PublicObjectStream streamPublicObject(Long objectId);
+
+    /**
+     * 中转下载（支持 PUBLIC + PRIVATE）：校验 CONFIRMED 后用 s3Client.getObject 拉字节流，
+     * 返回含元数据 + ResponseInputStream 的载体；PRIVATE 走鉴权（上传人/管理员）并带 attachment;filename 强制下载。
+     * stream 的 close 责任在 Controller。用于中转模式的 PRIVATE 下载接口 GET /file/proxy/{id}。
+     */
+    PublicObjectStream streamDownloadObject(Long objectId);
+
+    /**
+     * 后端代理转发上传：接收前端 PUT 的字节流，用 s3Client.putObject 写入 OSS，再走 confirm 核对置 CONFIRMED。
+     * 用于中转模式的上传接口 PUT /file/proxy-upload/{objectId}（前端拿不到 OSS 直连地址时的兜底通道）。
+     * @param objectId  上传令牌签发时返回的元数据行主键（PENDING 行）
+     * @param in        前端 PUT 请求体的字节流
+     * @param contentLength 字节长度
+     * @param contentType  内容类型（须与申请令牌时一致，否则 confirm 校验失败）
+     */
+    Boolean proxyUpload(Long objectId, java.io.InputStream in, long contentLength, String contentType);
+
+    /**
+     * 返回 PUBLIC 对象的回显链接（按当前访问模式）：
+     * TRANSFER → /file/public/{objectId}（后端中转）；DIRECT → {directBaseUrl}/{bucket}/{objectKey}（公开读直链，不带签名）。
+     * 用于博客详情/文件详情接口按模式填充 coverUrl/previewUrl，前端直接用。
+     */
+    String getPublicAccessUrl(Long objectId);
 
     /** PRIVATE 下载：鉴权 + 业务可见性后签发短期 GET 预签名（带 attachment;filename） */
     DownloadVo getDownloadUrl(Long objectId);

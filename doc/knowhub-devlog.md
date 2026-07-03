@@ -183,3 +183,109 @@
 - 路由落位：菜单 path `/blog/index`→`views/blog/index.vue`、`/blog/tag/index`→`views/blog/tag/index.vue`、`/file/index`→`views/file/index.vue`，由 dynamicRoutes.ts 自动匹配，无需手写路由。
 
 **待用户人工验证**：登录 admin → 侧边栏「博客管理」下文章/标签/文件三页走查列表/筛选/新增/编辑/删除/发布/撤回/审核/封面上传/文件上传/下载/详情，深浅模式各看一遍。本次无后端接口变更，`doc/knowhub-api.md` 无需更新。
+
+### 22:39 修复封面上传 CORS + 博客正文改 CSDN 风格全屏编辑页
+
+用户反馈：添加博客表单封面上传不生效（文件不上传、无回显）。实测定位根因为 **CORS**——RustFS 端点 `http://100.82.86.85:9000` 与前端 dev origin 不同源，后端预签名返回的 `uploadUrl` 是绝对地址，浏览器 PUT 直传被 CORS 拦截（preflight OPTIONS 返 200 但无 `Access-Control-Allow-*` 头）。`<img>` 回显不受影响（img 不做 CORS 强制校验）。同时应用户要求把博客正文从内联 markdown 编辑器改为 CSDN 风格的独立全屏编辑页，编辑器内插图走和封面一样的预签名直传逻辑。
+
+**后端：预签名 URL 改代理友好相对路径（knowhub 模块，不动 rookie）**
+- `knowhub/.../service/impl/FileServiceImpl.java`：新增私有方法 `rewriteUrlForProxy(String)`，把预签名绝对 URL 的 endpoint 前缀替换为 `/rustfs`（如 `http://100.82.86.85:9000/knowhub/.../x.png?X-Amz-...` → `/rustfs/knowhub/.../x.png?X-Amz-...`），桶名/对象 key/查询串原样保留；url 不以配置 endpoint 开头时原样返回（切 OSS/内网直连不受影响）。
+- `applyUploadToken` 返回的 `uploadUrl`、`getDownloadUrl` 返回的 `downloadUrl` 经 `rewriteUrlForProxy` 改写；`getPublicUrl`（PUBLIC 回显 302 Location）**不改**——`<img>` 跟随 302 拉 RustFS 绝对地址，无 CORS 问题。
+- 效果：前端 PUT/GET 走当前 origin 经 `/rustfs` 代理转发到 RustFS，同源无 CORS，符合「后端不经字节流」的预签名直传设计。
+
+**前端：vite 代理 + 上传组件 + 正文编辑器**
+- `rookie-ui/vite.config.ts`：`server.proxy` 追加 `/rustfs` → `http://100.82.86.85:9000`，rewrite 去 `/rustfs` 前缀（dev 同源代理；prod 由 nginx 同名转发，部署配套项）。
+- `rookie-ui/src/views/blog/components/BlogCoverUploader.vue`：重写「重新上传」按钮——改用隐藏 `<input type="file" ref>` + 按钮 `@click` 触发 `inputRef.click()`，`onchange` 拿 file 调预签名直传，修复原先裸按钮无文件选择反应的 bug；预览 `<img :src="/file/public/{id}">` 经 `/file` 代理 302 回显。
+- `rookie-ui/src/views/blog/components/BlogContentEditor.vue`（新建页面组件）：全屏 `ElDialog` 双栏（左 `v-md-editor mode=edit` + 右 `v-md-preview` 实时预览，CSDN 风格）；监听 `@upload-image` 事件，对每个图片文件调 `presignedUploadFlow({ businessType:'BLOG_BODY', access:'PUBLIC' })`，成功后调 `insertImage({ name, url:'/file/public/{id}' })` 在光标处插入 `![name](/file/public/{id})`（支持工具栏图片按钮/拖拽/粘贴）；本地缓冲编辑、点「保存返回」才回写父层 content，取消则丢弃；`uploadImageConfig` 限图片/≤10MB。
+- `rookie-ui/src/views/blog/config.ts`：`content` 字段从 `inputType:'markdown'` 改为 `inputType:'custom'`，表单由 `#field-content` 插槽接管。
+- `rookie-ui/src/views/blog/index.vue`：`#field-content` 插槽渲染「编辑正文」按钮 + 正文摘要预览（取前 60 字去 markdown 符号），点击打开 `BlogContentEditor`（`v-model` 绑 `formModel.content`，`handleContentUpdate` 回写）；新增 `contentEditorVisible` 状态、`openContentEditor`/`handleContentUpdate`/`contentPreview`。引入 `ElButton`、`BlogContentEditor`。
+
+**遵守约定**
+- 未修改 rookie-ui 任何既有组件（`MarkdownEditor.vue` 保留原状，正文编辑器是**新建**组件直接用全局注册的 v-md-editor/v-md-preview，不改原组件）；`base.css`/`main.css`/router/stores 未动；后端只改 knowhub `FileServiceImpl` 一处 URL 改写 + `getDownloadUrl` 一处，未动 `rookie-*`。
+- 正文图片与封面共用同一套 `utils/upload.ts` 的 `presignedUploadFlow`，上传→拿 id→回填 `/file/public/{id}` 逻辑统一。
+- v-md-editor 的 `upload-image` 事件签名 `(event, insertImage, files)`，`insertImage({name,url})` 在光标处插入图片 markdown。
+
+**部署配套项（重要）**
+- prod nginx 需加 `/rustfs` 转发到 RustFS endpoint（与 `/api`、`/file` 并列）：`location /rustfs/ { proxy_pass http://<rustfs-endpoint>/; }`，否则生产环境浏览器 PUT/GET `/rustfs/...` 会 404。
+
+**校验**
+- `./mvnw -q -pl knowhub -am compile` 通过，EXIT=0。
+- `rookie-ui` `npm run type-check`（vue-tsc --build）通过，EXIT=0。
+
+**待用户人工验证**：博客新增/编辑表单——封面选图→进度→上传成功→预览回显；正文点「编辑正文」→全屏双栏→工具栏图片/拖拽/粘贴图片→自动上传并插入 `![](/file/public/{id})`→预览栏显示图片→保存返回→保存博客→详情弹窗正文图片正常渲染。文件管理页上传入口同样恢复可用。`doc/knowhub-api.md` 同步更新 uploadUrl/downloadUrl 改 `/rustfs` 相对路径说明。
+
+### 2026-07-03 PUBLIC 回显改后端中转字节流 + 上传状态链路排查
+
+用户反馈：knowhub 图片回显打不通（上个会话误判为 CORS 改成 /rustfs 代理+302 仍未解决），且文件上传后列表状态不明确。本次定位回显真正根因为鉴权层（非 CORS），改为后端中转字节流方案；并对上传状态链路做排查诊断。
+
+**后端：PUBLIC 回显改后端中转（knowhub 模块）**
+- `knowhub/.../pojo/vo/PublicObjectStream.java`（新建）：PUBLIC 对象中转回显载体 DTO，含 contentType/contentLength/etag/`ResponseInputStream<GetObjectResponse>`，stream 生命周期由 controller try-with-resources 管理。
+- `knowhub/.../service/FileService.java`：删 `getPublicUrl(Long)`，新增 `streamPublicObject(Long)` 返回 `PublicObjectStream`。
+- `knowhub/.../service/impl/FileServiceImpl.java`：新增 `streamPublicObject` 实现（校验 PUBLIC+CONFIRMED，不满足抛 `ServiceException(403/404)`；用已注入的 `s3Client.getObject` 拉字节流，contentType 优先取元数据存的避免 RustFS 默认 octet-stream 裂图，contentLength/etag 取 S3 响应兜底；不加 `@Transactional`）；删 `getPublicUrl` 与 `buildDirectUrl`（`presignGet` 仍被下载用、`rewriteUrlForProxy` 仍被上传/下载用，均保留）。
+- `knowhub/.../controller/FileController.java`：`getPublic` 从 `ResponseEntity<Void>`(302) 改写为 `ResponseEntity<StreamingResponseBody>`——try-catch `ServiceException` 按 code 映射 404/403/500，其它 Exception 兜底 404/500，**全部返回纯状态码空体不进 GlobalExceptionHandler**（@RestControllerAdvice 会包成 Result JSON 对 `<img>` 无效）；成功响应带 `Content-Type`/`Content-Length`/`Cache-Control`(7 天 immutable)/`ETag`/`Accept-Ranges:none`，body 内 `try-with-resources` 包 `ResponseInputStream` + `transferTo` 流式拷贝、close 归还 SDK 连接池；加 `Logger` 与相应 import。
+
+**鉴权放行（rookie-framework，已获用户明确许可）**
+- `rookie-framework/.../config/SecurityConfig.java`：`authorizeHttpRequests` 链在 `/login permitAll` 之后、`anyRequest().authenticated()` 之前新增 `.requestMatchers("/file/public/**").permitAll()`。根因：原配置下无 Token 的 `<img>` 请求被 `anyRequest().authenticated()` 兜底拦截、`AuthenticationEntryPointImpl` 返 401 JSON，图片拉不到——这才是回显打不通的真正原因（非 CORS）。`TokenVerifyFilter` 无 Token 时只不设 SecurityContext 不拒绝，permitAll 后无 Token img 请求可直达 controller，**无需动 TokenVerifyFilter/AuthenticationEntryPoint**。
+
+**前端：仅注释清理（零功能改动）**
+- `rookie-ui` 内 6 处注释把"302 到 RustFS"改为"后端中转字节流"：`api/knowhub/file.ts`、`views/file/index.vue`(2 处)、`views/file/components/FileDetailDialog.vue`、`views/blog/components/BlogDetailDialog.vue`、`views/blog/components/BlogContentEditor.vue`。`/file/public/{id}` 路径不变，响应从 302 变 200+字节流，`<img>`/`window.open` 自动适配，`buildFilePublicUrl`/vite `/file` proxy/nginx 转发规则均不动。
+
+**上传状态链路排查诊断（任务2，未改代码）**
+- 链路：`applyUploadToken`(insert PENDING) → 前端 PUT 直传 RustFS → `confirmUpload`(HeadObject 校验，通过置 CONFIRMED / 不通过置 FAILED)。`upload.ts` 的 `presignedUploadFlow` 在 PUT 成功后无条件调 `confirmUploadApi`，confirm 失败时 `http.ts` 统一弹错 + reject，前端 catch 仅 `console.error`。
+- 诊断结论：链路状态机本身正确，**未发现状态设置 bug**。用户反馈的"列表有数据但状态未上传/未通过"最可能来自两种情况：① confirm 失败（网络抖动或 HeadObject 校验不通过）→ 行停在 PENDING(网络失败) 或 FAILED(校验不过)，对象已在 RustFS，用户看到"上传失败"弹窗但列表多了一条 PENDING/FAILED 行；② PENDING 行在 GC 清理前（默认 `pending-ttl-minutes:30`、`gc-interval-minutes:10`）会一直显示"待确认"。
+- 待用户确认是否需要改进：前端在 PUT 成功但 confirm 失败时给更明确提示（如"文件已上传但校验未通过"）；或后端 confirm 的 HeadObject content-type 校验对 RustFS 实际返回值做兼容。本次按约定不擅自改上传链路代码。
+
+**遵守约定**
+- rookie-framework 仅改 SecurityConfig 一行 permitAll（已获用户明确许可），未动 TokenVerifyFilter/AuthenticationEntryPoint/AccessDeniedHandler；rookie-ui 仅改注释未动功能代码；其余改动均在 knowhub 模块内。
+- 未启动 dev server（README.dev.md 约定），仅后端 compile + 前端 type-check。
+
+**校验**
+- `./mvnw -q -pl knowhub -am compile` 通过，EXIT=0。
+- `rookie-ui` `npm run type-check`（vue-tsc --build）通过，EXIT=0。
+
+**待用户人工验证**：① `curl -i http://localhost:8080/file/public/{已确认PUBLIC图片id}`（不带 Token）应 200+`Content-Type: image/png`+字节流（非 401 JSON / 非 302）；② 登录态博客新增/编辑表单封面上传→预览回显、正文编辑器插图→预览渲染、详情弹窗封面/正文图片正常；③ 退出登录刷新同页面图片仍渲染（permitAll 生效）；④ `curl` 不存在 id 应 404 空体（非 `{code:500,...}` JSON）；⑤ 上传状态按诊断结论观察 PENDING→CONFIRMED 流转。`doc/knowhub-api.md` 同步更新 `/file/public/{id}` 响应为 200+字节流+状态码表。
+
+### 2026-07-03 文件访问双模式（中转/直链）+ 地址由后端决定
+
+用户诉求：当前前端依赖 vite/nginx `/rustfs` 代理转发到 OSS，迁 OSS 时需改前端代理配置，运维成本高；希望"前端访问 OSS 的地址由后端决定"，且预留后续从字典系统迁到系统设置的空间。本次落地文件访问双模式开关，后端按模式决定发给前端的链接形态，前端永远只认后端给的链接，迁 OSS 只改后端配置（字典 + yml endpoint），前端代码与 nginx 相对路径都不用动。
+
+**后端：模式枚举 + 配置读取收口（knowhub 模块）**
+- `knowhub/.../enums/FileAccessMode.java`（新建）：TRANSFER/DIRECT 枚举，code 与字典 `file_access_mode` 的 dict_data_value 一致。
+- `knowhub/.../config/StorageConfigReader.java`：新增 `accessMode()`（读字典 `file_access_mode`，默认 TRANSFER）与 `directBaseUrl()`（读字典 `file_direct_base_url`，留空回退 yml endpoint）；加两个字典键常量。同 `BlogConfigReader` 同构——后续迁系统设置表时仅改本类内部实现（直接读设置值而非遍历字典列表），签名与调用方零改动。
+
+**后端：链接按模式发 + 中转/代理接口（knowhub 模块）**
+- `knowhub/.../service/FileService.java`：新增 `streamDownloadObject`（中转下载，PUBLIC+PRIVATE）、`proxyUpload`（后端代理转发上传）、`getPublicAccessUrl`（按模式返回 PUBLIC 回显链接）。
+- `knowhub/.../service/impl/FileServiceImpl.java`：
+  - `applyUploadToken` 的 uploadUrl 按模式：TRANSFER→`/file/proxy-upload/{objectId}`；DIRECT→预签名绝对 URL（host 用 directBaseUrl，`rewriteHostToDirect`）。
+  - `getDownloadUrl` 的 downloadUrl 按模式：TRANSFER→`/file/proxy/{objectId}`；DIRECT→预签名绝对 URL。
+  - 新增 `streamDownloadObject`（校验 CONFIRMED + PRIVATE 鉴权，s3Client.getObject 拉流，带 attachment;filename）。
+  - 新增 `proxyUpload`（接收 InputStream，s3Client.putObject 写 OSS，再走 confirm 核对置 CONFIRMED）。
+  - 新增 `getPublicAccessUrl`（TRANSFER→`/file/public/{id}`；DIRECT→`{directBaseUrl}/{bucket}/{objectKey}` 公开读直链）。
+  - `rewriteUrlForProxy` 改名 `rewriteHostToDirect`（直链模式用：把预签名 URL host 替换为 directBaseUrl）。
+- `knowhub/.../pojo/vo/PublicObjectStream.java`：加 `contentDisposition` 字段（PRIVATE 中转下载带 attachment;filename；PUBLIC 回显为 null）。
+- `knowhub/.../controller/FileController.java`：新增 `GET /file/proxy/{id}`（中转下载，权限 knowhub:file:download，带 attachment 头）、`PUT /file/proxy-upload/{objectId}`（代理转发上传，权限 knowhub:file:upload，接 InputStream）、`GET /file/url/{id}`（取 PUBLIC 回显链接，无鉴权）；import jakarta.servlet.http.HttpServletRequest。
+
+**前端：适配双模式链接（rookie-ui，不改既有组件）**
+- `rookie-ui/src/utils/upload.ts`：`putToPresignedUrl` 按链接形态（相对/绝对）自动决定带不带 Token（相对=中转模式带 Token；绝对=直链模式不带 Token）；PUBLIC 上传成功后调 `/file/url/{id}` 取按模式回显链接（异常回退 `/file/public/{id}`）；文件头注释更新双模式约定。
+- `rookie-ui/src/api/knowhub/file.ts`：新增 `getPublicAccessUrlApi`（GET /file/url/{id}）。
+- `rookie-ui/src/views/file/index.vue`：`handleDownloadFile` 按链接形态分流（绝对 URL→window.open；相对路径→fetch 带 Token 取 blob 再 a.click() 下载，从 Content-Disposition 取文件名）；import USER_TOKEN_STORAGE_KEY。
+- `rookie-ui/src/types/api/knowhub/file.ts`：UploadTokenRecord/DownloadRecord 注释更新双模式链接形态。
+- `rookie-ui/vite.config.ts`：删除已无用的 `/rustfs` 代理（双模式下都不再使用，中转走 `/file/proxy-*`、直链走绝对 URL）；`/file` 代理注释更新。
+- `rookie-ui/src/views/blog/components/BlogCoverUploader.vue`、`BlogContentEditor.vue`：注释把"直传 PUT 走 /rustfs"更新为"上传目标由后端按访问模式决定"。
+
+**字典 SQL（新建独立增量脚本 sql/knowhub-storage-dual-mode.sql，不改原 knowhub-storage.sql）**
+- 原因：knowhub-storage.sql 已在环境运行过，改原文件再跑会主键冲突；故新建增量脚本，已部署环境直接跑即可。
+- 新增 sys_dict：id=20 `file_access_mode`（文件访问模式）、id=21 `file_direct_base_url`（直链模式 OSS 地址 base）。INSERT IGNORE 防重跑冲突。
+- 新增 sys_dict_data：id=88/89 `file_access_mode`（transfer 中转/direct 直链，transfer 默认）、id=90 `file_direct_base_url`（占位值 `http://100.82.86.85:9000`，公网部署改为可达的 nginx/OSS 公网地址）。INSERT IGNORE 防重跑冲突。
+- 更新 file_access 字典数据项 remark：`302 回显`→`后端中转回显`、`鉴权预签名下载`→`/file/download/{id} 或 /file/proxy/{id} 鉴权下载`（按 dict_key+dict_data_value 定位的 UPDATE，重跑同值幂等）。
+
+**遵守约定**
+- 未修改 rookie-ui 任何既有组件（BaseCard/SharedTablePanel 等）、base.css/main.css、router/stores；后端改动全在 knowhub 模块内；rookie-framework 本次未动（SecurityConfig 上轮已 permitAll 放行 /file/public/**，本轮新增的 /file/proxy-upload、/file/proxy 走各自 @PreAuthorize 鉴权，/file/url/{id} 走 anyRequest().authenticated() 兜底——前端调时带 Token，无鉴权需求问题留待用户确认是否也 permitAll）。
+- 配置读取收口在 StorageConfigReader，预留系统设置迁移空间（同 BlogConfigReader）。
+- 未启动 dev server（README.dev.md 约定），仅后端 compile + 前端 type-check。
+
+**校验**
+- `./mvnw -q -pl knowhub -am compile` 通过，EXIT=0。
+- `rookie-ui` `npm run type-check`（vue-tsc --build）通过，EXIT=0。
+
+**待用户人工验证**：① 中转模式（默认）：封面上传→PUT /file/proxy-upload/{id} 带 Token→回显 /file/public/{id}；PRIVATE 下载→fetch /file/proxy/{id} 带 Token 取 blob 下载。② 切直链模式（字典 file_access_mode 改 direct + 配 file_direct_base_url 为可达 nginx/OSS 地址 + OSS 配 CORS）：上传→PUT 预签名绝对 URL 不带 Token；下载→window.open 预签名绝对 URL；回显→/file/url/{id} 返回直链。③ 迁 OSS 只改 yml storage.endpoint + 字典 file_direct_base_url，前端与 nginx 零改动。`doc/knowhub-api.md` 同步更新双模式说明 + 新增接口 5/6/7（中转下载/代理上传/取回显链接）。

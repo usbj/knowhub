@@ -62,7 +62,8 @@ export interface UploadApplyPayload {
 
 /**
  * 上传令牌签发结果，与后端 UploadTokenVo 对齐。
- * uploadUrl 为预签名 PUT URL，前端直接 PUT 直传 RustFS；
+ * uploadUrl 由后端按访问模式决定：中转模式→/file/proxy-upload/{objectId}（同源带 Token）；
+ * 直链模式→预签名绝对 URL（OSS/nginx，不带 Token）。前端按链接形态决定带不带 Token。
  * objectId 为元数据行主键，confirm 时回传。
  */
 export interface UploadTokenRecord {
@@ -74,7 +75,8 @@ export interface UploadTokenRecord {
 
 /**
  * PRIVATE 下载结果，与后端 DownloadVo 对齐。
- * downloadUrl 为带 attachment;filename 的短期 GET 预签名 URL，前端跳转/拉取。
+ * downloadUrl 由后端按访问模式决定：中转模式→/file/proxy/{objectId}（同源带 Token，前端 fetch 取 blob）；
+ * 直链模式→带 attachment;filename 的预签名绝对 URL（前端 window.open 跳转）。
  */
 export interface DownloadRecord {
   downloadUrl: string

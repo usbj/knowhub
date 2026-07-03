@@ -217,9 +217,10 @@ export const createBlogSchema = (
     options: tagOptions,
   },
   content: {
+    // 正文改由「编辑正文」按钮打开全屏编辑器（BlogContentEditor）编辑，
+    // 表单内不再内联 markdown 编辑器（正文较长，独立全屏编辑页体验更接近 CSDN）。
     label: '正文',
-    inputType: 'markdown',
-    placeholder: '请输入正文（支持 Markdown）',
+    inputType: 'custom',
     tableVisible: false,
     formVisible: true,
     formOrder: 5,

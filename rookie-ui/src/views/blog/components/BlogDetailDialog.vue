@@ -7,7 +7,7 @@
   关键依赖：
   - 复用 ElDialog + MarkdownPreview（与通知详情同款排版与遮罩，视觉统一）；
   - 状态/审核状态走字典标签系统渲染为带色 ElTag；
-  - 封面图 coverUrl 为 /file/public/{id} 相对路径，<img> 直引靠 /file 代理 302 到 RustFS。
+  - 封面图 coverUrl 为 /file/public/{id} 相对路径，<img> 直引靠 /file 代理到后端中转回写字节流。
   - 主题适配：正文区、元信息条、标签均用 base.css 的 --rookie-* 变量，深浅模式自动跟随。
 -->
 <script setup lang="ts">

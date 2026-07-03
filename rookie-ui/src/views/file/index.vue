@@ -18,13 +18,13 @@ import {
   getFileDetailApi,
   getFilePageApi,
   getDownloadUrlApi,
-  buildFilePublicUrl,
 } from '@/api/knowhub/file'
 import BaseCard from '@/components/BaseCard.vue'
 import FileUploadButton from '@/components/FileUploadButton.vue'
 import SearchFilterPanel from '@/components/SearchFilterPanel.vue'
 import SharedTablePanel from '@/components/SharedTablePanel.vue'
 import { SYSTEM_PERMISSION_KEYS } from '@/constants/systemPermissions'
+import { USER_TOKEN_STORAGE_KEY } from '@/stores/user'
 import type { NormalizedPageResult } from '@/types/api/system/common'
 import type { FileListQuery, FileObjectRecord } from '@/types/api/knowhub/file'
 import type { SharedActionConfig, SharedFieldSchemaMap } from '@/types/components/data-display'
@@ -184,25 +184,58 @@ const handlePaginationChange = async (payload: { pageNum: number; pageSize: numb
 
 /**
  * 方法效果：
- * 下载文件。PUBLIC 对象直接打开 /file/public/{id}（302 到 RustFS）；
- * PRIVATE 对象调 getDownloadUrlApi 拿短期 GET 预签名 URL 后跳转。
+ * 下载文件。PUBLIC 与 PRIVATE 统一走 getDownloadUrlApi 拿下载链接（后端按访问模式发，
+ * 中转模式→/file/proxy/{id} 带 attachment;filename；直链模式→预签名绝对 URL 带 attachment），
+ * 再按链接形态触发下载：
+ * - 相对路径（/file/proxy/{id}，中转模式）：同源鉴权接口，window.open 不带 Token 会 401，
+ *   改用 fetch 带 Token 头取 blob 再 a.click() 触发下载；
+ * - 绝对 URL（直链模式，预签名或 nginx 代理）：直接 window.open 跳转拉取（预签名自带 attachment）。
+ * 注意：不走 /file/public/{id}（那是回显接口，内联显示图片，不触发下载）。
  * 参数：
  * - `objectId`：文件对象主键。
- * - `access`：访问语义 PUBLIC/PRIVATE。
+ * - `access`：访问语义 PUBLIC/PRIVATE（仅用于判断，链接形态由后端决定）。
  * 返回值：
- * - 无返回值；副作用是打开下载。
+ * - 无返回值；副作用是触发下载。
  */
-const handleDownloadFile = async (objectId: number, access: string) => {
-  if (access === 'PUBLIC') {
-    // PUBLIC 对象无鉴权，直接打开 /file/public/{id} 走 302 重定向
-    window.open(buildFilePublicUrl(objectId), '_blank')
+const handleDownloadFile = async (objectId: number, _access: string) => {
+  // PUBLIC/PRIVATE 统一走下载接口拿带 attachment;filename 的链接（不走 /file/public/{id} 回显接口）
+  const result = await getDownloadUrlApi(objectId)
+  const downloadUrl = result.data?.downloadUrl
+  if (!downloadUrl) {
     return
   }
 
-  // PRIVATE 对象走鉴权预签名下载接口
-  const result = await getDownloadUrlApi(objectId)
-  if (result.data?.downloadUrl) {
-    window.open(result.data.downloadUrl, '_blank')
+  // 相对路径 = 中转模式同源鉴权接口，需带 Token；绝对 URL = 直链模式直接跳转
+  if (downloadUrl.startsWith('http://') || downloadUrl.startsWith('https://')) {
+    window.open(downloadUrl, '_blank')
+    return
+  }
+
+  // 中转模式：fetch 带 Token 头取 blob，再触发下载（文件名优先取接口返回的 originalName，其次响应头 Content-Disposition）
+  const fallbackName = result.data?.originalName ?? `${objectId}`
+  try {
+    const token = localStorage.getItem(USER_TOKEN_STORAGE_KEY)
+    const resp = await fetch(downloadUrl, {
+      headers: token ? { Token: token } : {},
+    })
+    if (!resp.ok) {
+      ElMessage.error(`下载失败：HTTP ${resp.status}`)
+      return
+    }
+    const blob = await resp.blob()
+    const objUrl = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = objUrl
+    // 文件名取响应头 Content-Disposition 的 filename，取不到用接口返回的 originalName 兜底
+    const disposition = resp.headers.get('Content-Disposition') ?? ''
+    const nameMatch = disposition.match(/filename="?([^";]+)"?/)
+    a.download = nameMatch?.[1] ?? fallbackName
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(objUrl)
+  } catch {
+    ElMessage.error('下载失败：网络异常')
   }
 }
 

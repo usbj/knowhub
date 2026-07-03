@@ -49,10 +49,33 @@
 本次随 knowhub 文件存储底座落地，新增文件对象管理接口共 8 个：
 
 - 上传令牌/确认：`POST /file/upload-token`、`POST /file/confirm/{objectId}`
-- 回显/下载：`GET /file/public/{objectId}`（302 重定向，无鉴权）、`GET /file/download/{objectId}`
+- 回显/下载：`GET /file/public/{objectId}`（后端中转字节流，无鉴权）、`GET /file/download/{objectId}`
 - 管理：`GET /file/list`、`GET /file/{objectId}`、`PUT /file/bind`、`DELETE /file/{objectIds}`
 
 说明：上传走预签名直传——后端校验 contentType/size 后下发 `PutObject` 预签名 URL，前端直传 RustFS，后端不经流文件字节；`confirm` 用 `HeadObject` 核对真实值后置 `CONFIRMED`。PUBLIC 对象走 `/file/public/{id}` 302 重定向到 RustFS（供 Markdown `<img>` 直接引用，靠 vite proxy / nginx 转发 `/file`）；PRIVATE 对象走 `/file/download/{id}` 鉴权后下发短期 GET 预签名（带 `attachment;filename` 强制下载）。超时 PENDING 与软删对象由 `FileGcTask` 定时 GC。详见下方「文件存储模块」章节。
+
+### 2026-07-02 预签名 uploadUrl/downloadUrl 改 /rustfs 同源代理相对路径
+
+为修复浏览器直传 RustFS 的跨域 CORS 拦截（preflight 返 200 但无 `Access-Control-Allow-*` 头），后端 `FileServiceImpl` 新增 `rewriteUrlForProxy` 把预签名绝对 URL 的 RustFS endpoint 前缀改写为 `/rustfs`，仅影响两个接口的出参字段：
+
+- `POST /file/upload-token` 响应 `data.uploadUrl`：由 `http://<rustfs-endpoint>/knowhub/.../x.png?X-Amz-...` 改为 `/rustfs/knowhub/.../x.png?X-Amz-...`
+- `GET /file/download/{objectId}` 响应 `data.downloadUrl`：同上改写
+
+前端 PUT/GET 走当前 origin 经 vite proxy（dev `/rustfs`→`<rustfs-endpoint>`）/ nginx（prod 同名转发）到 RustFS，同源无 CORS。`GET /file/public/{objectId}` 改为后端中转字节流（`s3Client.getObject` 拉流 + `StreamingResponseBody` 回写，见下方「PUBLIC 对象回显」），不再 302 跳 RustFS——前端 `<img src="/file/public/{id}">` 同源拉图，后续迁移 OSS 只改后端存储配置、前端零改动。接口签名、请求体、其余字段均不变。prod 需 nginx 加 `/rustfs` 转发（与 `/api`、`/file` 并列）。详见下方「文件存储模块」章节各接口响应示例与说明。
+
+### 2026-07-03 文件访问双模式（中转/直链）+ 地址由后端决定
+
+为消除前端对 OSS 地址的硬依赖（迁 OSS / 切部署拓扑时前端与 nginx 零改动），新增**文件访问模式**开关（字典 `file_access_mode`，值 `transfer`/`direct`，`StorageConfigReader.accessMode` 读取，运维后台改、运行时生效），后端按模式决定发给前端的链接形态——前端永远只认后端给的链接，地址完全由后端决定。同时直链模式 OSS 地址 base 走字典 `file_direct_base_url`（`StorageConfigReader.directBaseUrl` 读取，填 nginx 公网反代域名或 OSS 公网 endpoint）。
+
+- **中转模式（transfer，默认）**：`uploadUrl` 填 `/file/proxy-upload/{objectId}`（后端代理转发上传字节，同源带 Token）；`downloadUrl` 填 `/file/proxy/{objectId}`（后端中转下载字节流，同源带 Token）；PUBLIC 回显仍走 `/file/public/{id}`。适用于 OSS 在内网/不愿配 CORS，代价是后端经文件字节流。
+- **直链模式（direct）**：`uploadUrl` 填预签名绝对 URL（host 用 `directBaseUrl`，前端直连 nginx/OSS，需配 CORS）；`downloadUrl` 填预签名绝对 URL（带 `attachment;filename`）；PUBLIC 回显链接填 `{directBaseUrl}/{bucket}/{objectKey}`（公开读直链，不带签名，永不过期）。适用于 OSS 公网可达 + 配 CORS，后端不经字节流。
+
+新增接口：
+- `PUT /file/proxy-upload/{objectId}`（中转模式上传，权限 `knowhub:file:upload`，接收字节流写入 OSS + confirm）
+- `GET /file/proxy/{objectId}`（中转模式下载，权限 `knowhub:file:download`，后端拉 OSS 字节回写，PRIVATE 带 `attachment;filename`）
+- `GET /file/url/{objectId}`（取 PUBLIC 回显链接，无鉴权，按模式返回 `/file/public/{id}` 或直链）
+
+前端 `rookie-ui` 适配：`utils/upload.ts` 按链接形态（相对/绝对）自动决定 PUT 是否带 Token；PUBLIC 上传成功后调 `/file/url/{id}` 取按模式回显链接（异常回退 `/file/public/{id}`）；`views/file/index.vue` 下载按链接形态分流（绝对 URL 直接 `window.open`，相对路径 `fetch` 带 Token 取 blob）。`vite.config.ts` 删除已无用的 `/rustfs` 代理（双模式下都不再使用）。字典 SQL 见新建增量脚本 `sql/knowhub-storage-dual-mode.sql`（不改原 `knowhub-storage.sql`，dict_id 20/21、dict_data_id 88-90，INSERT IGNORE 幂等，已部署环境直接跑）。详见下方「文件存储模块」章节。
 
 ---
 
@@ -319,9 +342,15 @@
 ## 文件存储模块
 
 > 路径前缀：`/file`（文件存储在 `com.knowhub` 命名空间，不套 `/sys`）。
-> 鉴权：写/下载/管理类接口挂 `@PreAuthorize('knowhub:file:*')`，对应 `sys_menu` 中权限键；PUBLIC 回显接口 `GET /file/public/{id}` **无鉴权**（供 `<img>`/`<a>` 直接引用）。
+> 鉴权：写/下载/管理类接口挂 `@PreAuthorize('knowhub:file:*')`，对应 `sys_menu` 中权限键；PUBLIC 回显接口 `GET /file/public/{id}` **无鉴权**（`SecurityConfig` 已 `permitAll` 放行 `/file/public/**`，供 `<img>`/`<a>` 无 Token 直接引用）；`GET /file/url/{id}`（取回显链接）也无鉴权。
 > 预签名直传：上传不经后端字节流——`POST /file/upload-token` 签发 `PutObject` 预签名 URL，前端直传 RustFS，`POST /file/confirm/{id}` 用 `HeadObject` 核对。
-> 前端路径：`<img src="/file/public/123">` 是相对路径，不走 axios，靠 vite proxy / nginx 转发 `/file` 到后端（已在 `rookie-ui/vite.config.ts` 加 `/file` 代理）。
+> PUBLIC 回显：后端中转字节流——`GET /file/public/{id}` 由后端 `s3Client.getObject` 拉流后 `StreamingResponseBody` 回写，带 `Content-Type`/`Content-Length`/`Cache-Control`(7 天 immutable)/`ETag`，前端 `<img src="/file/public/123">` 同源拉图（相对路径不走 axios，靠 vite proxy / nginx 转发 `/file` 到后端，已在 `rookie-ui/vite.config.ts` 加 `/file` 代理）。
+>
+> **文件访问模式（双模式，字典 `file_access_mode` 开关，`StorageConfigReader.accessMode` 读取）**——后端按模式决定发给前端的链接形态，前端永远只认后端给的链接，地址由后端决定，迁 OSS 只改后端配置：
+> - **中转模式（transfer，默认）**：上传走 `PUT /file/proxy-upload/{id}`（后端代理转发字节流，同源带 Token）；PRIVATE 下载走 `GET /file/proxy/{id}`（后端中转回写字节流，同源带 Token）；PUBLIC 回显走 `/file/public/{id}`。适用于 OSS 在内网/不愿配 CORS，代价是后端经文件字节流。
+> - **直链模式（direct）**：上传/下载走预签名绝对 URL（host 用字典 `file_direct_base_url`，前端直连 nginx/OSS，需配 CORS）；PUBLIC 回显走 `{directBaseUrl}/{bucket}/{objectKey}` 公开读直链（不带签名，永不过期）。适用于 OSS 公网可达 + 配 CORS，后端不经字节流。
+> - 直链模式 OSS 地址 base 走字典 `file_direct_base_url`（`StorageConfigReader.directBaseUrl` 读取，填 nginx 公网反代域名或 OSS 公网 endpoint；留空回退 yml `storage.endpoint`）。
+> - 配置读取收口在 `StorageConfigReader`（同 `BlogConfigReader` 同构），后续迁系统设置表时仅改本类内部实现，签名与调用方零改动。
 
 ### 文件接口
 
@@ -342,12 +371,12 @@
 | access | string | 否 | PUBLIC/PRIVATE，缺省按 businessType 默认值（BLOG_*→PUBLIC，其余→PRIVATE） |
 | bizRefId | long | 否 | 业务关联 ID，可空（业务行未建时） |
 
-**响应示例：**
+**响应示例（中转模式）：**
 ```json
 {
   "code": 200, "msg": "请求成功",
   "data": {
-    "uploadUrl": "https://rustfs-host:9000/knowhub/blog_body/2026/07/01/uuid.png?X-Amz-Signature=...",
+    "uploadUrl": "/file/proxy-upload/1",
     "objectKey": "blog_body/2026/07/01/uuid.png",
     "objectId": 1,
     "expires": 600
@@ -355,7 +384,21 @@
 }
 ```
 
-> 后端 insert `file_object(upload_status=PENDING)` 后签发；前端拿 `uploadUrl` 直接 `PUT` 直传 RustFS（带 `Content-Type`/`Content-Length` header），传完调 `confirm`。
+**响应示例（直链模式）：**
+```json
+{
+  "code": 200, "msg": "请求成功",
+  "data": {
+    "uploadUrl": "https://oss.your-domain.com/knowhub/blog_body/2026/07/01/uuid.png?X-Amz-Signature=...",
+    "objectKey": "blog_body/2026/07/01/uuid.png",
+    "objectId": 1,
+    "expires": 600
+  }
+}
+```
+
+> 后端 insert `file_object(upload_status=PENDING)` 后签发；前端拿 `uploadUrl` 直接 `PUT` 上传（带 `Content-Type` header），传完调 `confirm`。
+> **`uploadUrl` 形态由访问模式决定**：中转模式为 `/file/proxy-upload/{objectId}` 同源后端代理接口（前端 PUT 需带 `Token` 头，后端转发字节流写入 OSS）；直链模式为预签名绝对 URL（host 用字典 `file_direct_base_url`，前端直连 nginx/OSS 不带 Token，需 OSS/nginx 配 CORS）。前端 `utils/upload.ts` 按链接形态（相对/绝对）自动决定带不带 Token，调用方无感。
 
 #### 2. 上传确认
 
@@ -375,17 +418,37 @@
 
 #### 3. PUBLIC 对象回显
 
-**基本信息：** `GET /file/public/{objectId}`　权限：**无**（公开）
+**基本信息：** `GET /file/public/{objectId}`　权限：**无**（公开，`SecurityConfig` 已 `permitAll` 放行 `/file/public/**`）
 
 **请求头：** 无
 
 **请求体：** 无（`objectId` 路径参数）
 
-**响应示例：** HTTP `302 Found`，响应头 `Location: https://rustfs-host:9000/knowhub/blog_body/.../x.png`，无响应体。
+**响应示例：** HTTP `200 OK`，响应头：
 
-> 浏览器/`<img>` 自动跟随 302 去 RustFS 拉图渲染。接口 dumb 不挑类型——"渲染还是下载"取决于前端引用方式：`<img>` 渲染图片、`<a>` 点击下载。压缩包按设计应走 PRIVATE 的 `/file/download/{id}`。
+```
+Content-Type: image/png
+Content-Length: 123456
+Cache-Control: public, max-age=604800, immutable
+ETag: "d41d8cd98f00b204e9800998ecf8427e"
+Accept-Ranges: none
+```
 
-#### 4. 获取下载预签名 URL
+响应体为图片字节流（后端 `s3Client.getObject` 拉取后 `StreamingResponseBody` 流式回写，大图不进内存）。
+
+**状态码：**
+
+| 场景 | 状态码 | 说明 |
+|------|--------|------|
+| 正常回显 | 200 | PUBLIC + CONFIRMED 对象，返回字节流 |
+| 元数据行不存在 / 未确认（PENDING/FAILED/GC） | 404 | 空体，对外视作不存在，避免状态枚举探测 |
+| 非 PUBLIC 对象 | 403 | 空体，用错接口（PRIVATE 走 `/file/download/{id}`） |
+| RustFS 对象实际不存在（元数据与对象不一致） | 404 | 空体，`getObject` 抛 `NoSuchKeyException` 兜底 |
+| 其它 S3/网络异常 | 500 | 空体，log.warn |
+
+> 后端中转而非 302 跳 RustFS，好处：① 前端 `<img src="/file/public/{id}">` 同源拉图，无 CORS/跨网段可达性问题；② 不依赖 RustFS 桶策略公开可读；③ 后续迁移 OSS 只改后端 `StorageProperties`/`S3Client` 配置，前端零改动。异常在 Controller 内自吞返回纯状态码空体，**不进 `GlobalExceptionHandler`**（`@RestControllerAdvice` 会包成 `Result` JSON，对 `<img>` 无效）。首版加 `Cache-Control` + `ETag` 强缓存，不做 `If-None-Match` 304（immutable 已让浏览器不发验证请求）。接口不挑类型——"渲染还是下载"取决于前端引用方式：`<img>` 渲染图片、`<a>` 点击下载。压缩包按设计应走 PRIVATE 的 `/file/download/{id}`。
+
+#### 4. 获取下载链接
 
 **基本信息：** `GET /file/download/{objectId}`　权限：`knowhub:file:download`
 
@@ -393,21 +456,89 @@
 
 **请求体：** 无（`objectId` 路径参数）
 
-**响应示例：**
+**响应示例（中转模式）：**
 ```json
 {
   "code": 200, "msg": "请求成功",
   "data": {
-    "downloadUrl": "https://rustfs-host:9000/knowhub/.../x.zip?X-Amz-Signature=...&response-content-disposition=attachment%3Bfilename%3D%22x.zip%22",
+    "downloadUrl": "/file/proxy/1",
     "expires": 300,
     "originalName": "x.zip"
   }
 }
 ```
 
-> PRIVATE 对象鉴权（首版最简：上传人/管理员可见）+ 业务可见性后签发短期 GET 预签名（默认 5min 可配），带 `attachment;filename` 强制下载并指定文件名。前端拿 `downloadUrl` 跳转/拉取，后端不返回字节。
+**响应示例（直链模式）：**
+```json
+{
+  "code": 200, "msg": "请求成功",
+  "data": {
+    "downloadUrl": "https://oss.your-domain.com/knowhub/.../x.zip?X-Amz-Signature=...&response-content-disposition=attachment%3Bfilename%3D%22x.zip%22",
+    "expires": 300,
+    "originalName": "x.zip"
+  }
+}
+```
 
-#### 5. 获取文件对象列表
+> PRIVATE 对象鉴权（首版最简：上传人/管理员可见）后按访问模式发链接：中转模式填 `/file/proxy/{objectId}`（前端 `fetch` 带 `Token` 取 blob 下载，见接口 5）；直链模式填预签名绝对 URL（带 `attachment;filename`，前端 `window.open` 直连拉取，需 OSS/nginx 配 CORS）。PUBLIC 对象下载也可直接用 `/file/public/{id}`（后端中转回写字节流，`<a>`/`window.open` 直接拉取，无 CORS）。
+
+#### 5. 中转下载（后端代理回写字节流）
+
+**基本信息：** `GET /file/proxy/{objectId}`　权限：`knowhub:file:download`
+
+**请求头：** `Token: <令牌值>`
+
+**请求体：** 无（`objectId` 路径参数）
+
+**响应示例：** HTTP `200 OK`，响应头：
+
+```
+Content-Type: application/zip
+Content-Length: 123456
+Content-Disposition: attachment;filename="x.zip"
+Cache-Control: no-cache
+Accept-Ranges: none
+```
+
+响应体为文件字节流（后端 `s3Client.getObject` 拉取后 `StreamingResponseBody` 流式回写）。PRIVATE 带 `attachment;filename` 强制下载；PUBLIC 走此接口也回写字节流（但通常用 `/file/public/{id}` 无鉴权更合适）。
+
+**状态码：** 同 PUBLIC 回显（404 不存在/未确认、403 非 PUBLIC PRIVATE 无权、500 异常），异常不进 `GlobalExceptionHandler`。
+
+> 中转模式 PRIVATE 下载用此接口。前端因 `window.open` 不带 Token，改用 `fetch` 带 `Token` 头取 blob 再 `a.click()` 触发下载（PRIVATE 频率低，blob 进内存可接受）。详见 `rookie-ui/src/views/file/index.vue` `handleDownloadFile`。
+
+#### 6. 后端代理转发上传
+
+**基本信息：** `PUT /file/proxy-upload/{objectId}`　权限：`knowhub:file:upload`　日志：`@Log(文件对象, INSERT)`
+
+**请求头：** `Token: <令牌值>`　`Content-Type: <与申请令牌时一致的 MIME>`
+
+**请求体：** 文件字节流（原始二进制，非 multipart）
+
+**响应示例：** `{"code":200,"msg":"请求成功","data":true}`
+
+> 中转模式上传用此接口。前端拿 `applyUploadToken` 返回的 `uploadUrl`（中转模式为 `/file/proxy-upload/{objectId}`）直接 `PUT` 字节流（带 `Token` + `Content-Type`），后端 `s3Client.putObject` 写入 OSS 后走 `confirm` 核对置 `CONFIRMED`。后端经上传字节流（代价是流量过后端），适用于 OSS 内网/不愿配 CORS。前端 `utils/upload.ts` 按链接形态自动带 Token，调用方无感。
+
+#### 7. 取 PUBLIC 回显链接（按访问模式）
+
+**基本信息：** `GET /file/url/{objectId}`　权限：**无**（公开）
+
+**请求头：** 无
+
+**请求体：** 无（`objectId` 路径参数）
+
+**响应示例（中转模式）：**
+```json
+{"code":200,"msg":"请求成功","data":"/file/public/1"}
+```
+
+**响应示例（直链模式）：**
+```json
+{"code":200,"msg":"请求成功","data":"https://oss.your-domain.com/knowhub/blog_body/2026/07/01/uuid.png"}
+```
+
+> 返回 PUBLIC 对象按当前访问模式的回显链接：中转模式 → `/file/public/{id}`（后端中转）；直链模式 → `{directBaseUrl}/{bucket}/{objectKey}`（公开读直链，不带签名，永不过期，依赖 OSS 桶公开可读）。前端上传成功后调此接口取链接回填（`utils/upload.ts`），使前端不关心 OSS 地址、迁移零改动；接口异常时回退 `/file/public/{id}`（中转接口两种模式都可用）。非 PUBLIC 或未确认对象回退 `/file/public/{id}`（访问时由中转接口返 403/404）。
+
+#### 8. 获取文件对象列表
 
 **基本信息：** `GET /file/list`　权限：`knowhub:file:quarry`
 
@@ -444,7 +575,7 @@
 }
 ```
 
-#### 6. 获取文件对象详情
+#### 9. 获取文件对象详情
 
 **基本信息：** `GET /file/{objectId}`　权限：`knowhub:file:info`
 
@@ -454,7 +585,7 @@
 
 **响应示例：** `{"code":200,"msg":"请求成功","data":{...同列表项...}}`
 
-#### 7. 绑定业务关联
+#### 10. 绑定业务关联
 
 **基本信息：** `PUT /file/bind`　权限：`knowhub:file:upload`　日志：`@Log(文件对象, UPDATE)`
 
@@ -469,7 +600,7 @@
 
 **响应示例：** `{"code":200,"msg":"请求成功","data":true}`
 
-#### 8. 批量删除文件对象
+#### 11. 批量删除文件对象
 
 **基本信息：** `DELETE /file/{objectIds}`　权限：`knowhub:file:delete`　日志：`@Log(文件对象, DELETE)`
 

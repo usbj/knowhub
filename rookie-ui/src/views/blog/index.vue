@@ -12,7 +12,7 @@
  */
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
-import { ElMessage, ElMessageBox, ElOption, ElSelect } from 'element-plus'
+import { ElButton, ElMessage, ElMessageBox, ElOption, ElSelect } from 'element-plus'
 import {
   createBlogApi,
   deleteBlogsApi,
@@ -30,6 +30,7 @@ import SharedTablePanel from '@/components/SharedTablePanel.vue'
 import BlogDetailDialog from './components/BlogDetailDialog.vue'
 import BlogReviewDialog from './components/BlogReviewDialog.vue'
 import BlogCoverUploader from './components/BlogCoverUploader.vue'
+import BlogContentEditor from './components/BlogContentEditor.vue'
 import { SYSTEM_PERMISSION_KEYS } from '@/constants/systemPermissions'
 import type { NormalizedPageResult } from '@/types/api/system/common'
 import type { BlogListQuery, BlogPageResult, BlogRecord, ReviewPayload } from '@/types/api/knowhub/blog'
@@ -57,6 +58,8 @@ const detailVisible = ref(false)
 const detailRecord = ref<BlogRecord | null>(null)
 const reviewVisible = ref(false)
 const reviewBlogId = ref<number | null>(null)
+/** 正文全屏编辑器显隐 */
+const contentEditorVisible = ref(false)
 const pageState = ref<BlogPageResult>({
   records: [],
   pageNum: 1,
@@ -304,6 +307,44 @@ const openReviewDialog = (blogId: number) => {
 
 /**
  * 方法效果：
+ * 打开正文全屏编辑器。
+ * 参数：
+ * - 无。
+ * 返回值：
+ * - 无返回值；副作用是展示正文编辑弹窗。
+ */
+const openContentEditor = () => {
+  contentEditorVisible.value = true
+}
+
+/**
+ * 方法效果：
+ * 接收正文编辑器回传的正文，同步到当前弹窗表单模型。
+ * 参数：
+ * - `value`：编辑器回写的新正文 markdown。
+ * 返回值：
+ * - 无返回值；副作用是更新表单 content 字段。
+ */
+const handleContentUpdate = (value: string) => {
+  formModel.value = {
+    ...formModel.value,
+    content: value,
+  }
+}
+
+/** 正文预览摘要：取正文前 60 字符（去 markdown 符号粗略清洗）作为表单内「编辑正文」按钮旁的提示 */
+const contentPreview = computed(() => {
+  const raw = formModel.value.content ?? ''
+  const plain = raw.replace(/[#*`>\-\[\]()!]/g, '').replace(/\s+/g, ' ').trim()
+  if (!plain) {
+    return ''
+  }
+  return plain.length > 60 ? `${plain.slice(0, 60)}…` : plain
+})
+
+
+/**
+ * 方法效果：
  * 接收公共表单回传的新模型，并同步为当前弹窗表单状态。
  * 参数：
  * - `nextValue`：公共表单组件回传的新表单对象。
@@ -543,6 +584,15 @@ onMounted(async () => {
             @update:model-value="updateFieldValue"
           />
         </template>
+
+        <!-- 表单内正文：custom 字段插槽接管为「编辑正文」按钮 + 摘要预览 -->
+        <template #field-content>
+          <div class="blog-view__content-entry">
+            <ElButton type="primary" plain @click="openContentEditor">编辑正文</ElButton>
+            <span v-if="contentPreview" class="blog-view__content-preview">{{ contentPreview }}</span>
+            <span v-else class="blog-view__content-empty">未填写正文</span>
+          </div>
+        </template>
       </SharedTablePanel>
     </BaseCard>
 
@@ -560,6 +610,14 @@ onMounted(async () => {
       @update:visible="reviewVisible = $event"
       @submit="handleReviewSubmit"
     />
+
+    <!-- 正文全屏编辑器（CSDN 风格双栏 + 图片预签名直传） -->
+    <BlogContentEditor
+      :visible="contentEditorVisible"
+      :model-value="formModel.content ?? ''"
+      @update:visible="contentEditorVisible = $event"
+      @update:model-value="handleContentUpdate"
+    />
   </section>
 </template>
 
@@ -567,5 +625,21 @@ onMounted(async () => {
 .blog-view {
   display: grid;
   gap: 18px;
+}
+
+.blog-view__content-entry {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.blog-view__content-preview {
+  color: var(--rookie-text-secondary);
+  font-size: var(--rookie-font-size-sm);
+}
+
+.blog-view__content-empty {
+  color: var(--rookie-text-tertiary);
+  font-size: var(--rookie-font-size-sm);
 }
 </style>
