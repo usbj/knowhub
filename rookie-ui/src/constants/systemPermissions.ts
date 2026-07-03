@@ -48,4 +48,10 @@ export const SYSTEM_PERMISSION_KEYS = {
     delete: ['system:errorLog:delete'],
     clean: ['system:errorLog:clean'],
   },
+  systemConfig: {
+    create: ['system:systemConfig:add', 'sys:systemConfig:add'],
+    edit: ['system:systemConfig:edit', 'sys:systemConfig:edit'],
+    delete: ['system:systemConfig:delete', 'sys:systemConfig:delete'],
+    refresh: ['system:systemConfig:refresh', 'sys:systemConfig:refresh'],
+  },
 } as const
