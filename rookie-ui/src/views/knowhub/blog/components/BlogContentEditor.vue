@@ -6,9 +6,11 @@
   - `modelValue`：正文 markdown 字符串，双向绑定。
   关键交互：
   - 左栏 v-md-editor（mode=edit）编辑，右栏 v-md-preview 实时预览；
-  - 工具栏图片按钮 / 拖拽 / 粘贴图片触发 v-md-editor 的 upload-image 事件，
+  - 工具栏「插入图片」分组下「上传本地图片」子项 / 拖拽 / 粘贴图片均触发 v-md-editor 的 upload-image 事件，
     对每个 file 调预签名直传（businessType=BLOG_BODY，access=PUBLIC），
     成功后调 insertImage({ name, url: /file/public/{id} }) 在光标处插入 ![name](/file/public/{id})；
+    （v-md-editor 默认把「上传本地图片」子项放进 disabledMenus，这里用 :disabled-menus="[]" 启用它，
+     配合已传的 upload-image-config，按钮 / 拖拽 / 粘贴共用同一套上传与体积校验配置。）
   - 顶部工具栏「保存返回」回写正文并关闭弹窗。
   设计约定：
   - 正文图片与封面共用同一套预签名直传逻辑（utils/upload.ts 的 presignedUploadFlow）；
@@ -160,6 +162,7 @@ const handleCancel = () => {
           mode="edit"
           height="100%"
           :upload-image-config="{ accept: 'image/*', maxFileSize: 10 * 1024 * 1024 }"
+          :disabled-menus="[]"
           @upload-image="handleUploadImage"
         />
       </section>

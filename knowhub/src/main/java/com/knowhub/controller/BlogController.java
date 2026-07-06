@@ -3,6 +3,7 @@ package com.knowhub.controller;
 import com.github.pagehelper.PageInfo;
 import com.knowhub.pojo.quarry.BlogQuarry;
 import com.knowhub.pojo.vo.BlogVo;
+import com.knowhub.pojo.vo.ReviewLogVo;
 import com.knowhub.pojo.vo.ReviewVo;
 import com.knowhub.service.BlogService;
 import com.rookie.common.annotation.Log;
@@ -21,6 +22,8 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+
+import java.util.List;
 
 /**
  * 博客文章接口。
@@ -103,6 +106,14 @@ public class BlogController {
     public Result<Boolean> reviewBlog(@RequestBody ReviewVo vo) {
         Boolean b = blogService.reviewBlog(vo);
         return Result.success(b);
+    }
+
+    @GetMapping("/review-log/{blogId}")
+    @Operation(summary = "获取博客审核历史")
+    @PreAuthorize("hasAuthority('knowhub:blog:info')")
+    public Result<List<ReviewLogVo>> listReviewLog(@PathVariable Long blogId) {
+        List<ReviewLogVo> list = blogService.listReviewLog(blogId);
+        return Result.success(list);
     }
 
     @PutMapping("/like/{blogId}")

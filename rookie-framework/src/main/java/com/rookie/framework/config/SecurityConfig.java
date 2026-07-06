@@ -60,6 +60,7 @@ public class SecurityConfig {
                         .requestMatchers("/login").permitAll()
                         // PUBLIC 文件回显：后端中转字节流，供 <img> 等无 Token 请求直接拉图（knowhub 文件模块）
                         .requestMatchers("/file/public/**").permitAll()
+                        .requestMatchers("/file/resolve/**").permitAll()
                         //swagger相关配置
                         .requestMatchers("/doc.html/**").permitAll()
                         .requestMatchers("/swagger-ui.html/**").permitAll()

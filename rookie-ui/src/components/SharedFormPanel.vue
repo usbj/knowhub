@@ -12,7 +12,7 @@
  * - `update:modelValue` / `submit` / `cancel`：向页面同步模型和交互动作。
  */
 <script setup lang="ts">
-import { computed, ref, toRaw, useSlots } from 'vue'
+import { computed, ref, useSlots } from 'vue'
 import {
   ElButton,
   ElCol,
@@ -143,7 +143,13 @@ const readFieldValue = (fieldKey: string) => getValueByPath(props.modelValue, fi
  * - 无返回值；副作用是触发 `update:modelValue`。
  */
 const updateFieldValue = (fieldKey: string, value: unknown) => {
-  const nextModel = structuredClone(toRaw(props.modelValue))
+  // 用 JSON 深拷贝而非 structuredClone(toRaw(...))：
+  // toRaw 只去外层 reactive proxy，嵌套字段（如 tagIds 数组）仍是 reactive proxy，
+  // structuredClone 遍历到嵌套 proxy 会抛 "[object Array] could not be cloned"，
+  // 导致 updateFieldValue 抛错、emit 不执行、modelValue 不更新；
+  // 表单数据都是可 JSON 序列化的（字符串/数字/数组/普通对象），JSON 方案对 proxy 安全
+  // （JSON.stringify 会读 proxy 真实值）且深拷贝嵌套结构。
+  const nextModel = JSON.parse(JSON.stringify(props.modelValue)) as Record<string, unknown>
   setValueByPath(nextModel, fieldKey, value)
   emit('update:modelValue', nextModel)
 }

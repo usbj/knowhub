@@ -117,7 +117,7 @@ CREATE TABLE `blog_collect` (
 --    status, create_by, create_time, update_by, update_time, delete)
 -- 权限键三段式 knowhub:模块:动作，与上游 system:模块:动作 命名规则对齐，knowhub 前缀区分二开新增。
 -- 父目录：博客管理(63,menu_type=1,perm_key='knowhub')
---   ├─ 文章管理(64,menu_type=2,perm_key='knowhub:blog', path='/blog/index')
+--   ├─ 文章管理(64,menu_type=2,perm_key='knowhub:blog', path='/knowhub/blog/index')
 --   │    ├─ 查询(65)  knowhub:blog:quarry
 --   │    ├─ 详情(66)  knowhub:blog:info
 --   │    ├─ 新增(67)  knowhub:blog:add
@@ -126,7 +126,7 @@ CREATE TABLE `blog_collect` (
 --   │    ├─ 发布(70)  knowhub:blog:publish
 --   │    ├─ 撤回(71)  knowhub:blog:revoke
 --   │    └─ 审核(72)  knowhub:blog:review
---   └─ 标签管理(73,menu_type=2,perm_key='knowhub:tag', path='/blog/tag/index')
+--   └─ 标签管理(73,menu_type=2,perm_key='knowhub:tag', path='/knowhub/tag/index')
 --        ├─ 查询(74)  knowhub:tag:quarry
 --        ├─ 详情(75)  knowhub:tag:info
 --        ├─ 新增(76)  knowhub:tag:add
@@ -135,7 +135,7 @@ CREATE TABLE `blog_collect` (
 -- 上游最大 menu_id=62，本脚本从 63 起。
 -- ============================================================================
 INSERT INTO `sys_menu` VALUES (63,'博客管理','knowhub',1,1,'blog',0,NULL,'EditPen',1,'admin',NOW(),'admin',NOW(),0);
-INSERT INTO `sys_menu` VALUES (64,'文章管理','knowhub:blog',63,2,'blog',0,'/blog/index','Document',1,'admin',NOW(),'admin',NOW(),0);
+INSERT INTO `sys_menu` VALUES (64,'文章管理','knowhub:blog',63,2,'blog',0,'/knowhub/blog/index','Document',1,'admin',NOW(),'admin',NOW(),0);
 INSERT INTO `sys_menu` VALUES (65,'查询','knowhub:blog:quarry',64,3,NULL,0,NULL,NULL,1,'admin',NOW(),'admin',NOW(),0);
 INSERT INTO `sys_menu` VALUES (66,'详情','knowhub:blog:info',64,3,NULL,0,NULL,NULL,1,'admin',NOW(),'admin',NOW(),0);
 INSERT INTO `sys_menu` VALUES (67,'新增','knowhub:blog:add',64,3,NULL,0,NULL,NULL,1,'admin',NOW(),'admin',NOW(),0);
@@ -144,7 +144,7 @@ INSERT INTO `sys_menu` VALUES (69,'删除','knowhub:blog:delete',64,3,NULL,0,NUL
 INSERT INTO `sys_menu` VALUES (70,'发布','knowhub:blog:publish',64,3,NULL,0,NULL,NULL,1,'admin',NOW(),'admin',NOW(),0);
 INSERT INTO `sys_menu` VALUES (71,'撤回','knowhub:blog:revoke',64,3,NULL,0,NULL,NULL,1,'admin',NOW(),'admin',NOW(),0);
 INSERT INTO `sys_menu` VALUES (72,'审核','knowhub:blog:review',64,3,NULL,0,NULL,NULL,1,'admin',NOW(),'admin',NOW(),0);
-INSERT INTO `sys_menu` VALUES (73,'标签管理','knowhub:tag',63,2,'tag',0,'/blog/tag/index','PriceTag',1,'admin',NOW(),'admin',NOW(),0);
+INSERT INTO `sys_menu` VALUES (73,'标签管理','knowhub:tag',63,2,'tag',0,'/knowhub/tag/index','PriceTag',1,'admin',NOW(),'admin',NOW(),0);
 INSERT INTO `sys_menu` VALUES (74,'标签查询','knowhub:tag:quarry',73,3,NULL,0,NULL,NULL,1,'admin',NOW(),'admin',NOW(),0);
 INSERT INTO `sys_menu` VALUES (75,'标签详情','knowhub:tag:info',73,3,NULL,0,NULL,NULL,1,'admin',NOW(),'admin',NOW(),0);
 INSERT INTO `sys_menu` VALUES (76,'标签新增','knowhub:tag:add',73,3,NULL,0,NULL,NULL,1,'admin',NOW(),'admin',NOW(),0);

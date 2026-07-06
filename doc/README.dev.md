@@ -41,12 +41,22 @@ doc/
 
 当某份 `doc/` 文档经过验证、需要长期保留时，应将其核心内容整理后合并到根 `README.md` 或对应模块的说明中，再从 `doc/` 删除或移入 `doc/archive/`。避免稳定的对外说明长期只存在于本地忽略目录里。
 
-## 全局开关落地约定
+## 全局开关 / 配置项落地约定
 
-后续 knowhub 阶段若需要"管理员可在后台改、全站生效"的全局布尔开关（如博客审核开关 `blog_review_enabled`），**统一走 `sys_dict` + `sys_dict_data` 字典机制**：
-- 在 `sys_dict` 新增一条 `dict_key` 作为开关字典，在 `sys_dict_data` 用对称的 `"true"/"false"` 两条数据项表达开关状态。
-- 后端通过现成的 `DictUtil.getDictData(dictKey)` 读 Redis 缓存，编辑开关后必须像字典 add/edit 那样主动 `DictUtil.setDictData` 刷缓存；前端用现成的 `useDict()` 渲染与切换。
-- **不新建系统配置表**。若未来博客配置项膨胀到大批键值对、字典不再适合承载时，再单独评估建系统设置表；届时迁移成本可控的前提是——开关的读取统一收口到一个读取方法/类（如 `BlogConfigReader.isReviewEnabled()`），业务侧不直接调用 `DictUtil`，从而换存储时只需改该类内部实现，调用方零改动。
+knowhub 阶段"管理员可在后台改、全站生效"的配置分两类落地，按用途选机制：
+
+**① 键值型 / 开关型配置 → 系统设置模块（`sys_config`）**
+- rookie 层已落地独立的系统设置模块（`SysConfig`/`SysConfigUtil`/`SysConfigWarmUpRunner`/`/sys/system-config` 接口 + 前端管理页，见 `sql/sys_config.sql`），专门承载"后台可改、全站生效"的键值型配置，支持 STRING/BOOLEAN/NUMBER/JSON 四种值类型，Redis 永久缓存、`SysConfigUtil` 只读缓存。
+- 全局布尔开关（如博客审核开关）、单值配置（如文件访问模式、直链 OSS 地址）、按维度聚合的多值配置（如各业务类型体积上限/类型白名单，用 JSON 对象一条设置项承载）**统一走 `sys_config`**，不再走字典。
+- 后端读取收口到一个读取方法/类（如 `BlogConfigReader.isReviewEnabled()`、`StorageConfigReader.sizeLimitBytes()`），业务侧不直接调用 `SysConfigUtil`，换存储/换阈值时只改该类内部实现、调用方零改动。
+- 缓存生效语义：设置页编辑保存（`editSysConfig`）写库后立即 `setConfig` 重写 Redis，**即时生效无需重启**；绕过接口直接改 DB 时点「刷新缓存」（`POST /sys/system-config/refresh` 清空重预热）兜底；启动时 `SysConfigWarmUpRunner` 首次预热。前端无独立缓存层，进页实时查 DB。
+- knowhub 业务项用 `knowhub.` 前缀（如 `knowhub.blog.review_enabled`、`knowhub.file.size_limit`），与 rookie 内置项 `sys.*` 区分；`is_system=1` 标记代码硬依赖项，受内置项保护（禁删/禁改键与类型/禁停用，仅可改值）。
+
+**② 枚举型字典（前端下拉 + 后端校验共用）→ 仍走 `sys_dict` + `sys_dict_data`**
+- 有限枚举值且需前端下拉渲染、`DictTag` 标签着色、后端校验共用的（如 `file_business_type`/`file_access`/`upload_status`/`blog_status`/`review_status`）仍走字典，`DictUtil` 读缓存、`useDict()` 渲染。
+- 这类是"枚举值集合"而非"可调阈值/开关"，与配置型用途不同，不迁系统设置。
+
+> 历史背景：2026-07-03 之前系统设置模块未落地时，全局开关曾走字典（`blog_review_enabled` 等）。系统设置模块落地后已迁移，旧约定"不新建系统配置表、统一走字典"作废，以本节为准。迁移脚本见 `sql/knowhub-sys-config-migration.sql`。
 
 ## rookie 框架代码修改禁令
 

@@ -8,10 +8,15 @@ import java.util.Date;
  * 博客文章实体，对应 blog 表。
  * 模块本身即"博客(blog)"，文章实体直接称 Blog（模块命名详见 doc/blog/blog-module-design.md）。
  * 审计列(createBy/updateBy/createTime/updateTime) 由 BaseEntity 承载；软删 deleted 独立字段。
+ * authorId 为作者用户ID(userId)，与审计列 createBy(username) 互补：
+ *   createBy 存账号串便于直接展示，authorId 用 userId 稳定锁定（username 可改，userId 不变），
+ *   前台展示作者昵称走 join sys_user on user_id=author_id，username 变动不影响。
  */
 public class Blog extends BaseEntity {
 
     private Long blogId;
+
+    private Long authorId;
 
     private String title;
 
@@ -45,11 +50,12 @@ public class Blog extends BaseEntity {
     }
 
     public Blog(Date createTime, Date updateTime, String createBy, String updateBy,
-                Long blogId, String title, String content, String summary, String coverUrl,
+                Long blogId, Long authorId, String title, String content, String summary, String coverUrl,
                 String status, Date publishTime, Long viewCount, Long likeCount, Long collectCount,
                 String reviewStatus, String reviewer, Date reviewTime, String reviewAdvice, Integer deleted) {
         super(createTime, updateTime, createBy, updateBy);
         this.blogId = blogId;
+        this.authorId = authorId;
         this.title = title;
         this.content = content;
         this.summary = summary;
@@ -72,6 +78,14 @@ public class Blog extends BaseEntity {
 
     public void setBlogId(Long blogId) {
         this.blogId = blogId;
+    }
+
+    public Long getAuthorId() {
+        return authorId;
+    }
+
+    public void setAuthorId(Long authorId) {
+        this.authorId = authorId;
     }
 
     public String getTitle() {

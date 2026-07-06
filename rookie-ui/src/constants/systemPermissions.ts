@@ -48,6 +48,12 @@ export const SYSTEM_PERMISSION_KEYS = {
     delete: ['system:errorLog:delete'],
     clean: ['system:errorLog:clean'],
   },
+  systemConfig: {
+    create: ['system:systemConfig:add', 'sys:systemConfig:add'],
+    edit: ['system:systemConfig:edit', 'sys:systemConfig:edit'],
+    delete: ['system:systemConfig:delete', 'sys:systemConfig:delete'],
+    refresh: ['system:systemConfig:refresh', 'sys:systemConfig:refresh'],
+  },
   // ---- knowhub 二开新增业务模块（博客文章 / 受控标签 / 文件存储）----
   // 权限键三段式 knowhub:模块:动作，与 sys_menu 中 knowhub:* 行的 perm_key 首值对齐。
   blog: {

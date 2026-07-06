@@ -7,7 +7,7 @@
  */
 import { del, get, getPage, post, put } from '@/utils/http'
 import type { ApiResult } from '@/types/api/system/common'
-import type { BlogListQuery, BlogPageResult, BlogRecord, ReviewPayload } from '@/types/api/knowhub/blog'
+import type { BlogListQuery, BlogPageResult, BlogRecord, ReviewLogRecord, ReviewPayload } from '@/types/api/knowhub/blog'
 
 /**
  * 方法效果：
@@ -98,3 +98,14 @@ export const revokeBlogApi = (blogId: number) =>
  */
 export const reviewBlogApi = (payload: ReviewPayload) =>
   put<ApiResult<boolean>, ReviewPayload>('/blog/review', payload)
+
+/**
+ * 方法效果：
+ * 获取博客审核历史流水（按动作时间升序），供详情弹窗「审核历史」折叠区展示。
+ * 参数：
+ * - `blogId`：博客主键。
+ * 返回值：
+ * - 后端 Result 包裹的审核流水列表（含操作人昵称 operatorNickname）。
+ */
+export const getReviewLogApi = (blogId: number) =>
+  get<ApiResult<ReviewLogRecord[]>>(`/blog/review-log/${blogId}`)

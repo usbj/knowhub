@@ -289,3 +289,281 @@
 - `rookie-ui` `npm run type-check`（vue-tsc --build）通过，EXIT=0。
 
 **待用户人工验证**：① 中转模式（默认）：封面上传→PUT /file/proxy-upload/{id} 带 Token→回显 /file/public/{id}；PRIVATE 下载→fetch /file/proxy/{id} 带 Token 取 blob 下载。② 切直链模式（字典 file_access_mode 改 direct + 配 file_direct_base_url 为可达 nginx/OSS 地址 + OSS 配 CORS）：上传→PUT 预签名绝对 URL 不带 Token；下载→window.open 预签名绝对 URL；回显→/file/url/{id} 返回直链。③ 迁 OSS 只改 yml storage.endpoint + 字典 file_direct_base_url，前端与 nginx 零改动。`doc/knowhub-api.md` 同步更新双模式说明 + 新增接口 5/6/7（中转下载/代理上传/取回显链接）。
+
+## 2026-07-03
+
+### 20:30 配置型设置从字典迁移到系统设置模块（sys_config）
+
+rookie 层 commit `e03af35` 新增了独立的系统设置模块（`SysConfig`/`SysConfigUtil`/`SysConfigWarmUpRunner`/`/sys/system-config` 接口 + 前端管理页，对标字典系统，专门承载"后台可改、全站生效"的键值型配置）。knowhub 的两个配置读取收口类 `BlogConfigReader`、`StorageConfigReader` 此前走字典（`DictUtil`）读取 5 个配置型字典键，代码注释里已预留"将来迁系统设置仅改本类内部实现、签名零改动"——本次落实迁移，5 个配置项出现在「系统设置」管理页统一维护，业务调用方（`BlogServiceImpl`/`FileServiceImpl`）零改动。
+
+**配置项映射**（5 条 sys_config，`is_system=1`/`status=1`，受内置项保护禁删/禁改键与类型/禁停用）：
+- `blog_review_enabled` → `knowhub.blog.review_enabled`（BOOLEAN，初始 `false`）
+- `file_access_mode` → `knowhub.file.access_mode`（STRING，初始 `transfer`）
+- `file_direct_base_url` → `knowhub.file.direct_base_url`（STRING，初始 `http://100.82.86.85:9000`）
+- `file_size_limit`（原 7 行字典）→ `knowhub.file.size_limit`（JSON 对象，key=业务类型 code，value=MB 数）
+- `file_type_whitelist`（原 7 行字典）→ `knowhub.file.type_whitelist`（JSON 对象，key=业务类型 code，value=逗号分隔白名单）
+
+**后端（仅改两个 ConfigReader 内部实现，签名不变）**
+- `knowhub/src/main/java/com/knowhub/config/BlogConfigReader.java`：删 `DictUtil`/`SysDictData` import 改 `SysConfigUtil`；`DICT_KEY_REVIEW_ENABLED` → `CONFIG_KEY_REVIEW_ENABLED="knowhub.blog.review_enabled"`；`isReviewEnabled()` 改为 `SysConfigUtil.getBoolean(..., false)`（缓存缺失/停用/类型不符回落 false，与原字典缺失默认关闭语义一致）。
+- `knowhub/src/main/java/com/knowhub/config/StorageConfigReader.java`：4 个 `DICT_KEY_*` → `CONFIG_KEY_*`；`accessMode()` 走 `SysConfigUtil.getString` + `FileAccessMode.ofCode`；`directBaseUrl()` 走 `SysConfigUtil.getString(...,null)`，空则回落 yml endpoint；`sizeLimitBytes`/`typeWhitelist` 走 `SysConfigUtil.getObject(..., Map.class, emptyMap)`，按 type.code 取值——数值统一 `((Number)v).longValue()` 取值防 Hutool 反序列化为 Integer/Long/BigDecimal 的 `ClassCastException`，白名单空串/缺失回落空列表（不限制）。`isContentTypeAllowed`/`publicBucketReadable`/`getProperties` 不动。
+
+**SQL（新建独立脚本，不动上游 `sql/sys_config.sql`）**
+- `sql/knowhub-sys-config-migration.sql`：① 插入 5 条 sys_config（config_id 4~8，`ON DUPLICATE KEY UPDATE` 幂等，初始值与原字典默认对齐）；② 清理 5 个孤儿配置型字典（`sys_dict_data` + `sys_dict` 按 dict_key DELETE，幂等）。**枚举型字典 `file_business_type`/`file_access`/`upload_status` 保留不动**（前端下拉 + 后端校验共用，与配置型用途不同）。前置依赖：需先跑 `sql/sys_config.sql` 建表。
+
+**遵守约定**
+- 未修改任何 `rookie-*` 代码/配置（遵守 `doc/README.dev.md`「rookie 框架代码修改禁令」）；改动全在 knowhub 模块内 + 新建 sql 脚本。
+- 业务调用方 `BlogServiceImpl`/`FileServiceImpl` 零改动（方法签名不变）。
+- 前端无感：这 5 个字典 key 未被 rookie-ui 的 useDict/下拉/DictTag 当渲染源（grep 确认），系统设置页已支持 JSON 类型 textarea 编辑，新设置项自动出现在列表里。
+- `doc/README.dev.md`「全局开关落地约定」同步更新为"系统设置模块已就绪，全局开关/单值配置走 sys_config；多值枚举下拉仍走字典"。
+
+**校验**
+- `mvn -q -pl knowhub -am -DskipTests compile` 通过，EXIT=0（BlogConfigReader/StorageConfigReader class 均重新生成）。
+- 未启动 dev server，未跑 SQL（由用户在合适时机执行 + 业务验证）。
+
+**待用户人工验证**：① 跑 `sql/sys_config.sql`（若未跑）→ 跑 `sql/knowhub-sys-config-migration.sql` → `select config_key,... from sys_config;` 应 8 条（3 rookie 内置 + 5 knowhub）；孤儿字典 dict_key 查询应为空，枚举型 3 条仍在。② 启动后端看日志"系统设置缓存预热完成，共加载 8 条启用设置项"。③ admin 进「系统设置」页（确认 `sql/sys_config.sql` 第 124-128 行 admin 授权菜单 93-99 的注释已手动放开，否则看不到该页）能看到 5 条 knowhub 项，JSON 项可 textarea 编辑。④ 业务：`knowhub.blog.review_enabled=true` 发布走审核、改回 false 直通；改 `knowhub.file.size_limit` JSON 里 BLOG_COVER 上限后上传校验即时变化；切 `knowhub.file.access_mode=direct` 配 direct_base_url 后链接形态切直链。⑤ 缓存生效：设置页编辑保存即时生效（editSysConfig 写库后立即 setConfig 重写 Redis），绕过接口直接改 DB 才需点「刷新缓存」(POST /sys/system-config/refresh 清空重预热)。
+
+### 21:40 博客/标签/文件管理页前端目录迁入 views/knowhub/
+
+把 knowhub 三个后台管理页从前端散落位置统一归到 `views/knowhub/` 下，与后端模块命名（`knowhub-blog` 等）和权限键前缀（`knowhub:*`）对齐，结构更清晰。标签从原 `blog/tag` 提到与 blog/file 平级。
+
+**前端目录迁移（git mv 重命名，保留历史；页面内 `./` 相对引用不变）**
+- `rookie-ui/src/views/blog/` → `rookie-ui/src/views/knowhub/blog/`（`index.vue`、`config.ts`、`components/BlogReviewDialog`/`BlogDetailDialog`/`BlogCoverUploader`/`BlogContentEditor`）
+- `rookie-ui/src/views/blog/tag/` → `rookie-ui/src/views/knowhub/tag/`（`index.vue`、`config.ts`，从 blog 下提至平级）
+- `rookie-ui/src/views/file/` → `rookie-ui/src/views/knowhub/file/`（`index.vue`、`config.ts`、`components/FileDetailDialog`）
+- 11 个文件均以 git `R`（rename）状态移动，旧 `views/blog`/`views/file` 空目录已删；页面内部全是同目录 `./` 引用，迁移后无需改 import。
+
+**SQL 菜单 path（组件定位）同步**——`menu.path` 字段供 `dynamicRoutes.ts` 的 `resolveViewComponent` 匹配 `views/{path}/index.vue`，目录迁了必须同步，否则路由命中占位页：
+- `sql/knowhub-blog.sql` menu 64 文章：`/blog/index` → `/knowhub/blog/index`；menu 73 标签：`/blog/tag/index` → `/knowhub/tag/index`（顶部注释树同步）。
+- `sql/knowhub-storage.sql` menu 79 文件：`/file/index` → `/knowhub/file/index`。
+- **菜单 `route` 字段（路由路径 `blog`/`tag`/`file`，浏览器地址栏）不动**——只改组件定位 `path`，不改地址，用户书签/收藏不受影响。
+
+**遵守约定**
+- 未修改任何 `rookie-*` 代码/配置；改动全在 rookie-ui 的 knowhub 业务视图层 + knowhub sql 脚本。
+- `dynamicRoutes.ts` 的 `import.meta.glob('../views/**/*.vue')` 天然覆盖新路径，无需改路由注册逻辑。
+
+**校验**
+- `rookie-ui` `npm run type-check`（vue-tsc --build）通过，EXIT=0，迁移无 import 断裂。
+- 未启动 dev server（README.dev.md 约定）。
+
+**待用户人工验证**：① 已部署环境需在 `sys_menu` 表把 menu 64/73/79 的 `path` 改为 `/knowhub/...`（或重跑对应 sql 脚本的该行）后清前端缓存重新登录，否则侧边栏点文章/标签/文件会落到占位页。② 三个页面功能走查一遍（列表/筛选/CRUD/上传/审核/详情）确认无回归。
+
+### 22:05 正文编辑器启用「上传本地图片」按钮（替换原仅"添加链接"）
+
+用户反馈：博客正文全屏编辑器（`BlogContentEditor`）工具栏的「插入图片」点开只有「添加图片链接」子项，缺"选本地文件上传"入口。
+
+**根因**：v-md-editor@2.3.18 内置 `image` 工具组本就有两个子项——`image-link`（添加图片链接）与 `upload-image`（上传本地图片，点击调 `$refs.uploadFile.upload()` 选图 → `emitUploadImage` 触发 `@upload-image` 事件），但组件默认 `disabledMenus=['image/upload-image']` 把上传子项禁用了，所以只看到"添加链接"。而 `BlogContentEditor` 早已接好 `@upload-image="handleUploadImage"`（BLOG_BODY + PUBLIC 预签名直传 + `insertImage` 光标处插入 `![name](/file/public/{id})` 并即时回显），上传逻辑完整，只是按钮被默认禁用没暴露出来。
+
+**改动（`rookie-ui/src/views/knowhub/blog/components/BlogContentEditor.vue`，1 行 + 注释）**
+- `<v-md-editor>` 加 `:disabled-menus="[]"`，清空默认禁用列表 → 启用「上传本地图片」子项。工具栏「插入图片」分组现在同时有「添加图片链接」「上传本地图片」两个子项。
+- 复用已传的 `:upload-image-config="{ accept:'image/*', maxFileSize:10*1024*1024 }"`——按钮 / 拖拽 / 粘贴三条路径共用同一套 accept 与体积上限（10MB，与 BLOG_BODY 配置一致），无需新增上传逻辑。
+- 顶部注释更正：原来写"工具栏图片按钮触发 upload-image"与默认禁用事实不符，改为准确描述「上传本地图片」子项 + 拖拽 + 粘贴均触发 upload-image，并注明 `disabled-menus` 启用原因。
+
+**遵守约定**
+- 未修改任何 `rookie-*` 代码/配置；只动 knowhub 业务组件。
+- 不改 `@upload-image` 处理器、不改预签名直传流程、不改 `utils/upload.ts`——纯启用被默认禁用的内置按钮，复用既有上传链路。
+
+**校验**
+- `rookie-ui` `npm run type-check`（vue-tsc --build）通过，EXIT=0。
+- 未启动 dev server（README.dev.md 约定）。
+
+**待用户人工验证**：进博客新增/编辑 →「编辑正文」→ 工具栏「插入图片」分组下点「上传本地图片」→ 选图 → 上传完成后光标处插入 `![文件名](/file/public/{id})` 并在左栏编辑区/右栏预览即时回显；拖拽图片到编辑区、粘贴图片同样走上传链路。上传中 footer 显示「图片上传中…」且「保存返回」按钮禁用。
+
+## 2026-07-04
+
+### 2026-07-04 07:00 修复表单输入回弹 + 中转上传 confirm 404 + confirm 参数传递 bug
+
+用户反馈三个问题：① 博客正文编辑后标题输入框"打了字失焦后消失回弹旧值"；② 中转模式上传文件前端一直卡在"上传中"，最后 confirm 报 `对象未上传或不存在`（HeadObject 404）；③ `confirmUploadApi` 的 bizRefId 没作为 query 参数传。
+
+**① 表单输入回弹（SharedFormPanel.vue，根因：structuredClone 对 reactive 嵌套数组抛错）**
+- 根因：`updateFieldValue` 用 `structuredClone(toRaw(props.modelValue))` 深拷贝。`toRaw` 只去 modelValue 外层 reactive proxy，**嵌套字段 `tagIds`（数组）仍是 reactive proxy**。`structuredClone` 遍历到嵌套 proxy 抛 `[object Array] could not be cloned`，导致 `updateFieldValue` 抛错、`emit('update:modelValue')` 不执行、父层 `formModel` 不更新；native input value 已变（显示新内容），失焦时 ElInput 受控同步 native value ← 旧 modelValue，表现"打了字失焦后消失"。preview 实测：ElInput 正确 emit `update:modelValue`，但 SharedFormPanel 的 `updateFieldValue` 内 `structuredClone` 抛错（patch 该函数抓到 err），SharedFormPanel 未再 emit，父层 formModel.title 始终旧值。
+- 修复：`structuredClone(toRaw(...))` 改为 `JSON.parse(JSON.stringify(props.modelValue))`。表单数据都是可 JSON 序列化的（字符串/数字/数组/普通对象），JSON 方案对 reactive proxy 安全（`JSON.stringify` 读 proxy 真实值）且深拷贝嵌套结构。同步删 `toRaw` import（不再使用）。
+- 影响面：SharedFormPanel 是公共组件，本修复同时治好用户/博客/通知/标签等所有用它的表单的输入回弹隐患。
+- preview 实测验证：真实键盘输入 + IME composition 事件序列输入 + 失焦，`formModel.title` 均正确更新、不再回弹；正文编辑器输入保存后再输标题也正常。
+
+**② 中转模式上传 confirm 404（FileServiceImpl.proxyUpload，根因：流式读取 + contentLength 不稳）**
+- 根因：`proxyUpload` 用 `RequestBody.fromInputStream(request.getInputStream(), request.getContentLengthLong())` 流式写 OSS。经 vite proxy 转发后 `request.getContentLengthLong()` 可能返回 -1（chunked 传输），且 `request.getInputStream()` 经 `RequestCachingFilter` 的 `ContentCachingRequestWrapper` 包装，流式读取与 AWS SDK 分块配合不稳，导致 putObject 写入空/截断对象 → 内部/前端 confirm HeadObject 404。
+- 修复：`proxyUpload` 先 `in.readAllBytes()` 把请求体全量读入 byte[]，再用 `RequestBody.fromBytes(bytes)` 写入，`contentLength` 用 `bytes.length`（实际读到）。contentType 优先用请求头声明的，缺失回退元数据存的。彻底回避流式读取与 contentLength=-1 的坑（图片等小文件进内存可接受，大文件再走流式优化）。
+- 同时去掉 `proxyUpload` 末尾的内部 `confirmUpload(objectId, null)` 调用：留给前端统一调 `POST /file/confirm/{id}` 走 HeadObject 核对并置 CONFIRMED。否则中转模式下后端内部 confirm 已置 CONFIRMED，前端三步流程第 3 步会因"状态非待确认"报错，与直链模式流程不一致。proxyUpload 现仅写 OSS 返回 true，对象已落 OSS，前端 confirm 时 HeadObject 即可命中。
+
+**③ confirmUploadApi 参数传递 bug（api/knowhub/file.ts）**
+- 根因：`post('/file/confirm/${id}', { params: { bizRefId } })` —— `post` 的第二个参数是 `data`（请求体）而非 config，`{params:...}` 被当 body 发出，bizRefId 没作为 query 参数传到后端 `@RequestParam bizRefId`。
+- 修复：改为 `post('/file/confirm/${id}', undefined, { params: { bizRefId } })`，第三个参数才是 config，params 正确作为 query 附加到 URL。
+
+**直链模式上传失败（配置问题，非代码 bug）**
+- 用户实测：直链模式 PUT 到 `http://100.82.86.85:9000/...` 失败。`100.82.86.85:9000` 是内网 OSS 地址，公网浏览器不可达，且预签名 PUT 还需 OSS CORS 放行浏览器 origin。这是 `knowhub.file.direct_base_url` 配置问题（应配 nginx 公网反代域名，不是内网 OSS endpoint），非代码 bug。建议：公网部署把 `direct_base_url` 改为 nginx 公网反代域名，或保持 `access_mode=transfer` 走中转。
+
+**遵守约定**
+- 未修改任何 `rookie-*` 代码/配置；改动在 knowhub 模块（FileServiceImpl）+ rookie-ui 公共组件（SharedFormPanel）+ knowhub api（file.ts）。
+- SharedFormPanel 是 rookie-ui 公共组件，本修为修 bug（输入回弹），非扩展功能。
+
+**校验**
+- `mvn -q -pl knowhub -am -DskipTests compile` 通过，EXIT=0。
+- `rookie-ui` `npm run type-check`（vue-tsc --build）通过，EXIT=0。
+- preview 启动 dev server 实测标题输入：真实键盘 + IME + 失焦 + 正文编辑后均正常更新 formModel，不再回弹。
+
+**待用户人工验证**：① 重启后端（FileServiceImpl 改动需重新编译启动）→ 中转模式上传图片/文件，确认不再卡在"上传中"、confirm 成功、对象可回显。② 博客新增/编辑：正文编辑后输标题、失焦、再编辑，确认标题不回弹；其他用 SharedFormPanel 的表单（用户/通知/标签）也测一遍输入。③ 直链模式若需用，把 `knowhub.file.direct_base_url` 配为 nginx 公网反代域名后再测。
+
+### 17:20 中转上传写坏字节根因 — request.getInputStream() 在 filter chain 中被上游消费，改用 @RequestBody byte[] 读取
+
+接上一个条目「② 中转上传 confirm 404」：当时把 `proxyUpload` 从 `RequestBody.fromInputStream(in, contentLength)` 改为 `in.readAllBytes()` + `RequestBody.fromBytes(bytes)` 并去掉内部 confirm。改完后"上传不再卡住、confirm 成功、对象 CONFIRMED"，**但回显出来是裂图**，OSS 里上传的对象本体打不开。本次定位真因并彻底修复。
+
+**现象（实测取证）**
+- 后端 `/file/public/{id}` 实测返回 HTTP 200、`Content-Type` 正确、`Content-Length` 与 DB `content_length` 完全一致（29558 / 457598 / 461733 等都精确匹配），说明回显链路（`streamPublicObject` → `s3Client.getObject` → `transferTo`）**忠实地把 OSS 里的字节原样吐出**，回显本身无瑕疵。
+- 但回写字节的头都不是合法图片头：JPEG 应 `ff d8 ff`，实测却是 `28 eb 07 1a 35 ef fd 72`；PNG 应 `89 50 4e 47 0d 0a 1a 0a`，实测却 `e1 9c c1 d0 ...`。尾反而是合法的 `ff d9`（JPEG EOI）/ `49 45 4e 44 ae 42 60 82`（PNG IEND）。
+- 多次上传不同图，**`readAllBytes` 读到的字节数恒比请求头声明 `Content-Length` 少 4135 字节**（33693→29558、434833→430698、461733...每次都缺 4135），且头部那串垃圾字节 `28 eb 07 1a...` 在两次上传间**完全一致**。
+
+**根因**
+- 缺的恰好是 body 的**前 4135 字节**，尾还在 → controller 拿到的是 `[body[4135:]]` 中后段。`s3Client.putObject(fromBytes)` 忠实写出这残缺字节 → OSS 对象 size 对（写进的就是 `bytes.length`）但**内容是 body 中段、缺头** → 浏览器按 image/jpeg/png 解码必然失败 → 裂图。`confirmUpload` 的 HeadObject 只校验 size/contentType，size 对就放行，所以"上传成功 + CONFIRMED" 但对象是坏的。
+- 上一个条目把根因归咎于"流式读取 + contentLength=-1 不稳"**是错的**：`readAllBytes` 已经回避了流式坑，却仍读残缺，因为字节在到达 `request.getInputStream()` 时**就已经被上游 filter 消费了前段**。`RequestCachingFilter`（`ContentCachingRequestWrapper`）+ `@Log` 切面（`isSaveRequestData=true`，`buildOperLog` 在 `proceed` 前调 `getContentAsByteArray`）+ Spring Security 多层 wrapper 的组合下，原始 servlet 流被某层消费了固定前段（具体哪个 filter 在框架/Spring 自带层，未深追；4135 字节固定指向同构请求的固定前置消耗）。
+- 旧版（9bc2a9a）用 `fromInputStream(in, contentLength)`，SDK 期望读声明长度但流已残缺，读到 EOF 抛异常 → 旧版表象是"上传失败"；改成 `readAllBytes`+`fromBytes` 后残缺字节被静默写进 OSS → 表象变成"成功但坏图"。**根因一直在读取路径，不在写入逻辑，也不在回显。**
+
+**修复（FileController.proxyUpload，knowhub 模块内 1 处）**
+- controller 签名加 `@RequestBody(required = false) byte[] body`，用 Spring MVC 的 `ByteArrayHttpMessageConverter` 一次性读 body 为 `byte[]`，再包 `ByteArrayInputStream` 传给 service。`@RequestBody` 由 DispatcherServlet 在 controller 之前读 body，此时 body 尚未被任何 filter 后置消费，拿到的是完整原始字节（实测 body.len=461733=declaredCL，head=`89 50 4e 47 0d 0a 1a 0a` PNG 签名 + IHDR，正常）。
+- `body==null` 兜底回退 `request.getInputStream()`（@RequestBody converter 未匹配时的保底，正常不会走到）。
+- service `proxyUpload` 逻辑不变（`readAllBytes` + `fromBytes` + 不内部 confirm），仅修正注释里"wrapper 流式读不稳"的错误前提为"上游 filter 消费 stream，由 controller @RequestBody 绕开"。
+- 业务调用方、前端 `presignedUploadFlow`、`/file/proxy-upload` 接口签名对外不变，零改动。
+
+**为什么直链模式也裂图**
+- 直链模式 `<img>` 直连 `http://100.82.86.85:9000/{bucket}/{objectKey}`，匿名 GET 实测返回 **403**（OSS 桶未配公开匿名读策略，`publicBucketReadable=true` 只是后端语义标志）。`100.82.86.85:9000` 是内网 OSS endpoint，公网浏览器也不可达。所以直链模式裂图是**配置问题**（桶未公开读 + direct_base_url 是内网地址），非代码 bug。需用直链模式时：把桶配成公开读、`knowhub.file.direct_base_url` 改为 nginx 公网反代域名。中转模式现在已可用，推荐保持 `access_mode=transfer`。
+
+**遵守约定**
+- 未修改任何 `rookie-*` 代码/配置（根因虽在框架 filter chain，但未改框架，而是在 knowhub controller 层用 `@RequestBody` 绕开）。
+- 改动只在 knowhub 模块（FileController.proxyUpload 签名 + 注释、FileServiceImpl.proxyUpload 注释）。
+
+**校验**
+- `mvn -q -pl knowhub -am -DskipTests compile` 通过，EXIT=0。
+- 临时诊断日志（`[DIAG proxyUpload-entry/preRead/body]`、`[DIAG proxyUpload]`）已全部清除。
+- 后端实测 `PUT /file/proxy-upload/{id}` 中转上传一张 PNG → `body.len=461733=declaredCL`、head 为合法 PNG 签名 → 写入 OSS 对象正确 → `/file/public/{id}` 回显正常显示。用户确认能正常回显。
+
+**待用户人工验证**：① 历史用旧 bug 写坏的对象（objectId=16/19/22/23/24 等）**无法修复**（OSS 里字节已坏），需删除这些 file_object 行让 GC 清理 OSS 对象。② 新上传的图用中转模式走完整流程（申请令牌→PUT proxy-upload→confirm→/file/public 回显），确认列表/详情/封面/正文插图都能正常显示。③ 直链模式若需用，先配桶公开读 + direct_base_url 公网域名。
+
+### 2026-07-04 双模式回显落地 — 新增 /file/resolve/{id} 解析接口，上传回填统一存稳定引用
+
+**背景**：此前"双模式"名存实亡。`presignedUploadFlow` 上传时调 `getPublicAccessUrl(objectId)` 拿到**按当时访问模式**算出的真实链接（中转→`/file/public/{id}`，直链→`{directBaseUrl}/{bucket}/{objectKey}`），直接回填到 `coverUrl`/正文 markdown 并**原样落库**。渲染时 `<img :src="blog.coverUrl">` 直接用库里存的字符串，**不再调后端解析** → 库里存的是"上传那一刻的模式对应的链接"，被固化 → 切模式后历史数据不跟着切，双模式对存量失效。用户最初设计意图是"库里统一存稳定解析引用，渲染时命中接口由后端按当前模式动态分发"，本次落实回来。
+
+**方案（与用户确认）**：新增后端纯分发接口 `GET /file/resolve/{objectId}`，两种模式都只 302、不吐字节；上传后 `coverUrl`/正文 markdown/文件预览统一存 `/file/resolve/{id}` 稳定引用，模式分发收到 resolve 接口里，切模式历史数据自动跟着切。
+
+**改动（knowhub 模块 2 处 + 前端 3 处）**
+- `FileController`：新增 `@GetMapping("/resolve/{objectId}")`，`permitAll` 无鉴权（与 `/file/public/**` 同，供 markdown `<img>` 直引），不加 `@Log`（高频回显，记日志刷屏且无业务意义）。返回 `ResponseEntity<Void>` + `HttpStatus.FOUND`(302) + `Location` 头；校验失败（service 返 null / ServiceException）映射 404/403 纯状态码空体，**绝不冒泡 `GlobalExceptionHandler`**（`@RestControllerAdvice` 会包成 Result JSON，对 `<img>` 无效）。调 `fileService.resolvePublicUrl(objectId)` 拿 Location。
+- `FileService` / `FileServiceImpl`：
+  - 新增 `resolvePublicUrl(Long objectId)`：查元数据→校验 `access=PUBLIC`+`uploadStatus=CONFIRMED`（不通过返 null，由 Controller 映射 403/404）→按 `accessMode()` 分发：`TRANSFER` 返 `/file/public/{objectId}`（相对路径作 302 Location，浏览器按当前页 origin 解析同源命中 vite/nginx 代理）；`DIRECT` 桶公开读（`publicBucketReadable=true`）返 `{directBaseUrl}/{bucket}/{objectKey}`（不带签名永久有效），桶私有返 `rewriteHostToDirect(presignGet(fileObject,null).url())`（带签 GET 预签名，私有对象的兜底）。
+  - 改造 `getPublicAccessUrl`：**统一返回 `/file/resolve/{objectId}`**，不再按模式分。语义从"按模式真实链接"变为"稳定解析引用"；对象不存在/不可访问的分支也返此引用（由 resolve 接口映射 403/404，不抛异常避免影响 VO 填充整页）。详情接口顺带返回的 `coverUrl/previewUrl` 自动变成 `/file/resolve/{id}`，博客/文件 service 字段填充零改动（透传 `getPublicAccessUrl` 返回值，无二次改写）。
+- 前端 `api/knowhub/file.ts`：新增 `buildFileResolveUrl = (id) => '/file/resolve/${id}'`，与 `buildFilePublicUrl` 并列（后者保留作直连中转字节流接口的底层拼装）。
+- 前端 `utils/upload.ts`：`presignedUploadFlow` 第 4 步 `publicUrl` 一律 `buildFileResolveUrl(token.objectId)`，**删除调 `getPublicAccessUrlApi` 的逻辑**（模式分发收到 resolve 接口，上传回填不再需要后端按模式给链接）；import 同步。`BlogCoverUploader`/`BlogContentEditor` 只消费 `result.publicUrl`，零改动自动拿到 resolve 地址。
+- 前端 `FileDetailDialog.vue`：`previewUrl` 从 `buildFilePublicUrl` 改为 `buildFileResolveUrl`，import + 注释同步。
+
+**不需要改**：`/file/public/{objectId}` 接口与 `streamPublicObject`（保留作字节流出口，resolve 中转分支 302 到它）；博客/文件 service 字段填充；`rookie-admin` yml、`StorageProperties`、桶策略；系统设置项 `knowhub.file.access_mode`/`direct_base_url`/`publicBucketReadable`（复用现有）。
+
+**关于直链上传传不成功（本次不处理）**：直链模式上传 PUT 的是绝对 URL 指向 `directBaseUrl`，当前是内网 `100.82.86.85:9000`，浏览器到不了 → `xhr.onerror` → 进度跳一下就没、元数据卡 PENDING。与跨域无关（网络不可达，非 CORS）。`directBaseUrl` 是 `sys_config` 设置项，系统设置页改值即时生效。解法二选一留作后续：①配公网 nginx 反代 OSS、`directBaseUrl` 填公网域名；②开发期 vite 加 `/oss`→`http://100.82.86.85:9000` 代理、`directBaseUrl` 填 `/oss`（需 `rewriteHostToDirect` 能吐相对路径、302 Location 相对路径浏览器按当前页 origin 解析，可行性单独验证）。本次只做回显 resolve 接口，上传直链模式单独留口子。
+
+**遵守约定**：未修改任何 `rookie-*` 代码/配置；改动只在 knowhub 模块（FileController/FileService/FileServiceImpl）+ rookie-ui 的 knowhub 二开文件（api/utils/views/knowhub）。
+
+**校验**：`mvn -q -pl knowhub -am -DskipTests compile` 通过，EXIT=0。
+
+**待用户人工验证**：① 启动后端，中转模式（`access_mode=transfer`）浏览器直访 `GET /file/resolve/{已确认的PUBLIC id}` → 应 302、Location: `/file/public/{id}`，浏览器跟随后显示图片。② 切直链模式（系统设置页改 `access_mode=direct`+配可达 `directBaseUrl`/开发期 vite `/oss` 代理+桶公开读）→ 同 id 应 302、Location: `{directBaseUrl}/{bucket}/{objectKey}`，显示图片。③ 博客封面上传后查 `cover_url` 库值应为 `/file/resolve/{id}`；切模式后**同一记录**回显自动跟着切（双模式生效关键点）。④ 正文插图 markdown 存 `![](/file/resolve/{id})`、文件详情预览 `<img src="/file/resolve/{id}">` 均正常。⑤ 历史 `cover_url=/file/public/{id}` 旧记录回显仍可用（`/file/public` 接口保留），只是不享受模式切换——测试数据可弃，不写迁移脚本。
+
+### 2026-07-04 博客审核流水模块落地（审核历史 + 状态机 + 回避 + author_id）
+
+博客审核雏形已落地（主表审核字段 + publish/review/revoke + 审核开关 `knowhub.blog.review_enabled`），但审核结果只覆盖主表只存最后一次、无历史可溯，且无状态机校验、无审核员回避、无用户ID稳定锁定。本次按 `doc/blog/blog-review-flow-design.md` 定稿方案补审核流水表 + blog 加 author_id + 审核动作字典 + 状态机/回避/流水写入 + 审核历史接口，并用「前后台审核记录展示」代替通知闭环（rookie 当前只有分组通知、无个人通知通道）。
+
+**SQL（新建独立脚本 `sql/knowhub-blog-review-log.sql`，不动 knowhub-blog.sql）**
+- 建 `blog_review_log` 流水表：`review_log_id`(PK，不用 log_id 避免与 sys_oper_log 操作日志混淆)/`blog_id`/`action`(SUBMIT/APPROVE/REJECT/REVOKE/PUBLISH)/`operator_id`(userId 稳定锁定)/`operator`(username 快照)/`role`(AUTHOR/REVIEWER/SYSTEM 按动作类型定，非系统角色)/`advice`/`create_time` + 索引 `idx_brl_blog_time`(前台按文章查时间线)、`idx_brl_operator_time`(后台按审核员查记录)。只追加不改不删，记全量历史；主表审核字段保留为「当前快照」。只记动作不记状态前后（from/to_status 去掉，action 隐含转移语义）。
+- `ALTER blog ADD author_id`（bigint，作者 userId，与 create_by(username) 互补，前台展示昵称 join sys_user 稳定）+ 按 create_by(username) 回填 user_id（`UPDATE blog JOIN sys_user ON create_by=username SET author_id=user_id`）；用 information_schema 判列存在再 ALTER，幂等。
+- 新增字典 `blog_review_action`（5 值，dict_id=22，dict_data_id 91-95，INSERT IGNORE 幂等），供前端 DictTag 渲染中文。
+
+**后端数据层（knowhub 模块，全 `com.knowhub.*`）**
+- `enums/ReviewAction.java`（新建）：5 动作枚举，每个带 role（SUBMIT/REVOKE→AUTHOR、APPROVE/REJECT→REVIEWER、PUBLISH→SYSTEM）。
+- `pojo/entity/BlogReviewLog.java`（新建）：流水实体，含 operatorNickname 字段（非表字段，由 listByBlogId left join sys_user 带出 nick_name 承接）；不继承 BaseEntity（流水无 updateBy/updateTime）。
+- `mapper/BlogReviewLogMapper.java` + `resources/mapper/blog/BlogReviewLogMapper.xml`（新建）：`insertReviewLog`（动态 advice）+ `listByBlogId`（left join sys_user 带昵称，按 create_time 升序，LEFT JOIN 确保用户删/改名时流水行不丢）。
+- `pojo/vo/ReviewLogVo.java`（新建）：流水出参，含 operatorNickname。
+- `pojo/entity/Blog.java`：加 authorId 字段 + getter/setter + 构造器参数。
+- `pojo/vo/BlogVo.java`：加 authorId 字段 + getter/setter。
+- `resources/mapper/blog/BlogMapper.xml`：resultMap 加 author_id 映射、addBlog insert 加 author_id 列与值（动态 if）。
+
+**后端业务层（knowhub 模块）**
+- `service/BlogService.java`：加 `listReviewLog(Long blogId)` 接口；editBlogInfo/publishBlog/revokeBlog 注释补状态机/回避说明。
+- `service/impl/BlogServiceImpl.java`：
+  - 注入 `BlogReviewLogMapper`。
+  - `addBlogInfo`：写入 `blog.setAuthorId(userInfo.getUserId())`。
+  - `editBlogInfo`：加 PUBLISHED 禁止编辑校验（"已发布文章请先撤回再编辑"，防绕过审核改已发布内容）。
+  - `publishBlog`：加状态机前置校验（仅 DRAFT/REJECTED/REVOKED 可发布，PUBLISHED/PENDING_REVIEW 报错）；按开关写流水（SUBMIT/AUTHOR 或 PUBLISH/SYSTEM）。
+  - `revokeBlog`：加状态机前置校验（仅 PUBLISHED 可撤回）；reviewStatus 清 NONE；写流水 REVOKE/AUTHOR。
+  - `reviewBlog`：加状态机前置校验（仅 PENDING_REVIEW 可审核）+ 审核员回避（`exist.getAuthorId().equals(userInfo.getUserId())` 报"不能审核自己提交的文章"）；写流水 APPROVE/REJECT + REVIEWER。
+  - 新增 `listReviewLog`：调 mapper 查流水，BeanUtil 拷贝到 ReviewLogVo（operatorNickname 字段名一致自动带出）。
+  - 新增私有 `writeReviewLog(blogId, action, operator, advice)`：写流水，失败 catch 吞异常仅 log（状态优先、历史容错，不阻断主流程）。
+  - 新增私有 `notifyReviewResult(blog, action, advice)`：**预留空实现**，待 rookie 支持个人通知后接入 SysNoticeService，签名零改动；当前前后台展示已代替通知闭环。
+- `controller/BlogController.java`：新增 `GET /blog/review-log/{blogId}`（权限 `knowhub:blog:info`），返 `List<ReviewLogVo>`。
+
+**前端（rookie-ui，不改既有组件）**
+- `api/knowhub/blog.ts`：加 `getReviewLogApi(blogId)` → `get<ApiResult<ReviewLogRecord[]>>`。
+- `types/api/knowhub/blog.ts`：加 `ReviewLogRecord` 接口；`BlogRecord` 加 `authorId?: number`。
+- `views/knowhub/blog/components/BlogDetailDialog.vue`：加「审核历史」折叠区——watch visible+blogId 拉取 getReviewLogApi，ElCollapse + 时间线（DictTag 渲染 blog_review_action + operatorNickname/时间 + advice），无历史时 ElEmpty 占位；深浅模式用 --rookie-* 变量。
+
+**文档**
+- 新建 `doc/blog/blog-review-flow-design.md`（审核流程设计定稿：表/状态机/数据流向/展示闭环/落点/扩展余地）。
+- 新建 `doc/blog/blog-front-review-display.md`（前台审核时间线展示功能细节补充，待前台开发落地）。
+- `doc/knowhub-api.md`：更新日志加审核流水条目；博客模块加 8.1 review-log 接口详情；发布/撤回/审核/编辑/新增接口说明补状态机/回避/author_id 提示。
+
+**遵守约定**
+- 未修改任何 `rookie-*` 代码/配置（遵守 `doc/README.dev.md`「rookie 框架代码修改禁令」）；改动全在 knowhub 模块 + rookie-ui knowhub 二开文件 + 新建 sql/doc。
+- 未动 Blog 既有字段（只加 author_id）、未动既有字典（只新增 blog_review_action）、未动 BlogMapper.xml 现有查询 SQL（只加 author_id 映射与 insert 列）。
+- 通知预留 `notifyReviewResult` 空方法，待 rookie 支持个人通知后接入，签名零改动。
+
+**校验**
+- `mvn -q -pl knowhub -am -DskipTests compile` 通过，EXIT=0。
+- `rookie-ui npm run type-check`（vue-tsc --build）通过，EXIT=0。
+- 未启动 dev server（README.dev.md 约定），未跑 SQL（由用户在合适时机执行 + 业务验证）。
+
+**待用户人工验证**：① 跑 `sql/knowhub-blog-review-log.sql` → `DESC blog` 应含 author_id；`SELECT COUNT(*) FROM blog WHERE author_id IS NULL AND deleted=0` 应为 0（现有行已回填，若 >0 说明有 create_by 对应的 sys_user 已删/改名，需人工核对）；字典 blog_review_action 应 5 行。② 启动后端，开启审核开关（系统设置 `knowhub.blog.review_enabled=true`）：作者发布文章→待审→审核员审核（通过/驳回）→查 `blog_review_log` 应有 SUBMIT + APPROVE/REJECT 流水；驳回后作者编辑（此时 status=REJECTED 合法）→再发布→回待审，流水新增一行 SUBMIT。③ 状态校验：对已发布文章调 `/blog/review` 应报"仅待审核文章可审核"；对草稿调 `/blog/revoke` 应报"仅已发布文章可撤回"；编辑已发布文章应报"已发布文章请先撤回再编辑"；对已发布文章调 `/blog/publish` 应报"已发布，无需重复发布"。④ 回避：作者尝试审核自己文章应报"不能审核自己提交的文章"。⑤ 后台详情弹窗「审核历史」折叠区展示时间线（动作标签 + 操作人昵称 + 时间 + 意见）。⑥ 关闭审核开关发布应直通 PUBLISHED，流水记 PUBLISH/SYSTEM。前台审核时间线展示待前台开发落地，详见 `doc/blog/blog-front-review-display.md`。
+
+### 2026-07-04 待审状态按钮语义调整 + 审核弹窗展示博客内容
+
+博客审核流水模块落地后，待审核(PENDING_REVIEW)状态下列表行仍显示「编辑」「发布」按钮，但二者均会被后端状态机拦截（编辑报错、发布报"审核中请勿重复提交"）；审核弹窗此前仅展示 blogId 让审核员盲审，缺标题/封面/正文参考。本次按"待审时发布按钮改为审核按钮、编辑入口改为内容展示"诉求调整。
+
+**后端（knowhub 模块）**
+- `BlogServiceImpl.editBlogInfo`：状态机前置校验从「仅禁 PUBLISHED」扩展为「仅 DRAFT/REJECTED/REVOKED 可编辑」，新增 PENDING_REVIEW 禁止编辑分支，报"审核中文章不能编辑，如需修改请先驳回或撤回后操作"。原因：审核员审的是提交时的快照，作者此时改动会污染审核依据，须先驳回或撤回才能改。
+
+**前端 index.vue（按钮 visible 调整）**
+- 「编辑」按钮：`visible` 从无（始终显示）改为 `!['PUBLISHED','PENDING_REVIEW'].includes(status)`，待审时隐藏。
+- 「发布」按钮：`visible` 从 `status !== 'PUBLISHED'` 改为 `!['PUBLISHED','PENDING_REVIEW'].includes(status)`，待审时隐藏（避免重复提交，待审行由「审核」按钮接管）。
+- 「审核」按钮：保持 `status === 'PENDING_REVIEW'` 时显示，待审行唯一动作按钮。
+- 「撤回」按钮：保持仅 PUBLISHED 显示不变。
+- `openReviewDialog` 由同步改异步：先调 `getBlogDetailApi` 拉取博客详情（标题/封面/正文），写入 `reviewBlog` ref 后再开弹窗；新增 `reviewLoading` ref 控制拉取期间的提交禁用。
+- 模板 `BlogReviewDialog` 加 `:blog="reviewBlog"` `:loading="reviewLoading"` 两个 props 透传。
+
+**前端 BlogReviewDialog.vue（审核弹窗展示博客内容）**
+- props 加 `blog: BlogRecord | null` 与 `loading?: boolean`。
+- 弹窗宽度 480→760px，表单上方增「博客内容预览区」：标题(h2) + 封面图(有则展示,max-height 260px) + 摘要(有则展示,主色左边框) + 正文(MarkdownPreview 只读渲染,max-height 320px 可滚)。
+- `blog` 为空且非 loading 时用 ElEmpty 占位"未加载到博客内容"。
+- `canSubmit` 计算加入 `!props.loading` 守卫，拉取期间禁用提交。
+- 样式用 --rookie-* 变量适配深浅模式（预览区弱底+边框,封面圆角裁剪,摘要主色左边框）。
+
+**遵守约定**：未修改任何 `rookie-*` 代码/配置；改动在 knowhub 模块（BlogServiceImpl）+ rookie-ui knowhub 二开文件（index.vue + BlogReviewDialog.vue）。
+
+**校验**：`mvn -q -pl knowhub -am -DskipTests compile` 通过；`rookie-ui npm run type-check` 通过。
+
+**待用户人工验证**：① 待审文章在列表行的按钮应为「审核 / 详情 / 删除」，不再有编辑/发布；草稿/驳回/撤回行显示编辑/发布；已发布行显示撤回。② 点「审核」弹窗应展示博客标题+封面+正文（MarkdownPreview 渲染），审核员可参考决策；拉取期间「确认提交」禁用。③ 待审文章调编辑接口（如直接 PUT /blog）应报"审核中文章不能编辑，如需修改请先驳回或撤回后操作"。
+
+### 2026-07-06 审核开关切换遗留 PENDING_REVIEW 对账定时任务
+
+博客审核流水模块落地后，发现一个边界漏洞：管理员把审核开关（`sys_config[knowhub.blog.review_enabled]`）从开切到关后，仍处于 PENDING_REVIEW 的遗留文章无人收口——作者编辑/再发布/撤回均被状态机拒绝（保护审核快照与队列语义），审核员也未必手动批，稿件会"卡死"在待审态。本次用定时任务被动收口，不监听系统设置保存动作（`SysConfigController.editSysConfig` 在 rookie-system 通用 key-value 接口，无法可靠区分"这次保存恰好是 review_enabled"，且改 rookie 不可行）。
+
+**方案**：作者发布进 PENDING_REVIEW 时 SET Redis 待审标记（不计数仅标记存在性，无过期）；定时任务每 5 分钟跑一次，审核开关开 → return，标记不存在 → return（零扫表），标记存在 → 批量放行遗留稿 → 清标记。
+
+**后端（knowhub 模块）**
+- `BlogMapper`+`BlogMapper.xml`：增 `listPendingReviewIds()`，`select blog_id from blog where status='PENDING_REVIEW' and deleted=0`，对账专用单一查询。
+- `BlogService`+`BlogServiceImpl`：增 `int reconcilePendingReview()`。查 list → 逐条转 PUBLISHED + reviewStatus=APPROVED + reviewer='system' + publishTime=now，逐条写 `PUBLISH/SYSTEM` 流水（advice="审核关闭后定时任务自动放行"），逐条 `evictDetail` 清详情缓存。**无 @Transactional**，单条失败 try-catch 跳过不阻塞其它稿（对齐 writeReviewLog "状态优先、历史容错"哲学，一条坏数据不该回滚已放行的其它稿）。返回放行条数。新增私有 `systemOperator()` 构造 userId=0/username=system 的 UserInfo 供写流水。
+- `BlogServiceImpl.publishBlog`：审核开关开分支进入 PENDING_REVIEW 时，`redisTemplate.opsForValue().set(baseKey + CACHE_PENDING_FLAG, "1")` 置待审标记（无 expire）。新增常量 `CACHE_PENDING_FLAG = "blog:review:pending-flag"`。
+- `task/BlogReviewReconcileTask.java`（新建）：`@Component` + `@Scheduled(fixedDelayString = "#{${knowhub.blog.reconcile-interval-minutes:5} * 60 * 1000}", initialDelay = 60000)`。逻辑：读 `blogConfigReader.isReviewEnabled()` 开 → return；读 Redis flag 不存在 → return；存在 → 调 `blogService.reconcilePendingReview()` → `redisTemplate.delete(flagKey)` 清标记；放行条数 >0 记 info 日志。异常 try-catch 仅 log 不中断（对齐 FileGcTask 风格）。依赖 knowhub 自带 `SchedulingConfig`(@EnableScheduling)，不碰 rookie。
+
+**配置（rookie-admin/application.yml 追加，用户已解除禁令）**
+- 加 `knowhub.blog.reconcile-interval-minutes: 5`（对账任务扫描间隔，分钟，默认 5）。
+
+**遵守约定**：未修改任何 `rookie-*` 模块代码/配置（application.yml 是 rookie-admin 的，用户已解除禁令）；@EnableScheduling 走 knowhub 自带 SchedulingConfig；流水复用 ReviewAction.PUBLISH/SYSTEM 不新增 action；不改 publish/edit/revoke 对 PENDING_REVIEW 的拒绝语义（定时任务收口已足够，作者最多等 5 分钟）。
+
+**边界**：① 开关切关→开期间未放行的 PENDING_REVIEW 留在队列等人工审（正确：重新开审核 = 要重新人工审）；② flag 假阳（稿已被审核员手动批但 flag 未清）→ 定时任务多扫一次空表、清 flag，可接受。
+
+**校验**：`mvn -q -pl knowhub -am compile` 通过（EXIT=0）。
+
+**待用户人工验证**：① 开审核状态下发布文章 → 进 PENDING_REVIEW，Redis 出现 `rookie:framework:blog:review:pending-flag=1`；② 关审核开关，等 ≤5 分钟，遗留待审文章应全部变 PUBLISHED，流水出现 PUBLISH/SYSTEM + advice="审核关闭后定时任务自动放行"，Redis flag 被清；③ 审核员在定时任务跑之前手动批了某篇，flag 仍在，下次定时任务扫到空表、清 flag，无副作用。
+

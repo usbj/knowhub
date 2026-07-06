@@ -118,6 +118,46 @@ public class FileController {
                 .body(body);
     }
 
+    /**
+     * PUBLIC 对象解析接口（双模式回显入口）：按当前 knowhub.file.access_mode 动态分发 302 跳转目标。
+     * 库里（cover_url、正文 markdown 图片、文件详情预览）统一存 /file/resolve/{objectId} 稳定引用，
+     * 渲染时 <img src> 命中本接口 → 后端按模式 302：中转→/file/public/{id}（字节流回显）；直链→OSS 直链/预签名。
+     * 切模式时历史数据回显行为自动跟着切，双模式对存量生效。
+     * <p>
+     * 无鉴权（permitAll，与 /file/public 同，供 markdown <img> 直引）；不加 @Log（高频回显请求，记日志刷屏且无业务意义）。
+     * 校验失败（对象不存在/非 PUBLIC/未确认）映射 404/403 纯状态码空体，绝不冒泡到 GlobalExceptionHandler
+     * （@RestControllerAdvice 会包成 Result JSON，对 <img> 无效）。
+     */
+    @GetMapping("/resolve/{objectId}")
+    @Operation(summary = "PUBLIC 对象解析（按访问模式 302 分发，无鉴权）")
+    public ResponseEntity<Void> resolvePublic(@PathVariable Long objectId) {
+        String location;
+//        log.info("解析中");
+        try {
+            location = fileService.resolvePublicUrl(objectId);
+        } catch (ServiceException e) {
+            int code = e.getCode() == null ? 500 : e.getCode();
+            HttpStatus status = switch (code) {
+                case 404 -> HttpStatus.NOT_FOUND;
+                case 403 -> HttpStatus.FORBIDDEN;
+                default -> HttpStatus.INTERNAL_SERVER_ERROR;
+            };
+            return ResponseEntity.status(status).build();
+        } catch (Exception e) {
+            log.warn("[PUBLIC 解析] 解析失败 objectId={} reason={}", objectId, e.getMessage());
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).build();
+        }
+        if (location == null) {
+//            log.info("未通过");
+            // service 校验未通过（对象不存在/非 PUBLIC/未确认）→ 404
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).build();
+        }
+//        log.info("解析地址{}",location);
+        return ResponseEntity.status(HttpStatus.FOUND)
+                .header(HttpHeaders.LOCATION, location)
+                .build();
+    }
+
     @GetMapping("/download/{objectId}")
     @Operation(summary = "获取下载预签名 URL（PRIVATE 鉴权）")
     @PreAuthorize("hasAuthority('knowhub:file:download')")
@@ -180,17 +220,25 @@ public class FileController {
      * 后端代理转发上传（TRANSFER 模式上传用）：前端把文件字节流 PUT 到本接口，
      * 后端用 s3Client.putObject 写入 OSS，再走 confirm 核对置 CONFIRMED。
      * 前端拿不到 OSS 直连地址时的兜底上传通道，后端经上传字节流。
-     * 请求体即文件字节，Content-Type/Content-Length 由前端 PUT 时带（须与申请令牌时一致）。
+     * <p>
+     * 请求体用 {@code @RequestBody byte[]} 读取而不是 {@code request.getInputStream()}：
+     * 实测在经 RequestCachingFilter（ContentCachingRequestWrapper）+ @Log 切面 + Spring Security
+     * 的多层包装后，controller 通过 request.getInputStream().readAllBytes() 拿到的是被上游 filter
+     * 消费过的残缺流（缺前若干字节），导致写入 OSS 的对象本体损坏、回显裂图。@RequestBody 由 Spring
+     * MVC 的 DispatcherServlet 在 controller 之前用 ByteArrayHttpMessageConverter 一次性读完 body，
+     * 此时 body 尚未被任何 filter 后置消费，能拿到完整原始字节。
      */
     @PutMapping("/proxy-upload/{objectId}")
     @Operation(summary = "后端代理转发上传（接收字节流写入 OSS）")
     @Log(title = "文件对象", businessType = BusinessType.INSERT)
     @PreAuthorize("hasAuthority('knowhub:file:upload')")
     public Result<Boolean> proxyUpload(@PathVariable Long objectId,
-                                       HttpServletRequest request) throws java.io.IOException {
-        long contentLength = request.getContentLengthLong();
+                                       HttpServletRequest request,
+                                       @RequestBody(required = false) byte[] body) throws java.io.IOException {
+        long contentLength = (body != null) ? body.length : request.getContentLengthLong();
         String contentType = request.getContentType();
-        Boolean b = fileService.proxyUpload(objectId, request.getInputStream(), contentLength, contentType);
+        java.io.InputStream in = (body != null) ? new java.io.ByteArrayInputStream(body) : request.getInputStream();
+        Boolean b = fileService.proxyUpload(objectId, in, contentLength, contentType);
         return Result.success(b);
     }
 

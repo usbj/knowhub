@@ -58,7 +58,7 @@ CREATE TABLE `file_object` (
 -- blog 用到 menu_id 78，本脚本从 79 起。
 -- ============================================================================
 -- 文件管理页(menu_type=2)，挂在 knowhub 目录(63)下
-INSERT INTO `sys_menu` VALUES (79,'文件管理','knowhub:file',63,2,'file',0,'/file/index','Paperclip',1,'admin',NOW(),'admin',NOW(),0);
+INSERT INTO `sys_menu` VALUES (79,'文件管理','knowhub:file',63,2,'file',0,'/knowhub/file/index','Paperclip',1,'admin',NOW(),'admin',NOW(),0);
 -- 按钮权限(menu_type=3)
 INSERT INTO `sys_menu` VALUES (80,'查询','knowhub:file:quarry',79,3,NULL,0,NULL,NULL,1,'admin',NOW(),'admin',NOW(),0);
 INSERT INTO `sys_menu` VALUES (81,'详情','knowhub:file:info',79,3,NULL,0,NULL,NULL,1,'admin',NOW(),'admin',NOW(),0);

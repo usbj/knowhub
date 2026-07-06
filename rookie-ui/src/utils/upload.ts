@@ -1,17 +1,20 @@
 /**
  * 文件作用：
- * 封装文件上传流程（申请令牌 → PUT 上传 → 确认 → 取回显链接），供博客封面上传、文件管理页上传等场景复用。
+ * 封装文件上传流程（申请令牌 → PUT 上传 → 确认 → 取稳定解析引用），供博客封面上传、文件管理页上传等场景复用。
  * 关键约定：
  * - 上传目标由后端按访问模式决定（前端不关心 OSS 地址）：
  *   · 中转模式：uploadUrl 为 /file/proxy-upload/{objectId}（同源后端鉴权接口），PUT 需带 Token 头；
  *   · 直链模式：uploadUrl 为预签名绝对 URL（OSS/nginx），PUT 不带 Token（预签名自带鉴权，带反被拒）。
  *   putToPresignedUrl 按链接形态（相对/绝对）自动决定带不带 Token，调用方无感。
  * - 上传用原生 XMLHttpRequest（支持 upload.onprogress 进度回调），带 Content-Type 头。
- * - PUBLIC 对象上传成功后调 /file/url/{id} 取按模式的回显链接回填（中转→/file/public/{id}；直链→OSS 直链），
- *   接口异常时回退 /file/public/{id}（中转接口两种模式都可用）；PRIVATE 对象只返回 objectId，取用走下载接口。
+ * - PUBLIC 对象上传成功后回填 publicUrl 统一为 /file/resolve/{objectId} 稳定解析引用（不按模式拼死链接）：
+ *   渲染时 <img src> 命中后端 resolve 接口，由后端按当前 knowhub.file.access_mode 动态 302 分发
+ *   （中转→/file/public/{id}；直链→OSS 公开读直链或私有预签名），切模式时历史数据回显自动跟着切，双模式对存量生效。
+ *   回填值不调后端、不随模式变，故上传回填此步不再请求 /file/url/{id}。
+ *   PRIVATE 对象只返回 objectId，取用走下载接口。
  * - 这是 knowhub 二开新增工具，不修改任何既有 utils 文件。
  */
-import { applyUploadTokenApi, confirmUploadApi, getPublicAccessUrlApi, buildFilePublicUrl } from '@/api/knowhub/file'
+import { applyUploadTokenApi, confirmUploadApi, buildFileResolveUrl } from '@/api/knowhub/file'
 import { USER_TOKEN_STORAGE_KEY } from '@/stores/user'
 import type { UploadApplyPayload } from '@/types/api/knowhub/file'
 
@@ -145,23 +148,14 @@ export const presignedUploadFlow = async (
   // 3. 上传确认：后端 HeadObject 核对真实值并置 CONFIRMED
   await confirmUploadApi(token.objectId, bizRefId)
 
-  // 4. PUBLIC 对象取按当前访问模式的回显链接回填（中转模式→/file/public/{id}；直链模式→OSS/nginx 直链）
-  //    调 /file/url/{id} 由后端按模式决定地址，前端不关心 OSS 地址、迁移零改动；
-  //    接口异常时回退中转相对路径 buildFilePublicUrl（中转接口两种模式都可用，保证回显不中断）
-  let publicUrl: string | undefined
-  if (access === 'PUBLIC') {
-    try {
-      const urlResult = await getPublicAccessUrlApi(token.objectId)
-      publicUrl = urlResult.data ?? buildFilePublicUrl(token.objectId)
-    } catch {
-      publicUrl = buildFilePublicUrl(token.objectId)
-    }
-  }
+  // 4. PUBLIC 对象回填稳定解析引用 /file/resolve/{objectId}（不按模式拼死链接）：
+  //    渲染时 <img src> 命中后端 resolve 接口，由后端按当前 knowhub.file.access_mode 动态 302 分发，
+  //    切模式时历史数据回显自动跟着切。回填值纯前端拼接，无需调后端、无失败路径。
+  //    PRIVATE 对象不回填 publicUrl，取用走下载接口。
+  const publicUrl: string | undefined = access === 'PUBLIC' ? buildFileResolveUrl(token.objectId) : undefined
   return {
     objectId: token.objectId,
     objectKey: token.objectKey,
     publicUrl,
   }
 }
-
-export { buildFilePublicUrl }

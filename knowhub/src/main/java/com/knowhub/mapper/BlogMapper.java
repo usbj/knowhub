@@ -37,4 +37,7 @@ public interface BlogMapper {
 
     /** 收藏量 +1/-1 */
     Boolean incrCollectCount(@Param("blogId") Long blogId, @Param("delta") long delta);
+
+    /** 对账用：查所有处于待审核且未删除的文章 ID（审核开关关闭后定时任务批量放行） */
+    List<Long> listPendingReviewIds();
 }

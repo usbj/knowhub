@@ -6,6 +6,7 @@
 
     <resultMap id="BlogResultMap" type="com.knowhub.pojo.entity.Blog">
         <id property="blogId" column="blog_id"/>
+        <result property="authorId" column="author_id"/>
         <result property="title" column="title"/>
         <result property="content" column="content"/>
         <result property="summary" column="summary"/>
@@ -63,6 +64,7 @@
     <insert id="addBlog" parameterType="com.knowhub.pojo.entity.Blog" useGeneratedKeys="true" keyProperty="blogId">
         insert into blog
         <trim prefix="(" suffix=")" suffixOverrides=",">
+            <if test="authorId != null">author_id,</if>
             <if test="title != null">title,</if>
             <if test="content != null">content,</if>
             <if test="summary != null">summary,</if>
@@ -80,6 +82,7 @@
         </trim>
         values
         <trim prefix="(" suffix=")" suffixOverrides=",">
+            <if test="authorId != null">#{authorId},</if>
             <if test="title != null">#{title},</if>
             <if test="content != null">#{content},</if>
             <if test="summary != null">#{summary},</if>
@@ -135,5 +138,10 @@
     <update id="incrCollectCount">
         update blog set collect_count = collect_count + #{delta} where blog_id = #{blogId}
     </update>
+
+    <!-- 对账用：列出所有待审核且未删除的文章 ID，供审核关闭后定时任务批量放行 -->
+    <select id="listPendingReviewIds" resultType="java.lang.Long">
+        select blog_id from blog where status = 'PENDING_REVIEW' and deleted = 0
+    </select>
 
 </mapper>

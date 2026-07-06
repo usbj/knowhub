@@ -45,11 +45,25 @@ public interface FileService {
     Boolean proxyUpload(Long objectId, java.io.InputStream in, long contentLength, String contentType);
 
     /**
-     * 返回 PUBLIC 对象的回显链接（按当前访问模式）：
-     * TRANSFER → /file/public/{objectId}（后端中转）；DIRECT → {directBaseUrl}/{bucket}/{objectKey}（公开读直链，不带签名）。
-     * 用于博客详情/文件详情接口按模式填充 coverUrl/previewUrl，前端直接用。
+     * 返回 PUBLIC 对象按当前访问模式的真实回显 URL（不跳转，直接给地址）：
+     * TRANSFER → /file/public/{objectId}（后端中转）；DIRECT → {directBaseUrl}/{bucket}/{objectKey}（公开读直链，不带签名）或私有预签名。
+     * 用于 /file/url/{id} 接口、博客/文件详情接口按模式填充 coverUrl/previewUrl 等"需要直接拿地址"的场景。
+     * 对象不存在/不可访问时回退 /file/public/{objectId}（由中转接口映射 403/404，不抛异常避免影响 VO 填充整页）。
+     * 注意：落库的稳定引用统一用 /file/resolve/{objectId}（前端 buildFileResolveUrl 拼接），不走本方法——
+     * 本方法仅用于"运行时取真实地址"，落库引用与运行时解析分离。
      */
     String getPublicAccessUrl(Long objectId);
+
+    /**
+     * 解析 PUBLIC 对象为按当前访问模式的回显目标 URL（供 /file/resolve/{objectId} 接口 302 跳转）。
+     * 校验对象存在、access=PUBLIC、uploadStatus=CONFIRMED；不通过返回 null，由 Controller 映射 403/404。
+     * 通过时按 {@code knowhub.file.access_mode} 分发：
+     * - TRANSFER：返回 /file/public/{objectId}（相对路径作 302 Location，浏览器按当前页 origin 解析同源命中代理）。
+     * - DIRECT：桶公开读返回 {directBaseUrl}/{bucket}/{objectKey}；桶私有返回 rewriteHostToDirect(presignGet) 带签 GET URL。
+     * @param objectId 文件对象主键
+     * @return 302 跳转目标 URL；不可访问返回 null
+     */
+    String resolvePublicUrl(Long objectId);
 
     /** PRIVATE 下载：鉴权 + 业务可见性后签发短期 GET 预签名（带 attachment;filename） */
     DownloadVo getDownloadUrl(Long objectId);

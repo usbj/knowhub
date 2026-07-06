@@ -277,43 +277,82 @@ public class FileServiceImpl implements FileService {
         }
         // 仅上传人或管理员可代理上传（防他人往已签发的 PENDING 行塞字节）
         checkOwnerOrAdmin(fileObject);
-        // 写入 OSS：用前端声明的 contentType（须与申请令牌时一致）；contentLength 传给 SDK 以正确分块
+        // 请求体字节已由 Controller 用 @RequestBody byte[] 完整读入（绕开 request.getInputStream() 在
+        // filter chain 中被上游消费导致的残缺问题），这里 in 已是 ByteArrayInputStream，readAllBytes 必拿到完整字节。
+        // 读全量字节到 byte[] 后用 RequestBody.fromBytes 写入，长度用实际读到的 bytes.length，
+        // 彻底回避流式读取的坑（图片等小文件进内存可接受，大文件再走流式优化）。
+        byte[] bytes;
+        try {
+            bytes = in.readAllBytes();
+        } catch (Exception e) {
+            markFailed(fileObject);
+            throw new ServiceException(500, "代理上传读取请求体失败", e.getMessage());
+        }
+        if (bytes.length == 0) {
+            markFailed(fileObject);
+            throw new ServiceException(500, "代理上传请求体为空，未收到文件字节");
+        }
+        // contentType 优先用请求头声明的，缺失时回退元数据存的（申请令牌时已校验落白名单）
+        String realContentType = (contentType != null && !contentType.isEmpty())
+                ? contentType : fileObject.getContentType();
         try {
             s3Client.putObject(PutObjectRequest.builder()
                             .bucket(fileObject.getBucket())
                             .key(fileObject.getObjectKey())
-                            .contentType(contentType)
-                            .contentLength(contentLength)
+                            .contentType(realContentType)
+                            .contentLength((long) bytes.length)
                             .build(),
-                    software.amazon.awssdk.core.sync.RequestBody.fromInputStream(in, contentLength));
+                    software.amazon.awssdk.core.sync.RequestBody.fromBytes(bytes));
         } catch (Exception e) {
             // 写入失败 → 置 FAILED，由 GC 清理（对象可能部分写入，DeleteObject 兜底）
             markFailed(fileObject);
             throw new ServiceException(500, "代理上传写入 OSS 失败", e.getMessage());
         }
-        // 写入成功后走 confirm 核对真实值并置 CONFIRMED（复用既有逻辑：HeadObject 校验类型/大小）
-        return confirmUpload(objectId, null);
+        // 仅写入 OSS，不在此 confirm：留给前端统一调 POST /file/confirm/{id} 走 HeadObject 核对并置 CONFIRMED。
+        // 若在此内部 confirm，前端三步流程的第 3 步会因状态已 CONFIRMED 报"文件状态非待确认"，与直链模式流程不一致。
+        // 对象已落 OSS，前端 confirm 时 HeadObject 即可命中。
+        return true;
     }
 
-    // ================================ PUBLIC 回显链接（按模式） ================================
+    // ================================ PUBLIC 回显链接（按模式真实 URL，不跳转） ================================
 
     @Override
     public String getPublicAccessUrl(Long objectId) {
+        // 按 id 拿当前访问模式下的真实回显 URL（不跳转，供 /file/url/{id} 接口、详情接口顺带返回等
+        // "需要直接拿到地址"的场景用）。逻辑复用 resolvePublicUrl 的校验+按模式分发：
+        // - TRANSFER → /file/public/{objectId}；DIRECT → OSS 公开读直链或私有预签名。
+        // 不可访问（对象不存在/非 PUBLIC/未确认）时不抛异常，回退 /file/public/{objectId}——
+        // 由中转接口映射 403/404，供 VO 填充场景避免单条记录异常影响整页。
+        String url = resolvePublicUrl(objectId);
+        return url != null ? url : "/file/public/" + objectId;
+    }
+
+    @Override
+    public String resolvePublicUrl(Long objectId) {
         FileObject fileObject = fileObjectMapper.getFileObjectById(objectId);
         if (fileObject == null) {
-            // 元数据不存在时回退中转相对路径——访问时由 Controller 返回 404，前端拿到的是同源链接不会暴露状态
-            return "/file/public/" + objectId;
+            // 元数据不存在 → Controller 映射 404
+            return null;
         }
-        // 非 PUBLIC 或未确认时回退中转相对路径——由中转接口映射 403/404，不在此抛异常（供 VO 填充场景，避免单条记录异常影响整页）
+        // 非 PUBLIC 或未确认 → Controller 映射 403/404（与中转回显 streamPublicObject 的可访问性校验对齐）
         boolean accessible = FileAccess.PUBLIC.getCode().equals(fileObject.getAccess())
                 && UploadStatus.CONFIRMED.getCode().equals(fileObject.getUploadStatus());
-        if (storageConfigReader.accessMode() == FileAccessMode.DIRECT && accessible) {
-            // 直链模式：拼公开读直链 {directBaseUrl}/{bucket}/{objectKey}（不带签名，永不过期，依赖 OSS 桶公开可读）
-            return storageConfigReader.directBaseUrl() + "/" + fileObject.getBucket() + "/" + fileObject.getObjectKey();
+        if (!accessible) {
+            return null;
         }
-        // 中转模式或不可访问：回退后端中转接口（不可访问时由 Controller 返 403/404）
+        // 按访问模式分发 302 目标
+        if (storageConfigReader.accessMode() == FileAccessMode.DIRECT) {
+            if (storageConfigReader.publicBucketReadable()) {
+                // 桶公开读：直链 {directBaseUrl}/{bucket}/{objectKey}，不带签名，永久有效
+                return storageConfigReader.directBaseUrl() + "/" + fileObject.getBucket() + "/" + fileObject.getObjectKey();
+            }
+            // 桶私有：签短期 GET 预签名（host 用 directBaseUrl 走 rewriteHostToDirect），带签访问
+            return rewriteHostToDirect(presignGet(fileObject, null).url().toString());
+        }
+        // 中转模式：302 到后端字节流回显接口 /file/public/{objectId}（相对路径，浏览器按当前页 origin 解析同源命中代理）
         return "/file/public/" + objectId;
     }
+
 
     // ================================ PRIVATE 下载 ================================
 

@@ -74,3 +74,9 @@ storage:
   gc-interval-minutes: 10
   # PUBLIC 对象是否直拼公开读 URL（false 则也走预签名 GET），取决于 RustFS 桶策略
   public-bucket-readable: true
+
+# 博客模块配置
+knowhub:
+  blog:
+    # 审核对账定时任务扫描间隔（分钟）：审核开关关闭后，扫描遗留待审文章并放行的频率
+    reconcile-interval-minutes: 5

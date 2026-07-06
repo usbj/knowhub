@@ -42,7 +42,7 @@
 - 文章：`GET /blog/list`、`GET /blog/{blogId}`、`POST /blog`、`PUT /blog`、`DELETE /blog/{blogIds}`、`PUT /blog/publish/{blogId}`、`PUT /blog/revoke/{blogId}`、`PUT /blog/review`、`PUT /blog/like/{blogId}`、`PUT /blog/collect/{blogId}`
 - 标签：`GET /tag/list`、`GET /tag/{tagId}`、`POST /tag`、`PUT /tag`、`DELETE /tag/{tagIds}`
 
-说明：发布接口受全局审核开关 `blog_review_enabled`（字典）控制，开关开则发布进入 `PENDING_REVIEW` 待审、由 `PUT /blog/review` 通过/驳回；开关关则直接 `PUBLISHED`。点赞/收藏接口仅要求登录，未挂 `@PreAuthorize`。详见下方「博客模块」章节。
+说明：发布接口受全局审核开关 `knowhub.blog.review_enabled`（系统设置 sys_config，BOOLEAN）控制，开关开则发布进入 `PENDING_REVIEW` 待审、由 `PUT /blog/review` 通过/驳回；开关关则直接 `PUBLISHED`。点赞/收藏接口仅要求登录，未挂 `@PreAuthorize`。详见下方「博客模块」章节。
 
 ### 2026-07-01 文件存储模块落地（预签名直传 + PUBLIC 回显 + PRIVATE 下载 + 对象 GC）
 
@@ -65,7 +65,7 @@
 
 ### 2026-07-03 文件访问双模式（中转/直链）+ 地址由后端决定
 
-为消除前端对 OSS 地址的硬依赖（迁 OSS / 切部署拓扑时前端与 nginx 零改动），新增**文件访问模式**开关（字典 `file_access_mode`，值 `transfer`/`direct`，`StorageConfigReader.accessMode` 读取，运维后台改、运行时生效），后端按模式决定发给前端的链接形态——前端永远只认后端给的链接，地址完全由后端决定。同时直链模式 OSS 地址 base 走字典 `file_direct_base_url`（`StorageConfigReader.directBaseUrl` 读取，填 nginx 公网反代域名或 OSS 公网 endpoint）。
+为消除前端对 OSS 地址的硬依赖（迁 OSS / 切部署拓扑时前端与 nginx 零改动），新增**文件访问模式**开关（系统设置 `knowhub.file.access_mode`，值 `transfer`/`direct`，`StorageConfigReader.accessMode` 读取，运维后台改、运行时生效），后端按模式决定发给前端的链接形态——前端永远只认后端给的链接，地址完全由后端决定。同时直链模式 OSS 地址 base 走系统设置 `knowhub.file.direct_base_url`（`StorageConfigReader.directBaseUrl` 读取，填 nginx 公网反代域名或 OSS 公网 endpoint）。
 
 - **中转模式（transfer，默认）**：`uploadUrl` 填 `/file/proxy-upload/{objectId}`（后端代理转发上传字节，同源带 Token）；`downloadUrl` 填 `/file/proxy/{objectId}`（后端中转下载字节流，同源带 Token）；PUBLIC 回显仍走 `/file/public/{id}`。适用于 OSS 在内网/不愿配 CORS，代价是后端经文件字节流。
 - **直链模式（direct）**：`uploadUrl` 填预签名绝对 URL（host 用 `directBaseUrl`，前端直连 nginx/OSS，需配 CORS）；`downloadUrl` 填预签名绝对 URL（带 `attachment;filename`）；PUBLIC 回显链接填 `{directBaseUrl}/{bucket}/{objectKey}`（公开读直链，不带签名，永不过期）。适用于 OSS 公网可达 + 配 CORS，后端不经字节流。
@@ -75,7 +75,59 @@
 - `GET /file/proxy/{objectId}`（中转模式下载，权限 `knowhub:file:download`，后端拉 OSS 字节回写，PRIVATE 带 `attachment;filename`）
 - `GET /file/url/{objectId}`（取 PUBLIC 回显链接，无鉴权，按模式返回 `/file/public/{id}` 或直链）
 
-前端 `rookie-ui` 适配：`utils/upload.ts` 按链接形态（相对/绝对）自动决定 PUT 是否带 Token；PUBLIC 上传成功后调 `/file/url/{id}` 取按模式回显链接（异常回退 `/file/public/{id}`）；`views/file/index.vue` 下载按链接形态分流（绝对 URL 直接 `window.open`，相对路径 `fetch` 带 Token 取 blob）。`vite.config.ts` 删除已无用的 `/rustfs` 代理（双模式下都不再使用）。字典 SQL 见新建增量脚本 `sql/knowhub-storage-dual-mode.sql`（不改原 `knowhub-storage.sql`，dict_id 20/21、dict_data_id 88-90，INSERT IGNORE 幂等，已部署环境直接跑）。详见下方「文件存储模块」章节。
+前端 `rookie-ui` 适配：`utils/upload.ts` 按链接形态（相对/绝对）自动决定 PUT 是否带 Token；PUBLIC 上传成功后调 `/file/url/{id}` 取按模式回显链接（异常回退 `/file/public/{id}`）；`views/knowhub/file/index.vue` 下载按链接形态分流（绝对 URL 直接 `window.open`，相对路径 `fetch` 带 Token 取 blob）。`vite.config.ts` 删除已无用的 `/rustfs` 代理（双模式下都不再使用）。字典 SQL 见新建增量脚本 `sql/knowhub-storage-dual-mode.sql`（不改原 `knowhub-storage.sql`，dict_id 20/21、dict_data_id 88-90，INSERT IGNORE 幂等，已部署环境直接跑）。详见下方「文件存储模块」章节。
+
+### 2026-07-04 博客审核流水模块落地（审核历史 + 状态机 + 回避 + author_id）
+
+博客审核雏形已落地（主表审核字段 + publish/review/revoke + 审核开关），但审核结果只覆盖主表只存最后一次、无历史可溯，且无状态机校验、无审核员回避、无用户ID稳定锁定。本次补审核流水表 + blog 表加 author_id + 审核动作字典 + 状态机/回避/流水写入 + 审核历史接口，并用「前后台审核记录展示」代替通知闭环。设计详见 `doc/blog/blog-review-flow-design.md`。
+
+**新增接口（1 个）**
+- `GET /blog/review-log/{blogId}`（权限 `knowhub:blog:info`）→ `List<ReviewLogVo>`，按动作时间升序返回该文章全量审核流水（含 operatorNickname，后端 left join sys_user 带出）
+
+**既有接口语义增强（签名不变）**
+- `PUT /blog/publish/{blogId}`：加状态机前置校验（仅 DRAFT/REJECTED/REVOKED 可发布，PUBLISHED/PENDING_REVIEW 报错）；写审核流水（开关开 SUBMIT/AUTHOR，开关关 PUBLISH/SYSTEM）
+- `PUT /blog/revoke/{blogId}`：加状态机前置校验（仅 PUBLISHED 可撤回）；写流水 REVOKE/AUTHOR；reviewStatus 清为 NONE
+- `PUT /blog/review`：加状态机前置校验（仅 PENDING_REVIEW 可审核）+ 审核员回避（userId ≠ author_id，作者不能审自己）；写流水 APPROVE/REJECT + REVIEWER
+- `PUT /blog`（编辑）：加 PUBLISHED 禁止编辑校验（已发布文章须先撤回再编辑，防绕过审核改已发布内容）
+- `POST /blog`（新增）：写入 `author_id`（当前用户 userId）
+
+**新增字段**
+- `blog` 表加 `author_id`（bigint，作者 userId，与 create_by(username) 互补，前台展示昵称 join sys_user 稳定）；BlogVo 加 authorId
+- `ReviewLogVo`：reviewLogId/blogId/action/operatorId/operator/operatorNickname/role/advice/createTime
+
+**SQL（新建独立脚本 `sql/knowhub-blog-review-log.sql`，不动 knowhub-blog.sql）**
+- 建 `blog_review_log` 流水表（review_log_id/blog_id/action/operator_id/operator/role/advice/create_time + 两索引）
+- `ALTER blog ADD author_id` + 按 create_by(username) 回填 user_id（information_schema 判列存在幂等）
+- 新增字典 `blog_review_action`（5 值 SUBMIT/APPROVE/REJECT/REVOKE/PUBLISH，dict_id=22，dict_data_id 91-95）
+
+**前端**
+- `api/knowhub/blog.ts` 加 `getReviewLogApi`；`types/api/knowhub/blog.ts` 加 `ReviewLogRecord`、`BlogRecord` 加 authorId
+- `BlogDetailDialog.vue` 加「审核历史」折叠区（ElCollapse + 时间线，DictTag 渲染 action，展示 operatorNickname/时间/advice）
+
+**遵守约定**：未修改任何 `rookie-*` 代码/配置；改动全在 knowhub 模块 + rookie-ui knowhub 二开文件；通知预留 `notifyReviewResult` 空方法待 rookie 支持个人通知后接入。
+
+**校验**：`mvn -q -pl knowhub -am -DskipTests compile` 通过；`rookie-ui npm run type-check` 通过。
+
+**待用户人工验证**：① 跑 `sql/knowhub-blog-review-log.sql` → `DESC blog` 应含 author_id；现有未删 blog 行 author_id 应已回填（`SELECT COUNT(*) FROM blog WHERE author_id IS NULL AND deleted=0` 应为 0）；字典 blog_review_action 应 5 行。② 发布流程：开关开时发布→待审→审核员审核（通过/驳回）→查 `blog_review_log` 应有 SUBMIT+APPROVE/REJECT 流水；驳回后作者编辑→再发布→回待审，流水新增 SUBMIT。③ 状态校验：对已发布文章调审核接口应报"仅待审核文章可审核"；对草稿调撤回应报"仅已发布文章可撤回"；编辑已发布文章应报"已发布文章请先撤回再编辑"。④ 回避：作者尝试审核自己文章应报"不能审核自己提交的文章"。⑤ 详情弹窗「审核历史」折叠区展示时间线。前台审核时间线展示待前台开发落地，详见 `doc/blog/blog-front-review-display.md`。
+
+### 2026-07-06 审核开关切换遗留 PENDING_REVIEW 对账定时任务
+
+审核开关从开切到关后，仍处于 PENDING_REVIEW 的遗留文章无人收口（作者编辑/再发布/撤回均被状态机拒绝，审核员未必手动批，稿件卡死待审态）。本次用定时任务被动收口，不监听系统设置保存动作（`SysConfigController.editSysConfig` 在 rookie-system 通用 key-value 接口，无法可靠区分"这次保存恰好是 review_enabled"，改 rookie 不可行）。设计详见 `doc/blog/blog-review-flow-design.md` §七-2。
+
+**后端（knowhub 模块，无新接口，新增定时任务 + Service 方法）**
+- `BlogMapper`+xml 增 `listPendingReviewIds()`：`select blog_id from blog where status='PENDING_REVIEW' and deleted=0`，对账专用
+- `BlogService`+`BlogServiceImpl` 增 `int reconcilePendingReview()`：查 list → 逐条转 PUBLISHED+APPROVED+reviewer=system+publishTime=now → 逐条写 `PUBLISH/SYSTEM` 流水（advice="审核关闭后定时任务自动放行"）→ 逐条 evictDetail；无 @Transactional，单条失败跳过不阻塞其它稿；返回放行条数
+- `BlogServiceImpl.publishBlog` 审核开关开分支进入 PENDING_REVIEW 时 SET Redis 待审标记 `{baseKey}blog:review:pending-flag=1`（不计数仅标记存在性，无过期）
+- `task/BlogReviewReconcileTask.java`（新建）：`@Scheduled(fixedDelayString = "#{${knowhub.blog.reconcile-interval-minutes:5} * 60 * 1000}", initialDelay = 60000)`。审核开关开→return；Redis 标记不存在→return（零扫表）；标记存在→调 `reconcilePendingReview()`→DEL 标记；放行 >0 记 info 日志
+
+**配置（rookie-admin/application.yml 追加，用户已解除禁令）**
+- `knowhub.blog.reconcile-interval-minutes: 5`（对账任务扫描间隔，分钟，默认 5）
+
+**遵守约定**：未修改任何 `rookie-*` 模块代码/配置（application.yml 是 rookie-admin 的，用户已解除禁令）；@EnableScheduling 走 knowhub 自带 SchedulingConfig；流水复用 ReviewAction.PUBLISH/SYSTEM 不新增 action；不改 publish/edit/revoke 对 PENDING_REVIEW 的拒绝语义。
+
+**校验**：`mvn -q -pl knowhub -am compile` 通过（EXIT=0）。
+
+**待用户人工验证**：① 开审核状态下发布文章 → 进 PENDING_REVIEW，Redis 出现 `rookie:framework:blog:review:pending-flag=1`。② 关审核开关，等 ≤5 分钟，遗留待审文章应全部变 PUBLISHED，`blog_review_log` 出现 PUBLISH/SYSTEM + advice="审核关闭后定时任务自动放行"，Redis flag 被清。③ 审核员在定时任务跑之前手动批了某篇（flag 仍在），下次定时任务扫到空表、清 flag，无副作用。
 
 ---
 
@@ -170,7 +222,7 @@
 
 **响应示例：** `{"code":200,"msg":"请求成功","data":true}`
 
-> 新建即草稿（status=DRAFT，reviewStatus=NONE）。
+> 新建即草稿（status=DRAFT，reviewStatus=NONE），写入 author_id（当前用户 userId，与 create_by 互补）。
 
 #### 4. 编辑博客文章
 
@@ -183,6 +235,7 @@
 **响应示例：** `{"code":200,"msg":"请求成功","data":true}`
 
 > 仅作者本人或具备 `knowhub:blog:review` 权限者可编辑他人文章。
+> 状态机：仅 DRAFT/REJECTED/REVOKED 可编辑；PUBLISHED 报"已发布文章请先撤回再编辑"，PENDING_REVIEW 报"审核中文章不能编辑，如需修改请先驳回或撤回后操作"（审核员审的是提交快照，作者审核中改动会污染依据）。
 
 #### 5. 批量删除博客文章
 
@@ -206,7 +259,8 @@
 
 **响应示例：** `{"code":200,"msg":"请求成功","data":true}`
 
-> 受审核开关 `blog_review_enabled` 控制：开关关→直接 `PUBLISHED` 并写 publish_time；开关开→`PENDING_REVIEW` + review_status=PENDING，待 `PUT /blog/review` 处理。
+> 受审核开关 `knowhub.blog.review_enabled`（系统设置）控制：开关关→直接 `PUBLISHED` 并写 publish_time，写流水(PUBLISH, SYSTEM)；开关开→`PENDING_REVIEW` + review_status=PENDING，写流水(SUBMIT, AUTHOR)，待 `PUT /blog/review` 处理。
+> 状态机：仅 DRAFT/REJECTED/REVOKED 可发布；PUBLISHED 报"已发布，无需重复发布"，PENDING_REVIEW 报"审核中，请勿重复提交"。
 
 #### 7. 撤回博客文章
 
@@ -218,7 +272,8 @@
 
 **响应示例：** `{"code":200,"msg":"请求成功","data":true}`
 
-> 状态置 `REVOKED`；可经编辑回 DRAFT 后再发布。
+> 状态置 `REVOKED`、review_status 清为 NONE，写流水(REVOKE, AUTHOR)；可经编辑回 DRAFT 后再发布。
+> 状态机：仅 PUBLISHED 可撤回，其他状态报"仅已发布文章可撤回"。
 
 #### 8. 审核博客文章
 
@@ -236,8 +291,52 @@
 
 **响应示例：** `{"code":200,"msg":"请求成功","data":true}`
 
-> 通过：status=PUBLISHED、publish_time=now、review_status=APPROVED、reviewer/review_time 写入。
-> 驳回：status=REJECTED、review_status=REJECTED、review_advice 写入。
+> 通过：status=PUBLISHED、publish_time=now、review_status=APPROVED、reviewer/review_time 写入，写审核流水(APPROVE, REVIEWER)。
+> 驳回：status=REJECTED、review_status=REJECTED、review_advice 写入，写审核流水(REJECT, REVIEWER)。
+> 状态机：仅 status=PENDING_REVIEW 可审核，其他状态报"仅待审核文章可审核"。
+> 回避：审核员 userId ≠ author_id，作者审核自己文章报"不能审核自己提交的文章"。
+
+#### 8.1 获取博客审核历史
+
+**基本信息：** `GET /blog/review-log/{blogId}`　权限：`knowhub:blog:info`
+
+**请求头：** `Token: <令牌值>`
+
+**请求体：** 无（`blogId` 路径参数）
+
+**响应示例：**
+```json
+{
+  "code": 200, "msg": "请求成功",
+  "data": [
+    {
+      "reviewLogId": 1, "blogId": 1, "action": "SUBMIT",
+      "operatorId": 2, "operator": "zhangsan", "operatorNickname": "张三",
+      "role": "AUTHOR", "advice": null, "createTime": "2026-07-04 10:00:00"
+    },
+    {
+      "reviewLogId": 2, "blogId": 1, "action": "REJECT",
+      "operatorId": 1, "operator": "admin", "operatorNickname": "管理员",
+      "role": "REVIEWER", "advice": "正文图片需补充来源", "createTime": "2026-07-04 11:00:00"
+    },
+    {
+      "reviewLogId": 3, "blogId": 1, "action": "SUBMIT",
+      "operatorId": 2, "operator": "zhangsan", "operatorNickname": "张三",
+      "role": "AUTHOR", "advice": null, "createTime": "2026-07-04 12:00:00"
+    },
+    {
+      "reviewLogId": 4, "blogId": 1, "action": "APPROVE",
+      "operatorId": 1, "operator": "admin", "operatorNickname": "管理员",
+      "role": "REVIEWER", "advice": null, "createTime": "2026-07-04 13:00:00"
+    }
+  ]
+}
+```
+
+> 按动作时间升序返回全量审核流水（`blog_review_log` 表，只追加不改不删）。
+> `action` 见字典 `blog_review_action`（SUBMIT/APPROVE/REJECT/REVOKE/PUBLISH）。
+> `operatorNickname` 由后端 left join sys_user 带出（用户删/改名时回落 null，此时前端可展示 operator 账号快照）。
+> 前台文章详情页审核时间线 / 后台详情弹窗「审核历史」折叠区共用此接口。前台落地鉴权策略见 `doc/blog/blog-front-review-display.md`。
 
 #### 9. 点赞 / 取消点赞
 
@@ -346,11 +445,12 @@
 > 预签名直传：上传不经后端字节流——`POST /file/upload-token` 签发 `PutObject` 预签名 URL，前端直传 RustFS，`POST /file/confirm/{id}` 用 `HeadObject` 核对。
 > PUBLIC 回显：后端中转字节流——`GET /file/public/{id}` 由后端 `s3Client.getObject` 拉流后 `StreamingResponseBody` 回写，带 `Content-Type`/`Content-Length`/`Cache-Control`(7 天 immutable)/`ETag`，前端 `<img src="/file/public/123">` 同源拉图（相对路径不走 axios，靠 vite proxy / nginx 转发 `/file` 到后端，已在 `rookie-ui/vite.config.ts` 加 `/file` 代理）。
 >
-> **文件访问模式（双模式，字典 `file_access_mode` 开关，`StorageConfigReader.accessMode` 读取）**——后端按模式决定发给前端的链接形态，前端永远只认后端给的链接，地址由后端决定，迁 OSS 只改后端配置：
+> **文件访问模式（双模式，系统设置 `knowhub.file.access_mode` 开关，`StorageConfigReader.accessMode` 读取）**——后端按模式决定发给前端的链接形态，前端永远只认后端给的链接，地址由后端决定，迁 OSS 只改后端配置：
 > - **中转模式（transfer，默认）**：上传走 `PUT /file/proxy-upload/{id}`（后端代理转发字节流，同源带 Token）；PRIVATE 下载走 `GET /file/proxy/{id}`（后端中转回写字节流，同源带 Token）；PUBLIC 回显走 `/file/public/{id}`。适用于 OSS 在内网/不愿配 CORS，代价是后端经文件字节流。
-> - **直链模式（direct）**：上传/下载走预签名绝对 URL（host 用字典 `file_direct_base_url`，前端直连 nginx/OSS，需配 CORS）；PUBLIC 回显走 `{directBaseUrl}/{bucket}/{objectKey}` 公开读直链（不带签名，永不过期）。适用于 OSS 公网可达 + 配 CORS，后端不经字节流。
-> - 直链模式 OSS 地址 base 走字典 `file_direct_base_url`（`StorageConfigReader.directBaseUrl` 读取，填 nginx 公网反代域名或 OSS 公网 endpoint；留空回退 yml `storage.endpoint`）。
-> - 配置读取收口在 `StorageConfigReader`（同 `BlogConfigReader` 同构），后续迁系统设置表时仅改本类内部实现，签名与调用方零改动。
+> - **直链模式（direct）**：上传/下载走预签名绝对 URL（host 用系统设置 `knowhub.file.direct_base_url`，前端直连 nginx/OSS，需配 CORS）；PUBLIC 回显走 `{directBaseUrl}/{bucket}/{objectKey}` 公开读直链（不带签名，永不过期）。适用于 OSS 公网可达 + 配 CORS，后端不经字节流。
+> - 直链模式 OSS 地址 base 走系统设置 `knowhub.file.direct_base_url`（`StorageConfigReader.directBaseUrl` 读取，填 nginx 公网反代域名或 OSS 公网 endpoint；留空回退 yml `storage.endpoint`）。
+> - 各业务类型体积上限走系统设置 `knowhub.file.size_limit`（JSON 对象，key=业务类型 code，value=MB 数）、类型白名单走 `knowhub.file.type_whitelist`（JSON 对象，key=业务类型 code，value=逗号分隔），`StorageConfigReader.sizeLimitBytes`/`typeWhitelist` 读取。配置读取收口在 `StorageConfigReader`（同 `BlogConfigReader` 同构），换存储/换阈值仅改本类内部实现，签名与调用方零改动。
+> - 配置型设置已于 2026-07-03 从字典迁移到系统设置模块（sys_config），迁移脚本 `sql/knowhub-sys-config-migration.sql`；枚举型字典（file_business_type/file_access/upload_status）保留走字典。
 
 ### 文件接口
 
@@ -398,7 +498,7 @@
 ```
 
 > 后端 insert `file_object(upload_status=PENDING)` 后签发；前端拿 `uploadUrl` 直接 `PUT` 上传（带 `Content-Type` header），传完调 `confirm`。
-> **`uploadUrl` 形态由访问模式决定**：中转模式为 `/file/proxy-upload/{objectId}` 同源后端代理接口（前端 PUT 需带 `Token` 头，后端转发字节流写入 OSS）；直链模式为预签名绝对 URL（host 用字典 `file_direct_base_url`，前端直连 nginx/OSS 不带 Token，需 OSS/nginx 配 CORS）。前端 `utils/upload.ts` 按链接形态（相对/绝对）自动决定带不带 Token，调用方无感。
+> **`uploadUrl` 形态由访问模式决定**：中转模式为 `/file/proxy-upload/{objectId}` 同源后端代理接口（前端 PUT 需带 `Token` 头，后端转发字节流写入 OSS）；直链模式为预签名绝对 URL（host 用系统设置 `knowhub.file.direct_base_url`，前端直连 nginx/OSS 不带 Token，需 OSS/nginx 配 CORS）。前端 `utils/upload.ts` 按链接形态（相对/绝对）自动决定带不带 Token，调用方无感。
 
 #### 2. 上传确认
 
@@ -504,7 +604,7 @@ Accept-Ranges: none
 
 **状态码：** 同 PUBLIC 回显（404 不存在/未确认、403 非 PUBLIC PRIVATE 无权、500 异常），异常不进 `GlobalExceptionHandler`。
 
-> 中转模式 PRIVATE 下载用此接口。前端因 `window.open` 不带 Token，改用 `fetch` 带 `Token` 头取 blob 再 `a.click()` 触发下载（PRIVATE 频率低，blob 进内存可接受）。详见 `rookie-ui/src/views/file/index.vue` `handleDownloadFile`。
+> 中转模式 PRIVATE 下载用此接口。前端因 `window.open` 不带 Token，改用 `fetch` 带 `Token` 头取 blob 再 `a.click()` 触发下载（PRIVATE 频率低，blob 进内存可接受）。详见 `rookie-ui/src/views/knowhub/file/index.vue` `handleDownloadFile`。
 
 #### 6. 后端代理转发上传
 

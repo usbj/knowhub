@@ -7,7 +7,7 @@
   关键依赖：
   - 复用 ElDialog + ElDescriptions 展示元数据；
   - businessType / access / uploadStatus 走字典标签系统渲染为带色 ElTag；
-  - PUBLIC 对象且为图片类型时展示预览缩略图（/file/public/{id} 直引）；
+  - PUBLIC 对象且为图片类型时展示预览缩略图（/file/resolve/{id} 稳定解析引用，后端按模式 302 分发）；
   - 主题适配：描述列表、预览框均用 base.css 的 --rookie-* 变量，深浅模式自动跟随。
 -->
 <script setup lang="ts">
@@ -16,7 +16,7 @@ import { ElButton, ElDescriptions, ElDescriptionsItem, ElDialog } from 'element-
 import DictTag from '@/components/DictTag.vue'
 import { formatDateTime } from '@/utils/format'
 import { formatFileSize } from '../config'
-import { buildFilePublicUrl } from '@/api/knowhub/file'
+import { buildFileResolveUrl } from '@/api/knowhub/file'
 import type { FileObjectRecord } from '@/types/api/knowhub/file'
 
 const props = defineProps<{
@@ -50,10 +50,11 @@ const isImagePreviewable = computed(() => {
 })
 
 /**
- * PUBLIC 图片预览地址：/file/public/{objectId} 相对路径，靠 /file 代理到后端中转回写字节流。
+ * PUBLIC 图片预览地址：/file/resolve/{objectId} 稳定解析引用，渲染时后端按当前访问模式 302 分发
+ * （中转→/file/public/{id} 字节流回显；直链→OSS 公开读直链或私有预签名）。
  */
 const previewUrl = computed(() =>
-  props.fileObject?.objectId ? buildFilePublicUrl(props.fileObject.objectId) : '',
+  props.fileObject?.objectId ? buildFileResolveUrl(props.fileObject.objectId) : '',
 )
 </script>
 

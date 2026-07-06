@@ -1,0 +1,120 @@
+package com.knowhub.pojo.vo;
+
+/**
+ * 博客审核流水对外 VO，供审核历史接口出参。
+ * 时间字段沿用项目约定用 String（BeanUtil 复制 Date→String）。
+ * operatorNickname 由后端 join sys_user 带出，供前端直接展示操作人昵称，
+ * 不必前端再二次查询；operator(username) 也保留作账号快照。
+ */
+public class ReviewLogVo {
+
+    private Long reviewLogId;
+
+    private Long blogId;
+
+    /** 审核动作 code：SUBMIT/APPROVE/REJECT/REVOKE/PUBLISH（见字典 blog_review_action） */
+    private String action;
+
+    private Long operatorId;
+
+    /** 操作人用户名快照 */
+    private String operator;
+
+    /** 操作人昵称（后端 join sys_user 带出，便于前端展示） */
+    private String operatorNickname;
+
+    /** 审核业务身份：AUTHOR/REVIEWER/SYSTEM */
+    private String role;
+
+    private String advice;
+
+    private String createTime;
+
+    public ReviewLogVo() {
+    }
+
+    public Long getReviewLogId() {
+        return reviewLogId;
+    }
+
+    public void setReviewLogId(Long reviewLogId) {
+        this.reviewLogId = reviewLogId;
+    }
+
+    public Long getBlogId() {
+        return blogId;
+    }
+
+    public void setBlogId(Long blogId) {
+        this.blogId = blogId;
+    }
+
+    public String getAction() {
+        return action;
+    }
+
+    public void setAction(String action) {
+        this.action = action;
+    }
+
+    public Long getOperatorId() {
+        return operatorId;
+    }
+
+    public void setOperatorId(Long operatorId) {
+        this.operatorId = operatorId;
+    }
+
+    public String getOperator() {
+        return operator;
+    }
+
+    public void setOperator(String operator) {
+        this.operator = operator;
+    }
+
+    public String getOperatorNickname() {
+        return operatorNickname;
+    }
+
+    public void setOperatorNickname(String operatorNickname) {
+        this.operatorNickname = operatorNickname;
+    }
+
+    public String getRole() {
+        return role;
+    }
+
+    public void setRole(String role) {
+        this.role = role;
+    }
+
+    public String getAdvice() {
+        return advice;
+    }
+
+    public void setAdvice(String advice) {
+        this.advice = advice;
+    }
+
+    public String getCreateTime() {
+        return createTime;
+    }
+
+    public void setCreateTime(String createTime) {
+        this.createTime = createTime;
+    }
+
+    @Override
+    public String toString() {
+        return "ReviewLogVo{" +
+                "reviewLogId=" + reviewLogId +
+                ", blogId=" + blogId +
+                ", action='" + action + '\'' +
+                ", operator='" + operator + '\'' +
+                ", operatorNickname='" + operatorNickname + '\'' +
+                ", role='" + role + '\'' +
+                ", createTime='" + createTime + '\'' +
+                '}';
+    }
+}

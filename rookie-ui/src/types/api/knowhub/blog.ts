@@ -12,9 +12,11 @@ import type { NormalizedPageResult, PageQueryParams } from '../system/common'
 /**
  * 博客文章记录，与后端 BlogVo 字段对齐。
  * status 取值见字典 blog_status；reviewStatus 见字典 review_status。
+ * authorId 为作者用户ID(userId)，与 createBy(username) 互补，前台展示昵称走 join sys_user。
  */
 export interface BlogRecord {
   blogId?: number
+  authorId?: number
   title: string
   content: string
   summary?: string
@@ -64,6 +66,24 @@ export interface ReviewPayload {
   blogId: number
   pass: boolean
   advice?: string
+}
+
+/**
+ * 博客审核流水记录，与后端 ReviewLogVo 字段对齐。
+ * action 取值见字典 blog_review_action（SUBMIT/APPROVE/REJECT/REVOKE/PUBLISH）。
+ * operator 为操作人用户名快照，operatorNickname 由后端 join sys_user 带出便于直接展示。
+ * role 为审核业务身份（AUTHOR作者/REVIEWER审核员/SYSTEM系统直通），按动作类型定非系统角色。
+ */
+export interface ReviewLogRecord {
+  reviewLogId?: number
+  blogId?: number
+  action: string
+  operatorId?: number
+  operator: string
+  operatorNickname?: string
+  role: string
+  advice?: string
+  createTime?: string
 }
 
 /**

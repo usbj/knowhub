@@ -58,6 +58,9 @@ const detailVisible = ref(false)
 const detailRecord = ref<BlogRecord | null>(null)
 const reviewVisible = ref(false)
 const reviewBlogId = ref<number | null>(null)
+/** 待审核博客详情（审核弹窗展示标题/封面/正文用） */
+const reviewBlog = ref<BlogRecord | null>(null)
+const reviewLoading = ref(false)
 /** 正文全屏编辑器显隐 */
 const contentEditorVisible = ref(false)
 const pageState = ref<BlogPageResult>({
@@ -90,6 +93,8 @@ const tableActions = computed<SharedActionConfig<Record<string, unknown>>[]>(() 
     label: '编辑',
     permKey: SYSTEM_PERMISSION_KEYS.blog.edit,
     buttonType: 'primary',
+    // 仅 DRAFT/REJECTED/REVOKED 可编辑；PUBLISHED 须先撤回、PENDING_REVIEW 审核中不能改
+    visible: (row) => !['PUBLISHED', 'PENDING_REVIEW'].includes(String(row.status)),
     onClick: async (row) => {
       await openEditDialog(Number(row.blogId))
     },
@@ -99,7 +104,8 @@ const tableActions = computed<SharedActionConfig<Record<string, unknown>>[]>(() 
     label: '发布',
     permKey: SYSTEM_PERMISSION_KEYS.blog.publish,
     buttonType: 'success',
-    visible: (row) => String(row.status) !== 'PUBLISHED',
+    // 仅非发布且非待审状态可发布；PUBLISHED 无需重复发布、PENDING_REVIEW 已在审不可重复提交
+    visible: (row) => !['PUBLISHED', 'PENDING_REVIEW'].includes(String(row.status)),
     onClick: async (row) => {
       await handlePublishBlog(Number(row.blogId))
     },
@@ -294,13 +300,20 @@ const openDetailDialog = async (blogId: number) => {
 
 /**
  * 方法效果：
- * 打开审核弹窗，记录待审核博客主键。
+ * 打开审核弹窗，先拉取博客详情（标题/封面/正文）供审核员参考决策。
  * 参数：
  * - `blogId`：待审核博客主键。
  * 返回值：
- * - 无返回值；副作用是记录主键并展示审核弹窗。
+ * - 无返回值；副作用是更新审核博客详情并展示弹窗。
  */
-const openReviewDialog = (blogId: number) => {
+const openReviewDialog = async (blogId: number) => {
+  reviewLoading.value = true
+  try {
+    const result = await getBlogDetailApi(blogId)
+    reviewBlog.value = result.data
+  } finally {
+    reviewLoading.value = false
+  }
   reviewBlogId.value = blogId
   reviewVisible.value = true
 }
@@ -603,10 +616,12 @@ onMounted(async () => {
       @update:visible="detailVisible = $event"
     />
 
-    <!-- 博客审核弹窗 -->
+    <!-- 博客审核弹窗（展示标题/封面/正文供审核员参考） -->
     <BlogReviewDialog
       :visible="reviewVisible"
       :blog-id="reviewBlogId"
+      :blog="reviewBlog"
+      :loading="reviewLoading"
       @update:visible="reviewVisible = $event"
       @submit="handleReviewSubmit"
     />

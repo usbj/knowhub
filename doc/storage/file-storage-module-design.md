@@ -187,6 +187,8 @@ knowhub:file:review    文件审核/治理（违规下架，对齐 §6 内容治
 
 ### 2.3 字典（`sys_dict` / `sys_dict_data`）
 
+> **2026-07-03 更新**：本节描述的 `file_size_limit` / `file_type_whitelist` 配置型字典已迁移到系统设置模块（`sys_config`），见 `sql/knowhub-sys-config-migration.sql` 与 `doc/README.dev.md`「全局开关 / 配置项落地约定」。下文为原始设计叙述，保留作历史参考；当前实现以 `StorageConfigReader` 走 `SysConfigUtil` 读 `knowhub.file.size_limit` / `knowhub.file.type_whitelist`（JSON 对象）为准。枚举型字典 `file_business_type` 仍走字典。
+
 白名单与阈值落字典可后台改，读取收口 `StorageConfigReader`（§5.2）：
 
 - `file_business_type`：§1.2 的业务类型枚举（label/value/sort，供前端下拉与后端校验共用）。

@@ -6,10 +6,13 @@ import java.util.List;
  * 博客文章对外 VO，供 Controller 入参/出参。
  * 时间字段沿用 SysNoticeVo 约定用 String（BeanUtil 复制 Date→String）。
  * tagIds 为作者选用的受控标签 id 列表；tagNames 由关联表回填用于展示。
+ * authorId 为作者用户ID(userId)，与 createBy(username) 互补，前台展示昵称走 join sys_user。
  */
 public class BlogVo {
 
     private Long blogId;
+
+    private Long authorId;
 
     private String title;
 
@@ -64,6 +67,14 @@ public class BlogVo {
 
     public void setBlogId(Long blogId) {
         this.blogId = blogId;
+    }
+
+    public Long getAuthorId() {
+        return authorId;
+    }
+
+    public void setAuthorId(Long authorId) {
+        this.authorId = authorId;
     }
 
     public String getTitle() {
