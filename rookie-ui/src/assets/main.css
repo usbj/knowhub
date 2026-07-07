@@ -91,30 +91,6 @@
   background: var(--rookie-hover-bg) !important;
 }
 
-/* 固定列（fixed left/right）单元格必须有不透明背景，否则横向滚动后
-   被遮挡的普通列内容会在 hover 时透出、与固定操作列重叠。
-   这里给固定列单元格本体 + hover 态 + 条纹行都设实色背景，
-   并提高固定列容器层级，确保固定列永远完全遮挡其后方滚走的内容。 */
-.el-table__fixed-right,
-.el-table__fixed-left {
-  z-index: 2 !important;
-}
-
-.el-table__fixed-right .el-table__cell,
-.el-table__fixed-left .el-table__cell {
-  background: var(--rookie-card-bg) !important;
-}
-
-.el-table__fixed-right .el-table__body tr:hover > .el-table__cell,
-.el-table__fixed-left .el-table__body tr:hover > .el-table__cell {
-  background: var(--rookie-hover-bg) !important;
-}
-
-.el-table--striped .el-table__fixed-right .el-table__body tr.el-table__row--striped > .el-table__cell,
-.el-table--striped .el-table__fixed-left .el-table__body tr.el-table__row--striped > .el-table__cell {
-  background: var(--rookie-table-stripe-bg) !important;
-}
-
 .el-table td.el-table__cell,
 .el-table th.el-table__cell,
 .el-table--border::after,
