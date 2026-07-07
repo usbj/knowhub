@@ -1,10 +1,15 @@
 package com.rookie.system.pojo.vo;
 
+import java.util.Date;
+
 /**
  * 系统设置 VO（对前后端交互结构）。
  * <p>
  * 与 {@code SysConfig} 实体字段一致，作为 Controller 出参 / 入参载体，
  * 通过 BeanUtil 与实体互转，对齐 {@code SysDictDataVo} 的使用风格。
+ * createTime/updateTime 用 Date 类型，由 Jackson 全局配置统一序列化为
+ * yyyy-MM-dd HH:mm:ss，避免 BeanUtil Date→String 拷贝时直接 toString()
+ * 产出 "Fri Jul 03 ..." 这类 Date.toString() 默认格式。
  */
 public class SysConfigVo {
 
@@ -24,16 +29,16 @@ public class SysConfigVo {
 
     private Integer status;
 
-    private String createTime;
+    private Date createTime;
 
-    private String updateTime;
+    private Date updateTime;
 
     public SysConfigVo() {
     }
 
     public SysConfigVo(Long configId, String configKey, String configName, String configValue,
                        String valueType, Integer isSystem, String remark, Integer status,
-                       String createTime, String updateTime) {
+                       Date createTime, Date updateTime) {
         this.configId = configId;
         this.configKey = configKey;
         this.configName = configName;
@@ -110,19 +115,19 @@ public class SysConfigVo {
         this.status = status;
     }
 
-    public String getCreateTime() {
+    public Date getCreateTime() {
         return createTime;
     }
 
-    public void setCreateTime(String createTime) {
+    public void setCreateTime(Date createTime) {
         this.createTime = createTime;
     }
 
-    public String getUpdateTime() {
+    public Date getUpdateTime() {
         return updateTime;
     }
 
-    public void setUpdateTime(String updateTime) {
+    public void setUpdateTime(Date updateTime) {
         this.updateTime = updateTime;
     }
 }
