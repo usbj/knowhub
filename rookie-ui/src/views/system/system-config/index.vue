@@ -49,6 +49,9 @@ const sysConfigRefreshLoading = ref(false)
 const sysConfigDialogVisible = ref(false)
 const sysConfigDialogMode = ref<SysConfigDialogMode>('create')
 const sysConfigFormModel = ref<SysConfigFormModel>(createDefaultSysConfigForm())
+// 程序化整体替换表单模型时（如打开编辑弹窗回显）跳过 valueType watch 的重置，
+// 避免 watch 把刚回显的 configValue 重置为类型初值（BOOLEAN 会被压成 false 导致开关不回显）
+const skipValueTypeWatch = ref(false)
 const sysConfigPageState = ref<SysConfigPageResult>({
   records: [],
   pageNum: 1,
@@ -119,6 +122,10 @@ const sysConfigTableActions = computed<SharedActionConfig<Record<string, unknown
 watch(
   () => sysConfigFormModel.value.valueType,
   (nextType, prevType) => {
+    if (skipValueTypeWatch.value) {
+      skipValueTypeWatch.value = false
+      return
+    }
     if (nextType === prevType) {
       return
     }
@@ -263,6 +270,9 @@ const openEditSysConfigDialog = async (configId: number) => {
       ? String(record.configValue) === 'true' || String(record.configValue) === '1'
       : String(record.configValue ?? '')
 
+  // 整体替换表单模型时 valueType 会从默认 STRING 变成 record.valueType，
+  // 置标志让上方 watch 跳过这次程序化赋值，避免回显的 configValue 被重置为类型初值
+  skipValueTypeWatch.value = true
   sysConfigFormModel.value = {
     ...createDefaultSysConfigForm(),
     ...record,
