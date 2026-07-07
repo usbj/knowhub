@@ -4,6 +4,8 @@ import com.github.pagehelper.PageInfo;
 import com.rookie.system.pojo.quarry.SysConfigQuarry;
 import com.rookie.system.pojo.vo.SysConfigVo;
 
+import java.util.List;
+
 /**
  * 系统设置服务接口。
  * <p>
@@ -30,4 +32,12 @@ public interface SysConfigService {
 
     /** 刷新缓存：清空全部设置项缓存后立即从数据库重新预热全部启用项 */
     Boolean refreshCache();
+
+    /**
+     * 查询全部启用系统设置项，供前端启动加载消费。
+     * <p>
+     * 不分页、不加按钮权限，仅需登录即可调用，对标字典公共读取接口
+     * {@code GET /sys/dict/data/type/{dictKey}} 的语义。
+     */
+    List<SysConfigVo> listAllEnabledSysConfig();
 }

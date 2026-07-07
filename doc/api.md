@@ -15,6 +15,10 @@
 
 ## 接口更新日志
 
+### 2026-07-07 — 系统设置模块补充前端加载接口
+
+新增 `GET /sys/system-config/list-all` 接口（公共读取，需登录即可，不加按钮权限），返回全部启用设置项，供前端登录后全量加载到内存缓存（对标字典启动加载）。
+
 ### 2026-07-03 — 系统设置模块（system_config）
 
 本批次新增系统设置模块的完整接口，包括分页查询、详情、新增、编辑、删除、刷新缓存。
@@ -1794,3 +1798,45 @@ PUBLISHED → REVOKED | **响应：** `Result<Boolean>`
 
 #### 6.4 响应示例
 `Result<Boolean>`
+
+---
+
+### 7. 获取全部启用系统设置（前端启动加载）
+
+#### 7.1 基本信息
+**请求接口：** `/sys/system-config/list-all`
+**请求方式：** GET
+**所需权限：** 需要登录（不加按钮权限，公共读取，对标字典 `GET /sys/dist/data/type/{dictKey}`）
+**基本信息：** 返回全部启用状态（status=1）的系统设置项，不分页。供前端登录后全量加载到内存缓存，页面/组件按 configKey 读取，对标字典启动加载
+
+#### 7.2 请求头
+| 参数名 | 参数说明           | 参数类型 | 是否必填 |
+| ------ | ------------------ | -------- | -------- |
+| Token  | JWT 令牌（无前缀） | string   | 是       |
+
+#### 7.3 请求体
+无
+
+#### 7.4 响应示例
+`Result<List<SysConfigVo>>`
+
+```json
+{
+  "code": 200,
+  "msg": "请求成功",
+  "data": [
+    {
+      "configId": 1,
+      "configKey": "sys.user.initPassword",
+      "configName": "用户初始密码",
+      "configValue": "123456",
+      "valueType": "STRING",
+      "isSystem": 1,
+      "remark": "新建用户与重置密码时的初始密码",
+      "status": 1,
+      "createTime": "2026-07-07 10:00:00",
+      "updateTime": "2026-07-07 10:00:00"
+    }
+  ]
+}
+```

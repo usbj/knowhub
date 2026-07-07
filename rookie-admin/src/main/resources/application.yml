@@ -15,6 +15,12 @@ spring:
     redis:
       #      host: 192.168.88.132
       port: 6379
+  # Jackson 全局日期格式化：所有 java.util.Date 统一序列化为 yyyy-MM-dd HH:mm:ss
+  # 时区设为东八区，避免按 UTC 输出导致时间偏移 8 小时。
+  # 前端拿到即为格式化字符串，按需用 formatDateTime/formatDate 截断展示。
+  jackson:
+    date-format: yyyy-MM-dd HH:mm:ss
+    time-zone: GMT+8
 logging:
   level:
     com.rookie: debug

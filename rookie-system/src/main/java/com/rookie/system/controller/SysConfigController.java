@@ -11,6 +11,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
+
 /**
  * 系统设置 Controller。
  * <p>
@@ -69,5 +71,17 @@ public class SysConfigController {
     public Result<Boolean> refreshCache() {
         Boolean ok = sysConfigService.refreshCache();
         return Result.success(ok);
+    }
+
+    /**
+     * 全量查询启用系统设置项，供前端启动加载消费。
+     * <p>
+     * 公共读取接口：不分页、不加按钮权限、不记操作日志，仅需登录即可调用，
+     * 对标字典 {@code GET /sys/dict/data/type/{dictKey}}。
+     */
+    @GetMapping("/list-all")
+    public Result<List<SysConfigVo>> listAllEnabledSysConfig() {
+        List<SysConfigVo> list = sysConfigService.listAllEnabledSysConfig();
+        return Result.success(list);
     }
 }
