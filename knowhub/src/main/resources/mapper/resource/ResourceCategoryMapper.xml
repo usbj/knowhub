@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.knowhub.mapper.ResourceCategoryMapper">
+
+    <resultMap id="ResourceCategoryResultMap" type="com.knowhub.pojo.entity.ResourceCategory">
+        <id property="categoryId" column="category_id"/>
+        <result property="parentId" column="parent_id"/>
+        <result property="categoryName" column="category_name"/>
+        <result property="sort" column="sort"/>
+        <result property="status" column="status"/>
+        <result property="createBy" column="create_by"/>
+        <result property="createTime" column="create_time"/>
+        <result property="updateBy" column="update_by"/>
+        <result property="updateTime" column="update_time"/>
+        <result property="deleted" column="deleted"/>
+    </resultMap>
+
+    <!--
+      查全量启用分类（status=1 且未删），按 parent_id asc、sort asc 排序。
+      Service 层拿到扁平 List 后按 parent_id 组装为树返回前端 el-tree。
+      不分页：分类为有限集合，全量返回即可。
+    -->
+    <select id="listAllCategories" resultMap="ResourceCategoryResultMap">
+        select * from resource_category
+        where deleted = 0 and status = 1
+        order by parent_id asc, sort asc, category_id asc
+    </select>
+
+    <select id="getCategoryInfoById" parameterType="long" resultMap="ResourceCategoryResultMap">
+        select * from resource_category where category_id = #{categoryId} and deleted = 0
+    </select>
+
+    <!-- 新增分类，动态列 -->
+    <insert id="addCategory" parameterType="com.knowhub.pojo.entity.ResourceCategory" useGeneratedKeys="true" keyProperty="categoryId">
+        insert into resource_category
+        <trim prefix="(" suffix=")" suffixOverrides=",">
+            <if test="parentId != null">parent_id,</if>
+            <if test="categoryName != null">category_name,</if>
+            <if test="sort != null">sort,</if>
+            <if test="status != null">status,</if>
+            create_by, create_time, update_by, update_time
+        </trim>
+        values
+        <trim prefix="(" suffix=")" suffixOverrides=",">
+            <if test="parentId != null">#{parentId},</if>
+            <if test="categoryName != null">#{categoryName},</if>
+            <if test="sort != null">#{sort},</if>
+            <if test="status != null">#{status},</if>
+            #{createBy}, now(), #{updateBy}, now()
+        </trim>
+    </insert>
+
+    <!-- 编辑分类（动态列） -->
+    <update id="editCategoryInfo" parameterType="com.knowhub.pojo.entity.ResourceCategory">
+        update resource_category
+        <set>
+            <if test="parentId != null">parent_id = #{parentId},</if>
+            <if test="categoryName != null and categoryName != ''">category_name = #{categoryName},</if>
+            <if test="sort != null">sort = #{sort},</if>
+            <if test="status != null">status = #{status},</if>
+            <if test="deleted != null">deleted = #{deleted},</if>
+            update_by = #{updateBy},
+            update_time = now()
+        </set>
+        where category_id = #{categoryId}
+    </update>
+
+    <update id="softDeleteCategory" parameterType="long">
+        update resource_category set deleted = 1, update_time = now() where category_id = #{categoryId}
+    </update>
+
+    <!-- 查子分类数（删分类前校验，有子分类拒绝删） -->
+    <select id="countChildren" resultType="java.lang.Long">
+        select count(*) from resource_category where parent_id = #{parentId} and deleted = 0
+    </select>
+
+</mapper>

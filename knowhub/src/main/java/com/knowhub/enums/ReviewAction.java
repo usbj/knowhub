@@ -1,7 +1,8 @@
 package com.knowhub.enums;
 
 /**
- * 博客审核流水动作，对应字典 blog_review_action 与 blog_review_log.action 列。
+ * 博客/资源审核流水动作，对应字典 review_action 与 blog_review_log/resource_review_log.action 列。
+ * 字典 blog_review_action 已通用化为 review_action（博客+资源共用，见 sql/knowhub-resource.sql）。
  * action 隐含文章状态转移语义（流水只记动作不记状态前后）：
  *   SUBMIT  作者提交审核   DRAFT/REJECTED/REVOKED → PENDING_REVIEW
  *   APPROVE 审核员通过     PENDING_REVIEW → PUBLISHED

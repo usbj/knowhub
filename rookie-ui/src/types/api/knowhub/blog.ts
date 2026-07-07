@@ -70,7 +70,7 @@ export interface ReviewPayload {
 
 /**
  * 博客审核流水记录，与后端 ReviewLogVo 字段对齐。
- * action 取值见字典 blog_review_action（SUBMIT/APPROVE/REJECT/REVOKE/PUBLISH）。
+ * action 取值见字典 review_action（SUBMIT/APPROVE/REJECT/REVOKE/PUBLISH，博客+资源共用）。
  * operator 为操作人用户名快照，operatorNickname 由后端 join sys_user 带出便于直接展示。
  * role 为审核业务身份（AUTHOR作者/REVIEWER审核员/SYSTEM系统直通），按动作类型定非系统角色。
  */

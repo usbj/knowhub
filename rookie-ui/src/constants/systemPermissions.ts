@@ -77,4 +77,23 @@ export const SYSTEM_PERMISSION_KEYS = {
     delete: ['knowhub:file:delete'],
     info: ['knowhub:file:info'],
   },
+  // ---- 资源管理（资源推荐）----
+  // 权限键三段式 knowhub:resource:动作，与 sys_menu 中 knowhub:resource:* 行对齐。
+  // 资源分类管理独立菜单，权限键 knowhub:resource:category:动作。
+  resource: {
+    create: ['knowhub:resource:add'],
+    edit: ['knowhub:resource:edit'],
+    delete: ['knowhub:resource:delete'],
+    publish: ['knowhub:resource:publish'],
+    revoke: ['knowhub:resource:revoke'],
+    review: ['knowhub:resource:review'],
+    reviewLog: ['knowhub:resource:reviewLog'],
+    download: ['knowhub:resource:download'],
+    info: ['knowhub:resource:info'],
+  },
+  resourceCategory: {
+    create: ['knowhub:resource:category:add'],
+    edit: ['knowhub:resource:category:edit'],
+    delete: ['knowhub:resource:category:delete'],
+  },
 } as const

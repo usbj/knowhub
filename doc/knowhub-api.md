@@ -129,6 +129,19 @@
 
 **待用户人工验证**：① 开审核状态下发布文章 → 进 PENDING_REVIEW，Redis 出现 `rookie:framework:blog:review:pending-flag=1`。② 关审核开关，等 ≤5 分钟，遗留待审文章应全部变 PUBLISHED，`blog_review_log` 出现 PUBLISH/SYSTEM + advice="审核关闭后定时任务自动放行"，Redis flag 被清。③ 审核员在定时任务跑之前手动批了某篇（flag 仍在），下次定时任务扫到空表、清 flag，无副作用。
 
+### 2026-07-06 资源管理模块落地（资源 CRUD + 分类树 + 完整审核 + 互动 + 文件复用）
+
+资源管理模块（后台菜单名"资源管理"，前台展示端待做叫"资源推荐"）——用户分享对他人有用的文件/程序/文档/网站链接。本轮新增接口共 18 个：
+
+- 资源：`GET /resource/list`、`GET /resource/{resourceId}`、`POST /resource`、`PUT /resource`、`DELETE /resource/{resourceIds}`、`PUT /resource/publish/{resourceId}`、`PUT /resource/revoke/{resourceId}`、`PUT /resource/review`、`GET /resource/review-log/{resourceId}`、`PUT /resource/like/{resourceId}`、`PUT /resource/collect/{resourceId}`、`PUT /resource/rating/{resourceId}`、`GET /resource/download/{resourceId}`
+- 资源分类：`GET /resource-category/tree`、`GET /resource-category/{categoryId}`、`POST /resource-category`、`PUT /resource-category`、`DELETE /resource-category/{categoryId}`
+
+说明：资源分 FILE 文件 / LINK 链接两类。FILE 类复用文件存储模块（`businessType=RESOURCE_FILE`，PRIVATE/100MB/不限类型），通过 `file_object_id` 关联，后端在 add/edit 时调 `PUT /file/bind` 回填 `biz_ref_id`，删除资源时级联软删 file_object 行。审核流程复用博客那套（状态机+回避+流水表+对账任务），`ReviewAction` 枚举代码层复用，字典 `review_action`（dict_id=25，博客+资源共用）承接原 `blog_review_action` 的 5 个动作值。互动计数（点赞/收藏/评分）不冗余主表，走事实表聚合回填；下载数 `download_count` 仅 FILE 下载 +1（LINK 点击不计）。资源分类为自关联树，`resource_category_id=-1` 约定为"其他"（前端硬编码，删分类时挂载资源置 -1）。详见下方「资源管理模块」章节。
+
+**字典与菜单编号修正（2026-07-07）**：rookie 上游新增"字典数据管理"(menu 87-92)和"系统设置"(menu 93-99)两模块，且 `sys_config_value_type` 占了 dict_id=22，故原"blog_review_action 改名迁移"作废——改为新建 `review_action` 字典到 dict_id=25（数据 103-107）。资源菜单编号从 102 起（86 资源管理页已存在 + 102-111 资源管理按钮 + 112 资源分类页 + 113-116 分类按钮）。前端博客/资源审核历史 DictTag dictKey 已统一为 `review_action`。
+
+**配置**：审核开关 `knowhub.resource.review_enabled`（sys_config BOOLEAN，默认 false，`ResourceConfigReader.isReviewEnabled()` 读取）；对账间隔 `knowhub.resource.reconcile-interval-minutes`（application.yml，默认 5，@Scheduled fixedDelayString 读 yml 不读 sys_config）。
+
 ---
 
 ## 博客模块
@@ -711,3 +724,144 @@ Accept-Ranges: none
 **响应示例：** `{"code":200,"msg":"请求成功","data":true}`
 
 > 软删 `file_object(deleted=1)`，对象本体由 `FileGcTask` 定时 `DeleteObject` 后物理删元数据（异步，支持误删恢复窗口）。
+## 资源管理模块
+
+> 路径前缀：`/resource`、`/resource-category`（资源模块在 `com.knowhub` 命名空间，不套 `/sys`）。
+> 鉴权：写/审核/发布/撤回/删除/下载类接口挂 `@PreAuthorize('knowhub:resource:*' / 'knowhub:resource:category:*')`，对应 `sys_menu` 中权限键；点赞/收藏/评分仅要求登录（Token 头已自动注入）。
+> 后台菜单名"资源管理"，前台展示端待做叫"资源推荐"。
+> 资源分两类：FILE 文件（走文件存储模块上传，关联 `file_object_id`）/ LINK 链接（存 `link_url`）。
+> 审核流程复用博客那套（状态机+回避+流水表+对账任务），开关 `knowhub.resource.review_enabled`（sys_config，`ResourceConfigReader` 读取）。
+> 互动计数（点赞/收藏/评分）不冗余主表，走事实表聚合回填；下载数 `download_count` 仅 FILE 下载 +1。
+> 资源分类为自关联树，`resource_category_id=-1` 约定为"其他"（前端硬编码）。
+
+### 资源接口
+
+#### `GET /resource/list` — 资源列表（分页）
+
+**权限**：`knowhub:resource:quarry`
+
+**查询参数**（query string）：`pageNum`/`pageSize`（分页）、`title`（模糊）、`resourceType`（FILE/LINK）、`resourceCategoryId`（-1=其他）、`status`（DRAFT/PUBLISHED/REVOKED/PENDING_REVIEW/REJECTED）、`reviewStatus`（NONE/PENDING/APPROVED/REJECTED）、`createBy`（作者用户名）、`beginTime`/`endTime`（创建时间区间）
+
+**响应**：`Result<PageInfo<ResourceVo>>`，`ResourceVo` 字段：resourceId/authorId/resourceType/resourceCategoryId/categoryName(join带出,-1=其他时null)/title/summary/description(列表不带,详情才有)/fileObjectId/originalName/contentLength/contentType(FILE类型join带出)/linkUrl/linkIcon/status/reviewStatus/publishTime/downloadCount/likeCount/collectCount/ratingAvg/ratingCount(互动计数聚合回填)/createBy/authorNickname(join带出)/createTime/updateBy/updateTime。列表不带 hasLiked/hasCollected/myScore/downloadUrl（仅详情回填）。
+
+#### `GET /resource/{resourceId}` — 资源详情
+
+**权限**：`knowhub:resource:info`
+
+**响应**：`Result<ResourceVo>`，比列表多回填：description(大字段)/hasLiked/hasCollected/myScore(当前用户态)/downloadUrl(FILE类型按访问模式回填,中转/file/proxy/{objectId}或预签名)/originalName/contentLength/contentType。
+
+#### `POST /resource` — 新增资源（草稿）
+
+**权限**：`knowhub:resource:add` | **请求体**：`ResourceVo`（resourceType 必填；FILE 须 fileObjectId；LINK 须 linkUrl；title 必填）
+
+**逻辑**：新建即 DRAFT，author_id=当前userId，resourceCategoryId 缺省 -1。FILE 类落库后调 `PUT /file/bind` 回填 file_object.biz_ref_id=resourceId。
+
+**响应**：`Result<Boolean>`
+
+#### `PUT /resource` — 编辑资源
+
+**权限**：`knowhub:resource:edit` | **请求体**：`ResourceVo`（resourceId 必填）
+
+**状态机前置**：仅 DRAFT/REJECTED/REVOKED 可编辑；PUBLISHED 禁止编辑（须先撤回）；PENDING_REVIEW 禁止编辑（审核中）。校验归属（作者本人或管理员）。
+
+**响应**：`Result<Boolean>`
+
+#### `DELETE /resource/{resourceIds}` — 批量删除资源
+
+**权限**：`knowhub:resource:delete` | **路径参数**：`resourceIds` 逗号分隔
+
+**逻辑**：软删 resource；FILE 类级联软删关联 file_object 行（对象本体由 FileGcTask 异步清）。
+
+**响应**：`Result<Boolean>`
+
+#### `PUT /resource/publish/{resourceId}` — 发布资源
+
+**权限**：`knowhub:resource:publish` | **状态机前置**：仅 DRAFT/REJECTED/REVOKED 可发布
+
+**逻辑**：读 `ResourceConfigReader.isReviewEnabled()`——开 → status=PENDING_REVIEW+reviewStatus=PENDING+写流水 SUBMIT/AUTHOR+SET Redis标记 `resource:review:pending-flag`；关 → status=PUBLISHED+publishTime=now+reviewStatus=NONE+写流水 PUBLISH/SYSTEM。校验归属。
+
+**响应**：`Result<Boolean>`
+
+#### `PUT /resource/revoke/{resourceId}` — 撤回资源
+
+**权限**：`knowhub:resource:revoke` | **状态机前置**：仅 PUBLISHED 可撤回
+
+**逻辑**：status=REVOKED+reviewStatus=NONE+写流水 REVOKE/AUTHOR。校验归属。
+
+**响应**：`Result<Boolean>`
+
+#### `PUT /resource/review` — 审核资源
+
+**权限**：`knowhub:resource:review` | **请求体**：`ResourceReviewVo`（resourceId/pass/advice；pass=false 时 advice 必填）
+
+**状态机前置**：仅 PENDING_REVIEW 可审核。**审核员回避**：当前 userId ≠ author_id（作者不能审自己）。主表不存 reviewer/reviewTime/reviewAdvice（走流水表）。
+
+**逻辑**：pass=true → status=PUBLISHED+publishTime=now+reviewStatus=APPROVED+写流水 APPROVE/REVIEWER；pass=false → status=REJECTED+reviewStatus=REJECTED+写流水 REJECT/REVIEWER。
+
+**响应**：`Result<Boolean>`
+
+#### `GET /resource/review-log/{resourceId}` — 资源审核历史
+
+**权限**：`knowhub:resource:reviewLog`
+
+**响应**：`Result<List<ResourceReviewLogVo>>`，按动作时间升序。字段：reviewLogId/resourceId/action(字典 review_action,SUBMIT/APPROVE/REJECT/REVOKE/PUBLISH)/operatorId/operator/operatorNickname(join sys_user带出)/role(AUTHOR/REVIEWER/SYSTEM)/advice/createTime。
+
+#### `PUT /resource/like/{resourceId}?liked=true|false` — 点赞/取消点赞
+
+**请求参数**：`liked`（true 点赞 / false 取消）。登录即可，无 @PreAuthorize。
+
+**逻辑**：toggle，事实表 resource_like insert/delete（UNIQUE(resource_id,user_id) 幂等）。计数不冗余主表，读时聚合 COUNT。
+
+**响应**：`Result<Boolean>`
+
+#### `PUT /resource/collect/{resourceId}?collected=true|false` — 收藏/取消收藏
+
+同点赞结构，事实表 resource_collect。
+
+#### `PUT /resource/rating/{resourceId}?score=1..5` — 评分
+
+**请求参数**：`score`（1-5，越界报错）。登录即可。
+
+**逻辑**：upsert 事实表 resource_rating（UNIQUE 支撑，存在则改分）。评分均值/计数走聚合读时算（详情/列表 fillInteractCounts 回填 ratingAvg/ratingCount）。
+
+**响应**：`Result<Boolean>`
+
+#### `GET /resource/download/{resourceId}` — 获取 FILE 资源下载链接
+
+**权限**：`knowhub:resource:download`
+
+**逻辑**：校验 PUBLISHED + FILE 类型 + fileObjectId 非空；`download_count+1`（原子自增）；调 `FileService.getDownloadUrl(fileObjectId)` 取下载链接（中转模式 /file/proxy/{objectId}；直链模式带 attachment;filename 预签名）。LINK 类型不走此接口（前端直接用 linkUrl 外链打开）。
+
+**响应**：`Result<String>`（下载链接字符串）
+
+### 资源分类接口
+
+#### `GET /resource-category/tree` — 资源分类树
+
+**权限**：`knowhub:resource:category:quarry`
+
+**响应**：`Result<List<ResourceCategoryTreeVo>>`，全量启用分类组树（parent_id=0 顶级，按 parent_id/sort 排序）。字段：categoryId/parentId/categoryName/sort/status/children。前端约定 -1=其他（不在树内，前端硬编码加"其他"虚拟节点）。
+
+#### `GET /resource-category/{categoryId}` — 分类详情
+
+**权限**：`knowhub:resource:category:quarry` | **响应**：`Result<ResourceCategoryVo>`
+
+#### `POST /resource-category` — 新增分类
+
+**权限**：`knowhub:resource:category:add` | **请求体**：`ResourceCategoryVo`（categoryName 必填，parentId 缺省 0=顶级，sort 缺省 0）
+
+**响应**：`Result<Boolean>`
+
+#### `PUT /resource-category` — 编辑分类
+
+**权限**：`knowhub:resource:category:edit` | **请求体**：`ResourceCategoryVo`（categoryId 必填）
+
+**响应**：`Result<Boolean>`
+
+#### `DELETE /resource-category/{categoryId}` — 删除分类
+
+**权限**：`knowhub:resource:category:delete`
+
+**逻辑**：有子分类拒绝删（提示"先处理子分类"）；无子分类则事务内 `UPDATE resource SET resource_category_id=-1 WHERE resource_category_id=该分类`（挂载资源归"其他"）+ 软删分类行。
+
+**响应**：`Result<Boolean>`

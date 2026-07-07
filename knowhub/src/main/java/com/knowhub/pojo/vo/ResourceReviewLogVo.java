@@ -1,18 +1,18 @@
 package com.knowhub.pojo.vo;
 
 /**
- * 博客审核流水对外 VO，供审核历史接口出参。
- * 时间字段沿用项目约定用 String（BeanUtil 复制 Date→String）。
- * operatorNickname 由后端 join sys_user 带出，供前端直接展示操作人昵称，
- * 不必前端再二次查询；operator(username) 也保留作账号快照。
+ * 资源审核流水对外 VO，供审核历史接口出参。
+ * 与博客 ReviewLogVo 结构同（字段名 resource 化），时间字段沿用项目约定用 String
+ * （BeanUtil 复制 Date→String）。operatorNickname 由后端 join sys_user 带出，
+ * 供前端直接展示操作人昵称，不必前端再二次查询；operator(username) 也保留作账号快照。
  */
-public class ReviewLogVo {
+public class ResourceReviewLogVo {
 
     private Long reviewLogId;
 
-    private Long blogId;
+    private Long resourceId;
 
-    /** 审核动作 code：SUBMIT/APPROVE/REJECT/REVOKE/PUBLISH（见字典 review_action，博客+资源共用） */
+    /** 审核动作 code：SUBMIT/APPROVE/REJECT/REVOKE/PUBLISH（见字典 review_action） */
     private String action;
 
     private Long operatorId;
@@ -30,7 +30,7 @@ public class ReviewLogVo {
 
     private String createTime;
 
-    public ReviewLogVo() {
+    public ResourceReviewLogVo() {
     }
 
     public Long getReviewLogId() {
@@ -41,12 +41,12 @@ public class ReviewLogVo {
         this.reviewLogId = reviewLogId;
     }
 
-    public Long getBlogId() {
-        return blogId;
+    public Long getResourceId() {
+        return resourceId;
     }
 
-    public void setBlogId(Long blogId) {
-        this.blogId = blogId;
+    public void setResourceId(Long resourceId) {
+        this.resourceId = resourceId;
     }
 
     public String getAction() {
@@ -107,9 +107,9 @@ public class ReviewLogVo {
 
     @Override
     public String toString() {
-        return "ReviewLogVo{" +
+        return "ResourceReviewLogVo{" +
                 "reviewLogId=" + reviewLogId +
-                ", blogId=" + blogId +
+                ", resourceId=" + resourceId +
                 ", action='" + action + '\'' +
                 ", operator='" + operator + '\'' +
                 ", operatorNickname='" + operatorNickname + '\'' +

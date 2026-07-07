@@ -80,3 +80,8 @@ knowhub:
   blog:
     # 审核对账定时任务扫描间隔（分钟）：审核开关关闭后，扫描遗留待审文章并放行的频率
     reconcile-interval-minutes: 5
+  resource:
+    # 资源审核对账定时任务扫描间隔（分钟）：审核开关关闭后，扫描遗留待审资源并放行的频率
+    # 审核开关本身走 sys_config(knowhub.resource.review_enabled)，可后台改即时生效；
+    # 对账间隔走 yml（@Scheduled 注解在 Bean 创建时解析，只能读 yml/环境变量），改需重启
+    reconcile-interval-minutes: 5

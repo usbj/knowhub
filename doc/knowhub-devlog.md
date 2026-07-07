@@ -567,3 +567,77 @@ rookie 层 commit `e03af35` 新增了独立的系统设置模块（`SysConfig`/`
 
 **待用户人工验证**：① 开审核状态下发布文章 → 进 PENDING_REVIEW，Redis 出现 `rookie:framework:blog:review:pending-flag=1`；② 关审核开关，等 ≤5 分钟，遗留待审文章应全部变 PUBLISHED，流水出现 PUBLISH/SYSTEM + advice="审核关闭后定时任务自动放行"，Redis flag 被清；③ 审核员在定时任务跑之前手动批了某篇，flag 仍在，下次定时任务扫到空表、清 flag，无副作用。
 
+
+### 2026-07-06 资源管理模块落地（资源 CRUD + 分类树 + 完整审核 + 互动 + 文件复用）
+
+资源管理模块（后台菜单名"资源管理"，前台展示端待做叫"资源推荐"）——用户分享对他人有用的文件/程序/文档/网站链接。本轮一次性落地后端 + 前端管理台（前台待做）。设计决策详见 记忆 knowhub-resource-module。
+
+**核心复用**：①文件载体复用文件模块全部 API（`businessType=RESOURCE_FILE`，已预留 PRIVATE/100MB/不限类型），FILE 类资源 `file_object_id` 关联 file_object 行，删除资源时级联软删文件行（FileGcTask 异步清对象）；②审核范式复用博客那套（状态机+回避+流水表+对账任务），`ReviewAction` 枚举代码层复用，字典 `blog_review_action` 改名通用化为 `review_action`（博客+资源共用）。
+
+**关键设计决策（用户拍板）**：
+- 资源类型 `resource_type`：FILE 文件 / LINK 链接二分。程序/文档是 FILE 的子分类（走分类树区分）。FILE 走 `file_object_id`，LINK 走 `link_url`+`link_icon`（icon 首版运行时拼 favicon 不落库）。扁平单表不做多态子类。
+- 分类 `resource_category` 自关联树（parent_id），资源挂一个 `resource_category_id`。**字段名写全 `resource_category_id` 不写 `category_id`**（防歧义）。**NOT NULL DEFAULT -1，-1=其他**（前端硬编码约定，不查分类表）。删分类时事务内把挂载资源置 -1 后删分类行；有子分类拒绝删（提示先处理子分类）。
+- **审核意见不在主表**（用户纠正：有流水表了不冗余主表）。主表只留 `status`+`review_status`+`publish_time`，去掉 reviewer/review_time/review_advice（在 `resource_review_log` 流水表）。比博客主表更干净。
+- **互动计数不冗余主表**（用户质疑线程安全+读写压力，成立）。`like_count`/`collect_count`/`rating_avg`/`rating_count` 全部走事实表 `resource_like`/`resource_collect`/`resource_rating` 聚合，主表零写无热点行。事实表 `UNIQUE(resource_id,user_id)` 索引，行分散。读时 `COUNT(*)`/`AVG(score)` 聚合，列表批量用 `WHERE resource_id IN(...) GROUP BY resource_id`。容错：丢缓存可从事实表完整重算。
+- **下载数** `download_count` 仅 FILE 下载 +1 主表原子自增，**LINK 点击不计**（后续再统一决定观看数/点击数）。首版**不做 view_count**。
+- **互动范围**：点赞+收藏+评分（1-5星），**不做评论**（首版排除）。
+
+**编号续编**（接 review-log 之后）：menu_id 从 86、dict_id 从 23、dict_data_id 从 96 起。建表脚本 `sql/knowhub-resource.sql`，不动既有 SQL。
+
+**SQL（sql/knowhub-resource.sql，新建）**
+- `resource` 主表（含 author_id/resource_type/resource_category_id(-1=其他)/title/summary/description/file_object_id/link_url/link_icon/status/review_status/publish_time/download_count + 审计列 + deleted）。索引：author/category/type/status/publish_time/deleted。
+- `resource_category` 自关联树（category_id/parent_id(0=顶级)/category_name/sort/status + 审计 + deleted），idx_rc_parent(parent_id,sort)。
+- `resource_review_log` 审核流水（与 blog_review_log 完全同构：review_log_id/resource_id/action/operator_id/operator/role/advice/create_time + idx_rrl_res_time + idx_rrl_operator_time）。
+- `resource_like`/`resource_collect`/`resource_rating` 互动事实表（均 UNIQUE(resource_id,user_id)，rating 带 score + update_time 支撑 upsert 改分）。
+- `sys_menu` 16 行：资源管理页(86)+按钮 quarry/info/add/edit/delete/publish/revoke/review/reviewLog/download(87-96)；资源分类页(97)+按钮 quarry/add/edit/delete(98-101)。
+- `sys_dict` 2 新：resource_type(23,FILE/LINK)、resource_status(24,DRAFT/PUBLISHED/REVOKED/PENDING_REVIEW/REJECTED)；review_status 复用已有。字典改名迁移：`UPDATE sys_dict/sys_dict_data SET dict_key='review_action' WHERE dict_key='blog_review_action'`（dict_id=22 通用化，博客+资源共用）。
+- `sys_config` 1 新：knowhub.resource.review_enabled(BOOLEAN,默认false,is_system=1)。**对账间隔 knowhub.resource.reconcile-interval-minutes 走 application.yml 不走 sys_config**（@Scheduled fixedDelayString 在 Bean 创建时解析，只能读 yml/环境变量，读不了 sys_config Redis 缓存，与博客对账间隔同套路）。
+
+**配置（rookie-admin/application.yml 追加）**
+- `knowhub.resource.reconcile-interval-minutes: 5`（资源审核对账任务扫描间隔，分钟，默认 5）。
+
+**后端（knowhub 模块，全部 com.knowhub.* 同包，不新建 Maven 模块）**
+- `enums/ResourceType.java`（FILE/LINK）、`enums/ResourceStatus.java`（DRAFT/PUBLISHED/REVOKED/PENDING_REVIEW/REJECTED，值同 BlogStatus 但独立枚举避免资源加状态改到博客）。ReviewAction 枚举代码层复用（字典独立）。
+- `pojo/entity/`：Resource(extends BaseEntity,含 authorNickname/categoryName/originalName/contentLength/contentType 非表展示字段供 join 带出)/ResourceCategory(extends BaseEntity)/ResourceReviewLog(不继承,流水无审计)/ResourceLike/ResourceCollect/ResourceRating(带 score+updateTime)。
+- `pojo/vo/`：ResourceVo(含互动计数 likeCount/collectCount/ratingAvg/ratingCount + 当前用户态 hasLiked/hasCollected/myScore + downloadUrl + authorNickname + categoryName 等回填字段)/ResourceQuarry/ResourceReviewVo/ResourceReviewLogVo/ResourceCategoryVo/ResourceCategoryTreeVo(带 children)。
+- `mapper/`：ResourceMapper(列表/详情 join sys_user+resource_category+file_object 带出展示字段,动态 insert/update,incrDownloadCount,listPendingReviewIds,countByCategoryId,resetCategoryToOther,批量聚合 countLikesByResourceIds/countCollectsByResourceIds/ratingStatsByResourceIds)+ResourceReviewLogMapper+ResourceLikeMapper+ResourceCollectMapper+ResourceRatingMapper+ResourceCategoryMapper(树全量查+countChildren)。XML 放 resources/mapper/resource/。
+- `service/ResourceService.java`+`impl/ResourceServiceImpl.java`：CRUD+publish(状态机+开关+写流水+Redis标记)+revoke+review(状态机+回避+写流水)+reconcilePendingReview(逐条放行+PUBLISH/SYSTEM 流水)+toggleLike/toggleCollect(事实表 insert/delete)+rateResource(upsert 事实表)+downloadResource(校验PUBLISHED+FILE+incrDownloadCount+取链接)。互动计数 fillInteractCounts 批量聚合回填，展示字段由 join+copyPageInfo 自动带出。FILE 类 add/edit 时 bindBizRef 回填 file_object.biz_ref_id，delete 时级联软删 file_object。
+- `service/ResourceCategoryService.java`+`impl/ResourceCategoryServiceImpl.java`：categoryTree(扁平转树)+CRUD+delete(有子分类拒绝,无子分类 resetCategoryToOther 后软删)。
+- `controller/ResourceController.java`(/resource,list/info/add/edit/delete/publish/revoke/review/review-log/like/collect/rating/download)+`ResourceCategoryController.java`(/resource-category,tree/info/add/edit/delete)。
+- `config/ResourceConfigReader.java`：isReviewEnabled() 走 SysConfigUtil 读 knowhub.resource.review_enabled（同 BlogConfigReader）。
+- `task/ResourceReviewReconcileTask.java`：@Scheduled 对账任务（照搬 BlogReviewReconcileTask，fixedDelayString 用 SpEL 读 yml knowhub.resource.reconcile-interval-minutes）。
+
+**前端（rookie-ui knowhub 二开）**
+- `api/knowhub/resource.ts`+`resource-category.ts`：资源/分类全部接口。
+- `types/api/knowhub/resource.ts`：ResourceRecord/ResourceListQuery/ResourceReviewPayload/ResourceReviewLogRecord/ResourceCategoryRecord/ResourceCategoryTreeNode。
+- `constants/systemPermissions.ts`：加 resource(resource/create/edit/delete/publish/revoke/review/reviewLog/download/info)+resourceCategory(create/edit/delete) 两组。
+- `views/knowhub/resource/config.ts`：查询/表格/表单字段 schema，resourceType/status/reviewStatus 走字典，resourceCategoryId 用 custom 插槽(ElTreeSelect 含"其他"虚拟节点 -1)，fileObjectId 用 custom 插槽(ResourceFileUploader)，linkUrl 走 text 按 resourceType 动态切 formVisible。
+- `views/knowhub/resource/index.vue`：资源管理列表页（SharedTablePanel+SearchFilterPanel，按 resourceType 动态切 fileObjectId/linkUrl 显示，分类树 ElTreeSelect 含"其他"节点，发布/撤回/审核/详情/删除行操作）。
+- `views/knowhub/resource/components/ResourceFileUploader.vue`：FILE 上传组件（presignedUploadFlow businessType=RESOURCE_FILE access=PRIVATE，回填 objectId 不回填 publicUrl，PRIVATE 取用走下载接口）。
+- `views/knowhub/resource/components/ResourceDetailDialog.vue`：详情弹窗（展示元信息+文件/链接+说明 MarkdownPreview+互动计数+审核历史折叠区 DictTag 渲染 review_action+FILE 下载按钮/LINK 打开按钮）。
+- `views/knowhub/resource/components/ResourceReviewDialog.vue`：审核弹窗（展示资源标题/类型/文件或链接/说明，通过/驳回+advice）。
+- `views/knowhub/resource/category/index.vue`：分类管理页（el-tree 增删改，节点 hover 显操作按钮，删除有子分类后端拒绝）。
+
+**字典改名影响修复（博客前端）**：blog_review_action → review_action 通用化后，改 `BlogDetailDialog.vue` DictTag dictKey + 文件头注释、`blog.ts` 注释、后端 `ReviewAction.java`/`ReviewLogVo.java` 注释（共 5 处，2 后端注释+3 前端）。
+
+**遵守约定**：未修改任何 `rookie-*` 模块代码/配置（application.yml 是 rookie-admin 的，仅追加 knowhub.resource 配置段，属已解除禁令的追加）；新模块产物全在 knowhub 模块内 + rookie-ui knowhub 二开目录；不新建 Maven 模块（com.knowhub.* 同包）；字典改名迁移幂等（UPDATE 重跑不冲突）；ReviewAction 枚举代码层复用不动值，仅字典 key 通用化。
+
+**校验**：`mvn -pl knowhub -am compile` BUILD SUCCESS；`rookie-ui npm run type-check` 通过（无错误输出）。
+
+**待用户人工验证**：① 跑 sql/knowhub-resource.sql 后，6 张表+16 菜单+2 新字典+1 sys_config 项到位，dict_id=22 的 dict_key 变 review_action；② 资源管理页：新增 FILE 资源（上传文件→填标题/分类→保存草稿→发布），新增 LINK 资源（输 URL→保存→发布）；③ 开审核开关后发布→进 PENDING_REVIEW，审核员（非作者）在列表点审核→通过/驳回，驳回需 advice；④ 关审核开关后发布→直接 PUBLISHED，遗留待审资源 ≤5 分钟由对账任务放行；⑤ 详情弹窗展示互动计数+审核历史时间线，FILE 已发布资源可下载；⑥ 分类管理页增删改，删除有子分类被拒，删除有资源的分类后该资源归"其他"(-1)；⑦ 博客审核历史 DictTag 仍正常渲染中文（字典改名后 review_action）。
+
+### 2026-07-07 资源模块菜单/字典编号修正（rookie 上游新增模块导致 ID 撞车）
+
+资源模块 SQL 落地时发现编号与实际数据库冲突：rookie 上游中途新增了"字典数据管理"(menu 87-92)和"系统设置"(menu 93-99)两个模块，且 `sys_config_value_type` 字典占了 dict_id=22 + dict_data 91-94，与原 `blog_review_action`(dict_id=22 + dict_data 91-95)撞车。原 SQL 假设 86 起空闲、dict_id=22 可改名迁移，全部失效。
+
+**数据库实际状态排查**：86(资源管理页)已先行落入库；87-99 被字典数据/系统设置占用；100-101 被误插(资源分类按钮 parent_id 错指 97=系统设置修改)；dict_id=22 字典头是 sys_config_value_type，dict_data 95 成孤儿(review_action/PUBLISH 挂在 22 下)。blog_review_action 字典头已被覆盖不存在。
+
+**修正**（`sql/knowhub-resource.sql` 重写菜单/字典段）：
+- 清理误插：`DELETE FROM sys_menu WHERE menu_id IN (100,101)`（parent_id 指向系统设置修改，完全错误）；`DELETE FROM sys_dict_data WHERE dict_data_id=95`（孤儿数据）。
+- 菜单编号改从 102 起：86(资源管理页,已存在,INSERT IGNORE 跳过) + 102-111(资源管理 10 按钮,parent=86) + 112(资源分类页) + 113-116(资源分类 4 按钮,parent=112)。共 16 行，parent_id 全正确。
+- 字典：取消"blog_review_action 改名迁移"（原字典已不存在且 22 被占不能动），改为新建 `review_action` 字典到 dict_id=25 + dict_data 103-107（SUBMIT/APPROVE/REJECT/REVOKE/PUBLISH 5 项，博客+资源共用）。resource_type(23)/resource_status(24) 已正确落入保留。
+- dict_id=22 完好无损（sys_config_value_type 4 条数据齐全）。
+
+**校验**：执行修正后 SQL，数据库验证通过——6 表 + 16 菜单(parent 正确) + 3 字典(23/24/25) + review_action 5 项(103-107) + sys_config review_enabled=false + dict_id=22 未破坏。后端编译/前端 type-check 不受影响（未改 Java/TS 代码，仅改 SQL）。
+
+**教训**：knowhub 模块编号续编不能只看 knowhub 自己的 SQL 文件，必须查实际数据库 `SELECT MAX(menu_id)/MAX(dict_id)/MAX(dict_data_id)`，因为 rookie 上游可能新增模块占用 ID。后续新增模块前先查数据库实际占用再定编号。

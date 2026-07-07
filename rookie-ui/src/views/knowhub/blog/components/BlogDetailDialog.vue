@@ -9,7 +9,7 @@
   - 状态/审核状态走字典标签系统渲染为带色 ElTag；
   - 封面图 coverUrl 为 /file/public/{id} 相对路径，<img> 直引靠 /file 代理到后端中转回写字节流。
   - 审核历史折叠区：弹窗打开时按 blogId 拉取审核流水（getReviewLogApi），按时间线展示
-    动作(DictTag 渲染 blog_review_action)/操作人昵称/时间/意见；无历史时折叠区不展示。
+    动作(DictTag 渲染 review_action)/操作人昵称/时间/意见；无历史时折叠区不展示。
   - 主题适配：正文区、元信息条、标签、时间线均用 base.css 的 --rookie-* 变量，深浅模式自动跟随。
 -->
 <script setup lang="ts">
@@ -124,7 +124,7 @@ watch(
           <ul class="blog-detail__timeline">
             <li v-for="log in reviewLogs" :key="log.reviewLogId" class="blog-detail__timeline-item">
               <div class="blog-detail__timeline-head">
-                <DictTag dict-key="blog_review_action" :value="log.action" />
+                <DictTag dict-key="review_action" :value="log.action" />
                 <span class="blog-detail__timeline-operator">{{ log.operatorNickname || log.operator }}</span>
                 <span class="blog-detail__timeline-time">{{ formatTime(log.createTime) }}</span>
               </div>
