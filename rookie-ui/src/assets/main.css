@@ -87,9 +87,9 @@
   background: var(--rookie-table-stripe-bg) !important;
 }
 
-.el-table .el-table__body tr:hover > td.el-table__cell {
-  background: var(--rookie-hover-bg) !important;
-}
+/*.el-table .el-table__body tr:hover > td.el-table__cell {*/
+/*  background: var(--rookie-hover-bg) !important;*/
+/*}*/
 
 .el-table td.el-table__cell,
 .el-table th.el-table__cell,
