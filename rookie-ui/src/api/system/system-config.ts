@@ -2,7 +2,7 @@
  * 文件作用：
  * 封装系统设置（system_config）模块的后端接口请求方法，
  * 对齐后端 SysConfigController（/sys/system-config），供页面消费。
- * 包含分页查询、详情、新增、编辑、删除与刷新缓存六个接口。
+ * 包含分页查询、详情、新增、编辑、删除、刷新缓存与全量启用项读取七个接口。
  */
 import { del, get, getPage, post, put } from '@/utils/http'
 import type { ApiResult } from '@/types/api/system/common'
@@ -39,3 +39,10 @@ export const deleteSysConfigApi = (configId: number) =>
  */
 export const refreshSysConfigCacheApi = () =>
   post<ApiResult<boolean>>('/sys/system-config/refresh')
+
+/**
+ * 全量查询启用系统设置项，供前端启动加载消费。
+ * 公共读取接口，仅需登录即可，对标字典 GET /sys/dict/data/type/{dictKey}。
+ */
+export const getSysConfigAllApi = () =>
+  get<ApiResult<SysConfigRecord[]>>('/sys/system-config/list-all')

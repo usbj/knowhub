@@ -43,14 +43,59 @@ export const sanitizeDisplayText = (value: string, preserveLineBreaks = false): 
 
 /**
  * 方法效果：
- * 将日期值格式化为统一的本地时间字符串。
+ * 将日期值格式化为本地时间字符串，并按数据完整度智能截断：
+ * - 时分秒全为 0（即该字段只记录到日）时，只返回 `YYYY-MM-DD`；
+ * - 否则返回完整的 `YYYY-MM-DD HH:mm:ss`。
+ * 这样后端统一全量输出时间、前端按数据实际情况展示，既不丢失时间数据，
+ * 也不会把「只记录到日」的字段显示成带 `00:00:00` 的长串。
  * 参数：
  * - `value`：可被 `Date` 识别的日期值。
  * - `fallback`：无效日期时的兜底展示文案。
  * 返回值：
- * - `YYYY-MM-DD HH:mm:ss` 格式字符串；若无效则返回 fallback。
+ * - `YYYY-MM-DD` 或 `YYYY-MM-DD HH:mm:ss` 格式字符串；若无效则返回 fallback。
  */
 export const formatDateTime = (value: unknown, fallback = DEFAULT_FALLBACK): string => {
+  if (isEmptyDisplayValue(value)) {
+    return fallback
+  }
+
+  const normalizedValue =
+    typeof value === 'string'
+      ? value.trim().replace('T', ' ').replace(/\.\d+(?=(Z|[+-]\d{2}:\d{2})?$)/, '')
+      : value
+
+  const date = normalizedValue instanceof Date ? normalizedValue : new Date(String(normalizedValue))
+
+  if (Number.isNaN(date.getTime())) {
+    return fallback
+  }
+
+  const pad = (part: number) => String(part).padStart(2, '0')
+  const datePart = [
+    date.getFullYear(),
+    pad(date.getMonth() + 1),
+    pad(date.getDate()),
+  ].join('-')
+
+  // 时分秒全为 0 视为「只记录到日」，不再拼接时间部分，避免显示 00:00:00
+  if (date.getHours() === 0 && date.getMinutes() === 0 && date.getSeconds() === 0) {
+    return datePart
+  }
+
+  return `${datePart} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`
+}
+
+/**
+ * 方法效果：
+ * 将日期值强制格式化为只含年月日的 `YYYY-MM-DD` 字符串，
+ * 适用于「只需要展示年月日」的字段（如生日、有效期等），无论时间部分是否有值都丢弃。
+ * 参数：
+ * - `value`：可被 `Date` 识别的日期值。
+ * - `fallback`：无效日期时的兜底展示文案。
+ * 返回值：
+ * - `YYYY-MM-DD` 格式字符串；若无效则返回 fallback。
+ */
+export const formatDate = (value: unknown, fallback = DEFAULT_FALLBACK): string => {
   if (isEmptyDisplayValue(value)) {
     return fallback
   }
@@ -72,7 +117,7 @@ export const formatDateTime = (value: unknown, fallback = DEFAULT_FALLBACK): str
     date.getFullYear(),
     pad(date.getMonth() + 1),
     pad(date.getDate()),
-  ].join('-') + ` ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`
+  ].join('-')
 }
 
 /**

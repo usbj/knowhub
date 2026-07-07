@@ -10,6 +10,23 @@
 
 ---
 
+## 2026-07-07
+### 16:28 — 前端系统设置加载 + 表格 fixed 列 hover 重叠修复 + 时间格式化全局处理
+
+三件事：① 前端系统设置全量加载（对标字典 store，启动拉取启用项到内存，页面按 key 读）；② 公共表格列横向溢出 + fixed 操作列时 row hover 被遮挡列内容透出重叠，CSS 修复让固定列完全遮挡；③ 后端 Jackson 全局把 Date 序列化为 yyyy-MM-dd HH:mm:ss（全量保留时间数据），前端 formatDateTime 智能截断（时分秒全 0 只展示年月日）并新增 formatDate 强制只年月日。
+
+- `rookie-system/src/main/java/com/rookie/system/service/SysConfigService.java` — 新增 listAllEnabledSysConfig() 方法（返回全部启用设置项 VO 列表，供前端启动加载）
+- `rookie-system/src/main/java/com/rookie/system/service/impl/SysConfigServiceImpl.java` — 实现 listAllEnabledSysConfig，调 getAllSysConfig 复用 toConfigVoList 转换
+- `rookie-system/src/main/java/com/rookie/system/controller/SysConfigController.java` — 新增 GET /sys/system-config/list-all 接口，不加 @PreAuthorize（公共读取，需登录即可，对标字典 /type/{dictKey}），不加 @Log
+- `rookie-admin/src/main/resources/application.yml` — spring.jackson 配置 date-format: yyyy-MM-dd HH:mm:ss + time-zone: GMT+8，全局 Date 序列化统一格式，避免前端拿到 ISO-8601 原始字符串未格式化
+- `rookie-ui/src/api/system/system-config.ts` — 追加 getSysConfigAllApi，调 GET /sys/system-config/list-all
+- `rookie-ui/src/stores/system-config.ts` — 新建，对标 dict store。defineStore('system-config')，configMap 按 configKey 索引、initialized/loading、localStorage 持久化（key rookie-system-config-cache）、initializeSysConfigs(force) 全量拉取、getSysConfig(key)、clearSysConfigCache()；与字典区别：体量小启动加载一次，不按 key 懒加载
+- `rookie-ui/src/composables/useSysConfig.ts` — 新建，对标 useDict。getString/getBoolean/getNumber/getObject/getList + resolveSysConfig，按 valueType 转换，记录不存在/停用/转换失败回落 defaultValue；非响应式直接返回（对标 resolveDictLabel）
+- `rookie-ui/src/stores/user.ts` — logout() 追加 sysConfigStore.clearSysConfigCache()，与 dictStore 清理同处
+- `rookie-ui/src/router/index.ts` — 守卫首次加载段（动态路由注册后）追加 sysConfigStore.initializeSysConfigs()，非首次加载分支追加 if(!initialized) 兜底，与 dict 接入平行
+- `rookie-ui/src/assets/main.css` — el-table fixed 列 hover 重叠修复：给 .el-table__fixed-right/__fixed-left 容器提 z-index:2，其单元格本体/hover/条纹行设实色背景（card-bg/hover-bg/stripe-bg），确保横向滚动后固定列完全遮挡后方滚走内容，不再透出与操作按钮重叠
+- `rookie-ui/src/utils/format.ts` — formatDateTime 智能截断：时分秒全 0 时只返回 yyyy-MM-dd，否则完整 yyyy-MM-dd HH:mm:ss；新增 formatDate 强制只返回 yyyy-MM-dd（供只需要年月日的字段）；formatDisplayValue 内部 Date 走 formatDateTime 自动受益
+
 ## 2026-07-03
 ### 18:27 — 系统设置（system_config）模块后端 + 前端 + SQL 全量落地
 

@@ -135,6 +135,13 @@ public class SysConfigServiceImpl implements SysConfigService {
         return true;
     }
 
+    @Override
+    public List<SysConfigVo> listAllEnabledSysConfig() {
+        // 全量启用项供前端启动加载，复用 getAllSysConfig 与现有 VO 转换逻辑
+        List<SysConfig> all = sysConfigMapper.getAllSysConfig();
+        return toConfigVoList(all);
+    }
+
     /**
      * 从 SecurityContext 取当前登录用户信息，用于填充审计字段 createBy/updateBy。
      * 与 {@code SysDictDataServiceImpl} 的取值方式一致。
