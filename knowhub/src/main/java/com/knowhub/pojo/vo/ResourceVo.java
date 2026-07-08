@@ -1,8 +1,11 @@
 package com.knowhub.pojo.vo;
 
+import java.util.Date;
+
 /**
  * 资源对外 VO，供 Controller 入参/出参。
- * 时间字段沿用项目约定用 String（BeanUtil 复制 Date→String）。
+ * 时间字段一律用 java.util.Date（不要用 String），序列化由全局 jackson.date-format
+ * 统一格式化为 yyyy-MM-dd HH:mm:ss（见 application.yml），前端用 formatDateTime 展示。
  *
  * 互动计数（点赞/收藏/评分）不冗余主表，由 Service 层聚合事实表回填：
  * - likeCount / collectCount / ratingAvg / ratingCount：列表批量聚合或详情单条聚合
@@ -54,7 +57,7 @@ public class ResourceVo {
 
     private String reviewStatus;
 
-    private String publishTime;
+    private Date publishTime;
 
     /** 下载次数（仅 FILE 下载 +1，主表冗余） */
     private Long downloadCount;
@@ -85,11 +88,11 @@ public class ResourceVo {
     /** 作者昵称（join sys_user on user_id=author_id 带出） */
     private String authorNickname;
 
-    private String createTime;
+    private Date createTime;
 
     private String updateBy;
 
-    private String updateTime;
+    private Date updateTime;
 
     public ResourceVo() {
     }
@@ -222,11 +225,11 @@ public class ResourceVo {
         this.reviewStatus = reviewStatus;
     }
 
-    public String getPublishTime() {
+    public Date getPublishTime() {
         return publishTime;
     }
 
-    public void setPublishTime(String publishTime) {
+    public void setPublishTime(Date publishTime) {
         this.publishTime = publishTime;
     }
 
@@ -318,11 +321,11 @@ public class ResourceVo {
         this.authorNickname = authorNickname;
     }
 
-    public String getCreateTime() {
+    public Date getCreateTime() {
         return createTime;
     }
 
-    public void setCreateTime(String createTime) {
+    public void setCreateTime(Date createTime) {
         this.createTime = createTime;
     }
 
@@ -334,11 +337,11 @@ public class ResourceVo {
         this.updateBy = updateBy;
     }
 
-    public String getUpdateTime() {
+    public Date getUpdateTime() {
         return updateTime;
     }
 
-    public void setUpdateTime(String updateTime) {
+    public void setUpdateTime(Date updateTime) {
         this.updateTime = updateTime;
     }
 

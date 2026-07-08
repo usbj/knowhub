@@ -865,3 +865,241 @@ Accept-Ranges: none
 **逻辑**：有子分类拒绝删（提示"先处理子分类"）；无子分类则事务内 `UPDATE resource SET resource_category_id=-1 WHERE resource_category_id=该分类`（挂载资源归"其他"）+ 软删分类行。
 
 **响应**：`Result<Boolean>`
+
+---
+
+## 项目管理模块
+
+> 项目管理偏向归档记录（后续可能融入代码版本管理）。记录项目介绍、相关文档、项目代码/安装包存储（文件可下载，相当于开文件夹统一管理项目内容），展示负责人/参与者/导师。
+> 严苛权限分级：**系统权限**（view/download/edit:l1-l3，全局分等级，所有项目）+ **项目内权限**（project_member.can_view/can_download/can_edit，单项目不分等级）+ LEADER 全权。项目分等级（level 1/2/3）对标权限。
+> 等级权限由后端 `ProjectPermissionResolver` 一次扫描 `List<Permission>` 取最高等级判定（admin 零特判，同时持有 l1+l2 取 l2）；列表可见性由 SQL 过滤（`level<=userViewLevel OR project_id IN (member can_view=1 子查询)`），详情/下载/编辑二次 `canOp` 校验。
+> 审核流程复用博客/资源范式（状态机+回避+流水表+对账任务），ReviewAction 枚举 + review_action 字典(dict_id=25) 复用，不建新字典。审核开关 `knowhub.project.review_enabled` 默认 true 开启。
+> 路由前缀 `/project`（knowhub 命名空间，不套 /sys）。
+
+### 项目 CRUD 与审核
+
+#### `GET /project/list` — 获取项目列表
+
+**权限**：`knowhub:project:quarry`（进页面门槛；实际可见性由后端按权限等级+成员过滤）
+
+**请求头**：`Token`
+
+**请求参数**（query string）：
+
+| 参数 | 类型 | 说明 |
+|---|---|---|
+| title | String | 项目名称模糊 |
+| type | String | 项目类型（字典 project_type，当前 COMPETITION） |
+| level | Integer | 项目等级 1/2/3 |
+| status | String | 项目状态（字典 project_status） |
+| reviewStatus | String | 审核状态（字典 review_status） |
+| createBy | String | 负责人用户名 |
+| beginTime | Date | 创建时间起（yyyy-MM-dd） |
+| endTime | Date | 创建时间止（yyyy-MM-dd） |
+| pageNum | Integer | 页码 |
+| pageSize | Integer | 每页条数 |
+
+**逻辑**：service 层 `ProjectPermissionResolver.resolve()` 取当前用户查看等级 userViewLevel + userId 透传 Mapper；SQL `where deleted=0 and (level<=userViewLevel OR project_id IN (select ... from project_member where user_id=? and can_view=1))`。无系统查看权限者 userViewLevel=0 只走 member 分支 → 只看参与的项目。join sys_user 取 author_nickname。
+
+**响应**：`Result<PageInfo<ProjectVo>>`，ProjectVo 字段：projectId/title/type/level/summary/articleId/authorId/authorNickname/status/reviewStatus/publishTime/createBy/createTime（列表不带 description 大字段，详情接口才查）。
+
+#### `GET /project/{projectId}` — 获取项目详情
+
+**权限**：`knowhub:project:info`
+
+**逻辑**：按主键取未删项目（含 description + join sys_user 取 authorNickname）；二次 `canOp(view)` 校验，无权抛 500"无权查看该项目"；回填当前用户对该项目权限态 canView/canDownload/canEdit/myMemberRole（供前端控制按钮显隐）。
+
+**响应**：`Result<ProjectVo>`（含 description + 权限态字段）
+
+#### `POST /project` — 新增项目
+
+**权限**：`knowhub:project:add`
+
+**请求体**：`ProjectVo`（title/type/level 必填，summary/description/articleId 可选）
+
+**逻辑**：校验 title/type/level（level 1-3）；创建者设为 author_id（=LEADER）；status=DRAFT、reviewStatus=NONE；level 缺省 L1。按 type 配套写子表（COMPETITION 走独立子表接口维护）；创建者默认 LEADER member（can_view/can_download/can_edit 全 1）。
+
+**响应**：`Result<Boolean>`
+
+#### `PUT /project` — 编辑项目
+
+**权限**：`knowhub:project:add`
+
+**请求体**：`ProjectVo`（projectId 必填）
+
+**逻辑**：状态机前置（仅 DRAFT/REJECTED/REVOKED/ARCHIVED 可编辑；PUBLISHED 须先撤回、PENDING_REVIEW 审核中不能改）；`canOp(edit)` 校验；改 level 需自身 edit 等级 >= 新 level（防降级再让别人改）；动态列更新。
+
+**响应**：`Result<Boolean>`
+
+#### `DELETE /project/{projectIds}` — 批量删除项目
+
+**权限**：`knowhub:project:delete`
+
+**逻辑**：每项目校验 LEADER 或 knowhub:project:delete 权限；事务级联软删 member + project_file + file_object 三类（PROJECT_SRC/PKG/DOC softDeleteByBizRef，对象本体由 FileGcTask 回收）+ 物理删类型子表 + 软删主表。
+
+**响应**：`Result<Boolean>`
+
+#### `PUT /project/publish/{projectId}` — 发布项目
+
+**权限**：`knowhub:project:publish`
+
+**逻辑**：状态机前置（仅 DRAFT/REJECTED/REVOKED/ARCHIVED 可发布）；`canOp(edit)` 校验；经审核开关决定 PENDING_REVIEW（写 SUBMIT/AUTHOR 流水 + SET Redis 待审标记）或 PUBLISHED（写 PUBLISH/SYSTEM 流水 + 回填 publishTime）。
+
+**响应**：`Result<Boolean>`
+
+#### `PUT /project/revoke/{projectId}` — 撤回项目
+
+**权限**：`knowhub:project:revoke`
+
+**逻辑**：仅 PUBLISHED 可撤回；`canOp(edit)` 校验；置 REVOKED + 写 REVOKE/AUTHOR 流水。
+
+**响应**：`Result<Boolean>`
+
+#### `PUT /project/review` — 审核项目
+
+**权限**：`knowhub:project:review`
+
+**请求体**：`ProjectReviewVo`（projectId/pass/advice）
+
+| 参数 | 类型 | 说明 |
+|---|---|---|
+| projectId | Long | 项目ID |
+| pass | Boolean | true 通过→PUBLISHED；false 驳回→REJECTED |
+| advice | String | 审核意见（驳回必填，通过可选） |
+
+**逻辑**：仅 PENDING_REVIEW 可审核；回避（author_id 比对，负责人不能审自己）；pass=true 置 PUBLISHED+回填 publishTime+写 APPROVE/REVIEWER 流水；pass=false 校验 advice 必填+置 REJECTED+写 REJECT/REVIEWER 流水。
+
+**响应**：`Result<Boolean>`
+
+#### `GET /project/review-log/{projectId}` — 获取项目审核历史
+
+**权限**：`knowhub:project:reviewLog`
+
+**逻辑**：按 projectId 查审核流水（升序），left join sys_user 取 operatorNickname。
+
+**响应**：`Result<List<ProjectReviewLogVo>>`，字段：reviewLogId/projectId/action(字典 review_action)/operatorId/operator/operatorNickname/role/advice/createTime。
+
+### 项目成员管理
+
+#### `GET /project/member/{projectId}` — 成员列表
+
+**权限**：`knowhub:project:member`（需先 canOp(view) 通过）
+
+**逻辑**：join sys_user 取 nick_name/username，按 LEADER→MENTOR→MEMBER 排序。
+
+**响应**：`Result<List<ProjectMemberVo>>`，字段：memberId/projectId/userId/memberRole(字典 project_member_role)/canView/canDownload/canEdit/nickname/username。
+
+#### `POST /project/member` — 新增成员
+
+**权限**：`knowhub:project:member`
+
+**请求体**：`ProjectMemberVo`（projectId/userId/memberRole 必填，can_* 未传按角色给默认：LEADER→1/1/1、MENTOR→1/1/0、MEMBER→1/0/0）
+
+**逻辑**：`canOp(edit)` 校验；同一用户不可重复加入；LEADER 唯一性（新增 LEADER 时原 LEADER 自动降为 MEMBER）；若新成员是 LEADER 同步更新主表 author_id（换负责人）。单点编辑/权限微调用本接口或 PUT。
+
+**响应**：`Result<Boolean>`
+
+#### `POST /project/member/batch/{projectId}` — 批量新增成员（默认 MEMBER，参考通知分组）
+
+**权限**：`knowhub:project:member`
+
+**请求体**：`number[]`（userIds 数组）
+
+**逻辑**：`canOp(edit)` 校验；逐个加入，默认 MEMBER 角色（按角色给默认标志位 MEMBER→1/0/0），已存在的跳过（幂等批量加）。单点改角色/权限标志位走 PUT /project/member。前端添加成员走搜用户子弹窗（调 GET /sys/user/list 搜索）+ 本接口批量加。
+
+**响应**：`Result<Boolean>`
+
+#### `PUT /project/member` — 编辑成员
+
+**权限**：`knowhub:project:member`
+
+**请求体**：`ProjectMemberVo`（memberId 必填）
+
+**逻辑**：`canOp(edit)` 校验；提升为 LEADER 时原 LEADER 降为 MEMBER + 同步主表 author_id；调角色/标志位。
+
+**响应**：`Result<Boolean>`
+
+#### `DELETE /project/member/{memberId}` — 删除成员
+
+**权限**：`knowhub:project:member`
+
+**逻辑**：`canOp(edit)` 校验；LEADER 不可直接删（需先换负责人，抛 500"负责人不可直接删除，请先转移负责人"）；软删。
+
+**响应**：`Result<Boolean>`
+
+### 项目文件树管理（GitHub 式侧边栏）
+
+#### `GET /project/file/tree/{projectId}` — 文件树（树形）
+
+**权限**：`knowhub:project:info`（需 canOp(view) 通过）
+
+**逻辑**：按 projectId 查全部文件节点（扁平带 parentId，join file_object 取元数据），service 层按 parentId 组装为树形。
+
+**响应**：`Result<List<ProjectFileTreeVo>>`，字段：fileId/projectId/parentId/name/isDir(1目录/0文件)/objectId/sort/originalName/contentLength/contentType/businessType(字典 file_business_type)/children(目录才有)。
+
+#### `GET /project/file/list/{projectId}` — 文件列表（扁平）
+
+**权限**：`knowhub:project:info`
+
+**响应**：`Result<List<ProjectFileVo>>`（扁平，无 children）
+
+#### `POST /project/file/folder` — 新建文件夹
+
+**权限**：`knowhub:project:add`（需 canOp(edit) 通过）
+
+**请求体**：`ProjectFileVo`（projectId/name/parentId/sort）
+
+**逻辑**：is_dir=1，object_id=null；`canOp(edit)` 校验。
+
+**响应**：`Result<Boolean>`
+
+#### `POST /project/file/node` — 新增文件节点
+
+**权限**：`knowhub:project:add`（需 canOp(edit) 通过）
+
+**请求体**：`ProjectFileVo`（projectId/name/objectId 必填/parentId/sort）
+
+**逻辑**：is_dir=0，关联 file_object.object_id（前端先走预签名上传流程拿 objectId 再调本接口）；`canOp(edit)` 校验；绑 file_object.biz_ref_id=projectId（级联删依据）。
+
+**响应**：`Result<Boolean>`
+
+#### `PUT /project/file/node` — 编辑文件节点
+
+**权限**：`knowhub:project:add`（需 canOp(edit) 通过）
+
+**请求体**：`ProjectFileVo`（fileId 必填，部分更新：name/parentId/sort）
+
+**逻辑**：`canOp(edit)` 校验；动态列更新（改名/移动/排序）。
+
+**响应**：`Result<Boolean>`
+
+#### `DELETE /project/file/{fileId}` — 删除文件节点
+
+**权限**：`knowhub:project:add`（需 canOp(edit) 通过）
+
+**逻辑**：`canOp(edit)` 校验；目录递归软删子节点；文件叶子级联软删 file_object（对象本体由 FileGcTask 回收）。
+
+**响应**：`Result<Boolean>`
+
+#### `GET /project/file/download/{fileId}` — 获取文件下载链接
+
+**权限**：`knowhub:project:info`（需 canOp(download) 通过）
+
+**逻辑**：目录不可下载；文件叶子 `canOp(download)` 校验通过后调 fileService.getDownloadUrl 取中转/预签名链接。
+
+**响应**：`Result<String>`（下载链接字符串）
+
+---
+
+### 接口更新日志
+
+#### 2026-07-07 项目管理模块新增（19 接口）
+
+新增项目管理模块全部接口：项目 CRUD 5 个（list/info/add/edit/delete）+ 审核 4 个（publish/revoke/review/review-log）+ 成员管理 4 个（list/add/edit/delete）+ 文件树管理 7 个（tree/list/folder/node/edit/delete/download），共 19 个接口。详见上方「项目管理模块」章节。等级权限(view/download/edit:l13)由后端 ProjectPermissionResolver 取最高等级判定，非框架 hasAuthority；审核流程复用 ReviewAction 枚举 + review_action 字典；文件复用 file_object（PROJECT_SRC/PKG/DOC）+ project_file 树表支撑 GitHub 式侧边栏。
+
+#### 2026-07-08 项目管理模块修订（类型补齐 + 批量加成员 + 弹窗职责分离）
+
+- **项目类型字典补齐**：`sql/knowhub-project-patch.sql` 追加 project_type 的 PRACTICE/OPS（dict_data 121/122），原 knowhub-project.sql 不改、表不动；ProjectType 枚举启用三值。PRACTICE/OPS 无子表（主表 description/summary + 项目文件覆盖所需属性），比赛子表 project_competition 保留。
+- **批量加成员接口**：新增 `POST /project/member/batch/{projectId}`，body 为 userIds 数组，默认 MEMBER 角色，已存在跳过（参考通知分组 UX，前端搜用户子弹窗调 GET /sys/user/list 搜索后逐个"加入"）。单点改角色/权限标志位仍走 PUT /project/member。
+- **弹窗职责分离**（用户明确要求）：新增/编辑弹窗内嵌"项目信息/团队成员/项目文件"三标签页，改数据全在编辑弹窗；详情弹窗只读（仅展示+下载，下载属查看行为）；审核弹窗只给通过/驳回+意见，不展示其它数据、不承担改数据职责。前端新增 ProjectEditDialog/ProjectMemberAddDialog 组件，index.vue 列表改用独立编辑弹窗（SharedTablePanel 仅展示表格）。
+- 校验：mvn -pl knowhub -am compile BUILD SUCCESS；rookie-ui npm run type-check 通过。

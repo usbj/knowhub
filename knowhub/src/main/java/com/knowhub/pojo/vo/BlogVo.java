@@ -1,10 +1,12 @@
 package com.knowhub.pojo.vo;
 
+import java.util.Date;
 import java.util.List;
 
 /**
  * 博客文章对外 VO，供 Controller 入参/出参。
- * 时间字段沿用 SysNoticeVo 约定用 String（BeanUtil 复制 Date→String）。
+ * 时间字段一律用 java.util.Date（不要用 String），序列化由全局 jackson.date-format
+ * 统一格式化为 yyyy-MM-dd HH:mm:ss（见 application.yml），前端用 formatDateTime 展示。
  * tagIds 为作者选用的受控标签 id 列表；tagNames 由关联表回填用于展示。
  * authorId 为作者用户ID(userId)，与 createBy(username) 互补，前台展示昵称走 join sys_user。
  */
@@ -24,7 +26,7 @@ public class BlogVo {
 
     private String status;
 
-    private String publishTime;
+    private Date publishTime;
 
     private Long viewCount;
 
@@ -36,7 +38,7 @@ public class BlogVo {
 
     private String reviewer;
 
-    private String reviewTime;
+    private Date reviewTime;
 
     private String reviewAdvice;
 
@@ -46,11 +48,11 @@ public class BlogVo {
 
     private String createBy;
 
-    private String createTime;
+    private Date createTime;
 
     private String updateBy;
 
-    private String updateTime;
+    private Date updateTime;
 
     /** 当前登录用户是否已点赞（详情接口回填） */
     private Boolean hasLiked;
@@ -117,11 +119,11 @@ public class BlogVo {
         this.status = status;
     }
 
-    public String getPublishTime() {
+    public Date getPublishTime() {
         return publishTime;
     }
 
-    public void setPublishTime(String publishTime) {
+    public void setPublishTime(Date publishTime) {
         this.publishTime = publishTime;
     }
 
@@ -165,11 +167,11 @@ public class BlogVo {
         this.reviewer = reviewer;
     }
 
-    public String getReviewTime() {
+    public Date getReviewTime() {
         return reviewTime;
     }
 
-    public void setReviewTime(String reviewTime) {
+    public void setReviewTime(Date reviewTime) {
         this.reviewTime = reviewTime;
     }
 
@@ -205,11 +207,11 @@ public class BlogVo {
         this.createBy = createBy;
     }
 
-    public String getCreateTime() {
+    public Date getCreateTime() {
         return createTime;
     }
 
-    public void setCreateTime(String createTime) {
+    public void setCreateTime(Date createTime) {
         this.createTime = createTime;
     }
 
@@ -221,11 +223,11 @@ public class BlogVo {
         this.updateBy = updateBy;
     }
 
-    public String getUpdateTime() {
+    public Date getUpdateTime() {
         return updateTime;
     }
 
-    public void setUpdateTime(String updateTime) {
+    public void setUpdateTime(Date updateTime) {
         this.updateTime = updateTime;
     }
 

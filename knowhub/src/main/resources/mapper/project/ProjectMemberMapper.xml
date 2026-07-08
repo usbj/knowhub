@@ -1,0 +1,116 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.knowhub.mapper.ProjectMemberMapper">
+
+    <!--
+      项目成员结果映射。
+      含 join 带出的展示字段（非表字段）：nickname/username 由 join sys_user on user_id 带出。
+    -->
+    <resultMap id="ProjectMemberResultMap" type="com.knowhub.pojo.entity.ProjectMember">
+        <id property="memberId" column="member_id"/>
+        <result property="projectId" column="project_id"/>
+        <result property="userId" column="user_id"/>
+        <result property="memberRole" column="member_role"/>
+        <result property="canView" column="can_view"/>
+        <result property="canDownload" column="can_download"/>
+        <result property="canEdit" column="can_edit"/>
+        <result property="createBy" column="create_by"/>
+        <result property="createTime" column="create_time"/>
+        <result property="updateBy" column="update_by"/>
+        <result property="updateTime" column="update_time"/>
+        <result property="deleted" column="deleted"/>
+        <!-- join 带出的展示字段（非表字段） -->
+        <result property="nickname" column="nick_name"/>
+        <result property="username" column="username"/>
+    </resultMap>
+
+    <!--
+      按 projectId 查成员列表。
+      join sys_user 带出 nickname/username（LEFT JOIN 防用户被删丢行）。
+      排序：LEADER 优先（role 排序把 LEADER 放前），再按 member_id。
+    -->
+    <select id="listByProjectId" parameterType="long" resultMap="ProjectMemberResultMap">
+        select m.member_id, m.project_id, m.user_id, m.member_role,
+               m.can_view, m.can_download, m.can_edit,
+               m.create_by, m.create_time, m.update_by, m.update_time, m.deleted,
+               u.nick_name, u.username
+        from project_member m
+                left join sys_user u on m.user_id = u.user_id
+        where m.project_id = #{projectId} and m.deleted = 0
+        order by case m.member_role when 'LEADER' then 0 when 'MENTOR' then 1 else 2 end, m.member_id asc
+    </select>
+
+    <select id="getMemberById" parameterType="long" resultMap="ProjectMemberResultMap">
+        select m.*, u.nick_name, u.username
+        from project_member m
+                left join sys_user u on m.user_id = u.user_id
+        where m.member_id = #{memberId} and m.deleted = 0
+    </select>
+
+    <select id="getMember" resultMap="ProjectMemberResultMap">
+        select m.*, u.nick_name, u.username
+        from project_member m
+                left join sys_user u on m.user_id = u.user_id
+        where m.project_id = #{projectId} and m.user_id = #{userId} and m.deleted = 0
+    </select>
+
+    <!-- 按 projectId 查 LEADER（换负责人/唯一性校验用） -->
+    <select id="getLeader" parameterType="long" resultMap="ProjectMemberResultMap">
+        select m.*, u.nick_name, u.username
+        from project_member m
+                left join sys_user u on m.user_id = u.user_id
+        where m.project_id = #{projectId} and m.member_role = 'LEADER' and m.deleted = 0
+        limit 1
+    </select>
+
+    <!-- 新增成员，回填主键 -->
+    <insert id="addMember" parameterType="com.knowhub.pojo.entity.ProjectMember" useGeneratedKeys="true" keyProperty="memberId">
+        insert into project_member
+        <trim prefix="(" suffix=")" suffixOverrides=",">
+            <if test="projectId != null">project_id,</if>
+            <if test="userId != null">user_id,</if>
+            <if test="memberRole != null">member_role,</if>
+            <if test="canView != null">can_view,</if>
+            <if test="canDownload != null">can_download,</if>
+            <if test="canEdit != null">can_edit,</if>
+            create_by, create_time, update_by, update_time
+        </trim>
+        values
+        <trim prefix="(" suffix=")" suffixOverrides=",">
+            <if test="projectId != null">#{projectId},</if>
+            <if test="userId != null">#{userId},</if>
+            <if test="memberRole != null">#{memberRole},</if>
+            <if test="canView != null">#{canView},</if>
+            <if test="canDownload != null">#{canDownload},</if>
+            <if test="canEdit != null">#{canEdit},</if>
+            #{createBy}, now(), #{updateBy}, now()
+        </trim>
+    </insert>
+
+    <!-- 编辑成员（动态列，调整角色/标志位） -->
+    <update id="editMember" parameterType="com.knowhub.pojo.entity.ProjectMember">
+        update project_member
+        <set>
+            <if test="memberRole != null and memberRole != ''">member_role = #{memberRole},</if>
+            <if test="canView != null">can_view = #{canView},</if>
+            <if test="canDownload != null">can_download = #{canDownload},</if>
+            <if test="canEdit != null">can_edit = #{canEdit},</if>
+            <if test="deleted != null">deleted = #{deleted},</if>
+            update_by = #{updateBy},
+            update_time = now()
+        </set>
+        where member_id = #{memberId}
+    </update>
+
+    <update id="softDeleteMember" parameterType="long">
+        update project_member set deleted = 1, update_time = now() where member_id = #{memberId}
+    </update>
+
+    <!-- 按 projectId 软删全部成员（删项目时级联） -->
+    <update id="softDeleteByProjectId" parameterType="long">
+        update project_member set deleted = 1, update_time = now() where project_id = #{projectId} and deleted = 0
+    </update>
+
+</mapper>

@@ -1,7 +1,10 @@
 package com.knowhub.pojo.vo;
 
+import java.util.Date;
+
 /**
  * 受控标签 VO，供管理员标签管理接口入参/出参。
+ * 时间字段一律用 java.util.Date（不要用 String），序列化由全局 jackson.date-format 统一格式化。
  */
 public class TagVo {
 
@@ -17,11 +20,11 @@ public class TagVo {
 
     private String createBy;
 
-    private String createTime;
+    private Date createTime;
 
     private String updateBy;
 
-    private String updateTime;
+    private Date updateTime;
 
     public TagVo() {
     }
@@ -74,11 +77,11 @@ public class TagVo {
         this.createBy = createBy;
     }
 
-    public String getCreateTime() {
+    public Date getCreateTime() {
         return createTime;
     }
 
-    public void setCreateTime(String createTime) {
+    public void setCreateTime(Date createTime) {
         this.createTime = createTime;
     }
 
@@ -90,11 +93,11 @@ public class TagVo {
         this.updateBy = updateBy;
     }
 
-    public String getUpdateTime() {
+    public Date getUpdateTime() {
         return updateTime;
     }
 
-    public void setUpdateTime(String updateTime) {
+    public void setUpdateTime(Date updateTime) {
         this.updateTime = updateTime;
     }
 

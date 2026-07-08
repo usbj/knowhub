@@ -1,0 +1,262 @@
+<!--
+  文件作用：
+  封装"添加项目成员"子弹窗，供编辑弹窗的成员管理面板点击"添加成员"时打开。
+  顶部按字段类型（昵称/用户名/手机号）搜索用户，下部展示用户分页表格，
+  行内"加入"按钮把用户抛给父层统一批量提交，已在父层已选集合中的用户显示"已加入"禁用态。
+  参考通知分组 GroupMemberAddDialog，仅在 emit 类型与文案上做项目化适配。
+  关键参数：
+  - `excludeUserIds`：父层已加入的 userId 集合，用于控制"已加入"按钮态，避免重复加入。
+  关键事件：
+  - `add`：抛出待加入的用户记录，父层维护本地成员集合。
+-->
+<script setup lang="ts">
+import { ref, watch } from 'vue'
+import {
+  ElButton,
+  ElDialog,
+  ElEmpty,
+  ElInput,
+  ElOption,
+  ElPagination,
+  ElSelect,
+  ElTable,
+  ElTableColumn,
+  ElTag,
+} from 'element-plus'
+import { Search } from '@element-plus/icons-vue'
+import { getSysUserPageApi } from '@/api/system/user'
+import type { SysUserFormData, SysUserPageResult } from '@/types/api/system/user'
+
+const props = defineProps<{
+  excludeUserIds: Set<number>
+}>()
+
+const emit = defineEmits<{
+  add: [user: SysUserFormData]
+}>()
+
+/**
+ * 搜索字段类型选项，与后端 SysUserListQuery 的 nickName/username/phoneNumber 三个字段对齐，
+ * 复用现有用户分页接口 GET /sys/user/list，无需后端改动。
+ */
+const SEARCH_FIELD_OPTIONS = [
+  { label: '昵称', value: 'nickName' as const },
+  { label: '用户名', value: 'username' as const },
+  { label: '手机号', value: 'phoneNumber' as const },
+]
+
+type SearchField = (typeof SEARCH_FIELD_OPTIONS)[number]['value']
+
+const visible = ref(false)
+const listLoading = ref(false)
+const searchField = ref<SearchField>('nickName')
+const keyword = ref('')
+const userPageState = ref<SysUserPageResult>({
+  records: [],
+  pageNum: 1,
+  pageSize: 10,
+  pages: 0,
+  total: 0,
+})
+
+/**
+ * 方法效果：
+ * 按当前搜索条件与分页参数拉取用户候选列表。
+ */
+const fetchUserPage = async () => {
+  listLoading.value = true
+  try {
+    const trimmed = keyword.value.trim()
+    const params: Record<string, unknown> = {
+      pageNum: userPageState.value.pageNum,
+      pageSize: userPageState.value.pageSize,
+    }
+    if (trimmed) {
+      params[searchField.value] = trimmed
+    }
+    userPageState.value = await getSysUserPageApi(params as Parameters<typeof getSysUserPageApi>[0])
+  } finally {
+    listLoading.value = false
+  }
+}
+
+/**
+ * 方法效果：
+ * 打开子弹窗，重置搜索条件并拉取首页用户。
+ */
+const open = () => {
+  searchField.value = 'nickName'
+  keyword.value = ''
+  userPageState.value = {
+    records: [],
+    pageNum: 1,
+    pageSize: 10,
+    pages: 0,
+    total: 0,
+  }
+  visible.value = true
+}
+
+/**
+ * 方法效果：
+ * 执行用户搜索，关键词为空时清空表格不拉全量，有关键词时从第一页拉取候选列表。
+ */
+const handleSearch = async () => {
+  if (!keyword.value.trim()) {
+    resetSearch()
+    return
+  }
+  userPageState.value.pageNum = 1
+  await fetchUserPage()
+}
+
+/**
+ * 方法效果：
+ * 重置搜索条件并清空表格结果，不向后端发请求。
+ * 重置后表格回到空态，待管理员重新输入关键词搜索，避免无筛选拉全量用户。
+ */
+const resetSearch = () => {
+  keyword.value = ''
+  searchField.value = 'nickName'
+  userPageState.value = {
+    records: [],
+    pageNum: 1,
+    pageSize: 10,
+    pages: 0,
+    total: 0,
+  }
+}
+
+const handleAdd = (user: SysUserFormData) => {
+  emit('add', user)
+}
+
+const handlePageChange = async () => {
+  await fetchUserPage()
+}
+
+watch(visible, (next) => {
+  // 每次重新打开时重置搜索条件并拉取首页用户
+  if (next) {
+    open()
+  }
+})
+
+defineExpose({ open })
+</script>
+
+<template>
+  <ElDialog
+    v-model="visible"
+    title="添加成员"
+    width="720px"
+    destroy-on-close
+    append-to-body
+    class="project-member-add-dialog"
+  >
+    <!-- 搜索区：字段类型 + 关键词 + 搜索/重置 -->
+    <div class="project-member-add-search">
+      <ElSelect v-model="searchField" class="project-member-add-search__field">
+        <ElOption
+          v-for="item in SEARCH_FIELD_OPTIONS"
+          :key="item.value"
+          :label="item.label"
+          :value="item.value"
+        />
+      </ElSelect>
+      <ElInput
+        v-model="keyword"
+        :placeholder="`请输入${SEARCH_FIELD_OPTIONS.find((item) => item.value === searchField)?.label ?? '关键词'}`"
+        clearable
+        class="project-member-add-search__keyword"
+        @keyup.enter="handleSearch"
+      >
+        <template #prefix>
+          <Search />
+        </template>
+      </ElInput>
+      <ElButton type="primary" :loading="listLoading" @click="handleSearch">搜索</ElButton>
+      <ElButton @click="resetSearch">重置</ElButton>
+    </div>
+
+    <!-- 用户候选分页表格 -->
+    <ElTable
+      :data="userPageState.records"
+      v-loading="listLoading"
+      class="project-member-add-table"
+      max-height="360"
+      row-key="userId"
+    >
+      <template #empty>
+        <ElEmpty description="未找到匹配的用户，试试换个关键词或字段" :image-size="64" />
+      </template>
+      <ElTableColumn label="昵称" prop="nickName" min-width="120" show-overflow-tooltip />
+      <ElTableColumn label="用户名" prop="username" min-width="120" show-overflow-tooltip />
+      <ElTableColumn label="手机号" prop="phoneNumber" min-width="130" show-overflow-tooltip />
+      <ElTableColumn label="状态" width="90">
+        <template #default="{ row }">
+          <ElTag :type="Number(row.status) === 1 ? 'success' : 'info'" size="small" effect="plain">
+            {{ Number(row.status) === 1 ? '启用' : '停用' }}
+          </ElTag>
+        </template>
+      </ElTableColumn>
+      <ElTableColumn label="操作" width="110" fixed="right">
+        <template #default="{ row }">
+          <ElButton
+            v-if="!excludeUserIds.has(Number(row.userId))"
+            type="primary"
+            size="small"
+            @click="handleAdd(row as SysUserFormData)"
+          >
+            加入
+          </ElButton>
+          <ElButton v-else type="info" size="small" plain disabled>已加入</ElButton>
+        </template>
+      </ElTableColumn>
+    </ElTable>
+
+    <ElPagination
+      class="project-member-add-pagination"
+      :current-page="userPageState.pageNum"
+      :page-size="userPageState.pageSize"
+      :total="userPageState.total"
+      :page-sizes="[10, 20, 50]"
+      layout="total, prev, pager, next, sizes"
+      background
+      @update:current-page="userPageState.pageNum = $event; handlePageChange()"
+      @update:page-size="userPageState.pageSize = $event; userPageState.pageNum = 1; handlePageChange()"
+    />
+
+    <template #footer>
+      <ElButton type="primary" @click="visible = false">完成</ElButton>
+    </template>
+  </ElDialog>
+</template>
+
+<style scoped>
+.project-member-add-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+
+.project-member-add-search__field {
+  width: 110px;
+  flex: none;
+}
+
+.project-member-add-search__keyword {
+  flex: 1;
+  min-width: 220px;
+}
+
+.project-member-add-table {
+  margin-bottom: 12px;
+}
+
+.project-member-add-pagination {
+  justify-content: flex-end;
+}
+</style>

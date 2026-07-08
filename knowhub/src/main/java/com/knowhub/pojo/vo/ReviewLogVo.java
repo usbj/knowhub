@@ -1,8 +1,10 @@
 package com.knowhub.pojo.vo;
 
+import java.util.Date;
+
 /**
  * 博客审核流水对外 VO，供审核历史接口出参。
- * 时间字段沿用项目约定用 String（BeanUtil 复制 Date→String）。
+ * 时间字段一律用 java.util.Date（不要用 String），序列化由全局 jackson.date-format 统一格式化。
  * operatorNickname 由后端 join sys_user 带出，供前端直接展示操作人昵称，
  * 不必前端再二次查询；operator(username) 也保留作账号快照。
  */
@@ -28,7 +30,7 @@ public class ReviewLogVo {
 
     private String advice;
 
-    private String createTime;
+    private Date createTime;
 
     public ReviewLogVo() {
     }
@@ -97,11 +99,11 @@ public class ReviewLogVo {
         this.advice = advice;
     }
 
-    public String getCreateTime() {
+    public Date getCreateTime() {
         return createTime;
     }
 
-    public void setCreateTime(String createTime) {
+    public void setCreateTime(Date createTime) {
         this.createTime = createTime;
     }
 

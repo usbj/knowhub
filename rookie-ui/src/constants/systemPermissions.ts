@@ -96,4 +96,29 @@ export const SYSTEM_PERMISSION_KEYS = {
     edit: ['knowhub:resource:category:edit'],
     delete: ['knowhub:resource:category:delete'],
   },
+  // ---- 项目管理（归档记录，等级对标权限）----
+  // 权限键三段式 knowhub:project:动作，与 sys_menu 中 knowhub:project:* 行对齐。
+  // 等级权限(view/download/edit:l1-l3)由后端 ProjectPermissionResolver 扫 perms 取最高等级判定，
+  // 前端 hasPermission 仅用于按钮显隐的进页面门槛；实际可见性/可操作性由后端 SQL 过滤 + canOp 判定。
+  // edit/download 不设非等级按钮(纯等级门控)；admin 登录时全 perm_key 已塞入自然得 l3 全权。
+  project: {
+    create: ['knowhub:project:add'],
+    delete: ['knowhub:project:delete'],
+    member: ['knowhub:project:member'],
+    publish: ['knowhub:project:publish'],
+    revoke: ['knowhub:project:revoke'],
+    review: ['knowhub:project:review'],
+    reviewLog: ['knowhub:project:reviewLog'],
+    info: ['knowhub:project:info'],
+    // 等级权限（前端按需用 hasPermission 判断等级按钮显隐，实际门控在后端）
+    viewL1: ['knowhub:project:view:l1'],
+    viewL2: ['knowhub:project:view:l2'],
+    viewL3: ['knowhub:project:view:l3'],
+    downloadL1: ['knowhub:project:download:l1'],
+    downloadL2: ['knowhub:project:download:l2'],
+    downloadL3: ['knowhub:project:download:l3'],
+    editL1: ['knowhub:project:edit:l1'],
+    editL2: ['knowhub:project:edit:l2'],
+    editL3: ['knowhub:project:edit:l3'],
+  },
 } as const

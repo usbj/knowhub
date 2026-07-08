@@ -641,3 +641,69 @@ rookie 层 commit `e03af35` 新增了独立的系统设置模块（`SysConfig`/`
 **校验**：执行修正后 SQL，数据库验证通过——6 表 + 16 菜单(parent 正确) + 3 字典(23/24/25) + review_action 5 项(103-107) + sys_config review_enabled=false + dict_id=22 未破坏。后端编译/前端 type-check 不受影响（未改 Java/TS 代码，仅改 SQL）。
 
 **教训**：knowhub 模块编号续编不能只看 knowhub 自己的 SQL 文件，必须查实际数据库 `SELECT MAX(menu_id)/MAX(dict_id)/MAX(dict_data_id)`，因为 rookie 上游可能新增模块占用 ID。后续新增模块前先查数据库实际占用再定编号。
+
+### 2026-07-07 项目管理模块开发（归档记录+等级权限+GitHub式文件树+审核）
+
+knowhub 项目管理模块开发，详见 `doc/knowhub-project-design.md`。项目偏向归档记录（后续可能融入代码版本管理），记录项目介绍/相关文档/项目代码存储（文件可下载，相当于开文件夹统一管理项目内容），展示负责人/参与者/导师。严苛权限分级：系统权限(全局·分等级·所有项目)+项目内权限(单项目·不分等级)，项目分等级对标权限。
+
+**编号续编**（接资源模块后，查实际数据库 MAX(menu_id)=116/MAX(dict_id)=25/MAX(dict_data_id)=107，避开已占段）：menu_id 117-135(19条)、dict_id 26-29、dict_data_id 108-120、sys_config config_id 自增(config_key=knowhub.project.review_enabled)。
+
+**SQL（sql/knowhub-project.sql，新建）**
+- `project` 主表（title/type/level/summary/description(mediumtext,列表不带)/article_id(关联文章管理,TODO待开发非必填)/author_id(=LEADER)/status/review_status/publish_time + 审计列 + deleted）。索引：type_level/author/status/review/deleted。
+- `project_competition` 比赛子表（1:1，主键兼外键 project_id，不继承审计不软删随主表；competition_name/competition_level/award_level/award_time/competition_time）。PRACTICE/OPS 暂不做。
+- `project_member` 成员表（member_role LEADER/MENTOR/MEMBER + can_view/can_download/can_edit + 审计 + deleted），uk_project_member(project_id,user_id,deleted)+idx_member_user。LEADER 判定时全权不看标志位，每项目仅一个（service 事务校验）。
+- `project_review_log` 审核流水（与 resource_review_log 完全同构：review_log_id/project_id/action/operator_id/operator/role/advice/create_time + idx_prl_project_time + idx_prl_operator_time）。action/role 复用 ReviewAction 枚举 + review_action 字典(dict_id=25)，不建新字典。不继承 BaseEntity。
+- `project_file` 文件树表（project_id/parent_id/name/is_dir/object_id(关联file_object,目录null)/sort + 审计 + deleted），idx_pf_project+idx_pf_parent。支撑 GitHub 式侧边栏：目录骨架+叶子指向 file_object，前端按 parentId 组装树递归渲染。
+- `sys_menu` 19 行：117(项目管理页) + 118-122(quarry/info/add/delete/member) + 123-126(publish/revoke/review/reviewLog) + 127-129(view:l1-l3) + 130-132(download:l1-l3) + 133-135(edit:l1-l3)。等级权限由后端 ProjectPermissionResolver 扫 perms 取最高等级判定，非框架 hasAuthority。
+- `sys_dict` 4 新：project_type(26,COMPETITION)、project_status(27,DRAFT/PUBLISHED/REVOKED/PENDING_REVIEW/REJECTED/ARCHIVED)、project_level(28,1/2/3)、project_member_role(29,LEADER/MENTOR/MEMBER)；review_action(25)/review_status(14) 复用。
+- `sys_config` 1 新：knowhub.project.review_enabled(BOOLEAN,默认true,is_system=1，**项目审核默认开启**，与资源默认false不同——用户明确要求加审核)。对账间隔 knowhub.project.reconcile-interval-minutes 走 application.yml 不走 sys_config（@Scheduled fixedDelayString 在 Bean 创建时解析，只能读 yml/环境变量，读不了 sys_config Redis 缓存，与博客/资源对账间隔同套路）。
+
+**配置（rookie-admin/application.yml 追加）**
+- `knowhub.project.reconcile-interval-minutes: 5`（项目审核对账任务扫描间隔，分钟，默认 5）。
+
+**后端（knowhub 模块，全部 com.knowhub.* 同包，不新建 Maven 模块）**
+- `project/support/ProjectPermissionResolver.java`：一次扫描 List<Permission> 取 view/download/edit 三操作各自最高等级（Math.max 累积，同时持有 l1+l2 取 l2），admin 零特判（登录时全 perm_key 已塞入 perms 扫到 l1/l2/l3 全部三条自然得 3），返回 ProjectPermissionLevel record。纯内存计算无 IO，规避现有 BlogServiceImpl/ResourceServiceImpl 里 List<Permission>.contains(String) 永远 false 的隐坑（直接遍历取 permKey 不转 Set）。性能 ~0.1-0.6ms/次（n=100-200 perms），相对 DB IO 可忽略。
+- `enums/`：ProjectType(COMPETITION，PRACTICE/OPS 预留未启用)、ProjectStatus(DRAFT/PUBLISHED/REVOKED/PENDING_REVIEW/REJECTED/ARCHIVED)、ProjectLevel(L1/L2/L3，code 为 int 1/2/3)、ProjectMemberRole(LEADER/MENTOR/MEMBER)、ProjectFileType(DIRECTORY/FILE，isDir 1/0)。ReviewAction/ReviewStatus 复用。
+- `pojo/entity/`：Project(extends BaseEntity,含 authorNickname/canView/canDownload/canEdit/myMemberRole 非表展示字段供详情回填)/ProjectCompetition(不继承,1:1子表)/ProjectMember(extends BaseEntity,含 nickname/username 非表 join 字段)/ProjectReviewLog(不继承,流水无审计,含 operatorNickname 非表字段)/ProjectFile(extends BaseEntity,含 originalName/contentLength/contentType/businessType 非表 join file_object 字段)。
+- `pojo/vo/`：ProjectVo(含权限态 canView/canDownload/canEdit/myMemberRole + authorNickname)/ProjectCompetitionVo/ProjectQuarry(带 userViewLevel/userId 权限过滤透传字段 + @DateTimeFormat beginTime/endTime)/ProjectReviewVo/ProjectReviewLogVo/ProjectMemberVo/ProjectFileVo/ProjectFileTreeVo(带 children 递归树)。时间字段一律 Date（不要 String，全局 jackson.date-format 格式化）。
+- `mapper/`：ProjectMapper(列表带权限过滤 level<=userViewLevel OR member can_view=1 子查询 + join sys_user 取 author_nickname,动态 insert/update,softDelete,listPendingReviewIds,listViewableProjectIdsByUser)+ProjectCompetitionMapper(1:1 CRUD)+ProjectMemberMapper(listById join sys_user 取 nick_name/username,getMember/getLeader,LEADER 排序,softDeleteByProjectId)+ProjectReviewLogMapper(insert+listByProjectId join sys_user 取 nick_name)+ProjectFileMapper(listByProjectId join file_object 取文件元数据,动态 insert/update,softDeleteByProjectId)。XML 放 resources/mapper/project/。
+- `service/ProjectService.java`+`impl/ProjectServiceImpl.java`：CRUD+publish(状态机+开关+写流水+Redis标记)+revoke+review(状态机+回避 author_id 比对+写流水)+reconcilePendingReview(逐条放行+PUBLISH/SYSTEM 流水)+成员CRUD(LEADER唯一性+换负责人同步author_id+按角色给默认标志位)+文件树CRUD(addFolder/addFileNode绑定bizRefId/editFileNode/deleteFileNode递归级联+downloadFile canOp(download)校验取链接)。canOp 判定核心：userLvl(op)>=level OR member.can_op=1 OR role=LEADER。fillPermissionState 详情回填权限态。删项目级联 member+project_file+file_object 三类 softDeleteByBizRef(PROJECT_SRC/PKG/DOC)。
+- `controller/ProjectController.java`(/project)：list/info/add/edit/delete/publish/revoke/review/review-log + member(list/add/edit/delete) + file(tree/list/folder/node/edit/delete/download)。等级权限(view/download/edit:lN)走 service 层 ProjectPermissionResolver 判定，@PreAuthorize 用按钮权限(quarry/info/add/delete/member/publish/revoke/review/reviewLog)做进页面门槛。
+- `config/ProjectConfigReader.java`：isReviewEnabled() 走 SysConfigUtil 读 knowhub.project.review_enabled（同 BlogConfigReader/ResourceConfigReader）。
+- `task/ProjectReviewReconcileTask.java`：@Scheduled 对账任务（照搬 ResourceReviewReconcileTask，fixedDelayString 用 SpEL 读 yml knowhub.project.reconcile-interval-minutes，两段省扫表：开关开→return，无待审标记→return）。
+
+**前端（rookie-ui knowhub 二开）**
+- `api/knowhub/project.ts`：项目/成员/文件树全部接口（CRUD+审核+成员管理+文件树管理+下载）。
+- `types/api/knowhub/project.ts`：ProjectRecord/ProjectCompetitionRecord/ProjectListQuery/ProjectReviewPayload/ProjectReviewLogRecord/ProjectMemberRecord/ProjectFileRecord/ProjectFileTreeNode + PROJECT_FILE_IS_DIR/PROJECT_BUSINESS_TYPE 常量。
+- `constants/systemPermissions.ts`：加 project(create/delete/member/publish/revoke/review/reviewLog/info + viewL1-3/downloadL1-3/editL1-3 等级权限) 一组。
+- `views/knowhub/project/config.ts`：查询/表格/表单字段 schema，type/status/reviewStatus/level 走字典，description 走 markdown，buildProjectFormRules（名称/类型/等级必填）。
+- `views/knowhub/project/index.vue`：项目管理列表页（SharedTablePanel+SearchFilterPanel，发布/撤回/审核/详情/删除行操作，审核弹窗内联）。
+- `views/knowhub/project/components/ProjectDetailDialog.vue`：详情弹窗（ElTabs 分 4 标签：项目介绍 MarkdownPreview / 团队成员 ProjectMemberPanel / 项目文件 ProjectFileTree / 审核历史 timeline DictTag 渲染 review_action；权限态 canEdit/canDownload 控制子组件操作按钮显隐）。
+- `views/knowhub/project/components/ProjectFileTree.vue`：GitHub 式文件树组件（defineOptions name 自引用递归；目录展开/折叠，文件叶子点击下载；有 edit 权限展示新建文件夹/上传/重命名/删除；上传走 presignedUploadFlow businessType PROJECT_SRC/PKG/DOC 可选 access=PRIVATE；文件大小格式化 B/KB/MB/GB；businessType 用 DictTag 渲染中文）。
+- `views/knowhub/project/components/ProjectMemberPanel.vue`：成员管理面板（ElTable 展示昵称/账号/角色 DictTag/权限标志位 ElTag；有 edit 权限展示添加/编辑/删除；添加/编辑弹窗选 userId+角色+三权限开关 ElSwitch；LEADER 不可直接删按钮禁用）。
+
+**遵守约定**：未修改任何 `rookie-*` 模块代码（application.yml 仅追加 knowhub.project 配置段，属已解除禁令的追加）；新模块产物全在 knowhub 模块内（com.knowhub.* 同包）+ rookie-ui knowhub 二开目录；不新建 Maven 模块；编号续编前已查实际数据库 MAX(menu_id)=116/MAX(dict_id)=25/MAX(dict_data_id)=107 避开已占段（吸取资源模块撞 ID 教训）；ReviewAction 枚举代码层复用不动值，字典 review_action(dict_id=25) 复用不新建。
+
+**校验**：`mvn -pl knowhub -am compile` BUILD SUCCESS（ProjectPermissionResolver/ProjectController/ProjectServiceImpl 等类均生成）；`rookie-ui npm run type-check` 通过（无错误输出，仅修一处 updateProjectFileNodeApi 参数类型为 Partial<ProjectFileRecord> & {fileId} 适配部分更新）。
+
+**待用户人工验证**：① 跑 sql/knowhub-project.sql 后，5 张表(project/project_competition/project_member/project_review_log/project_file)+19 菜单(117-135)+4 新字典(26-29)+13 dict_data(108-120)+sys_config review_enabled=true 到位；② 项目管理页：新增比赛项目（填名称/类型/等级/简介/详细介绍→保存草稿→发布），审核开关默认开→发布进 PENDING_REVIEW，审核员（非负责人）点审核→通过/驳回，驳回需 advice；③ 关审核开关后发布→直接 PUBLISHED，遗留待审项目 ≤5 分钟由对账任务放行；④ 详情弹窗 4 标签：项目介绍 MarkdownPreview / 团队成员增删改（换负责人同步 author_id）/ 项目文件 GitHub 式文件树（新建文件夹/上传源码/安装包/文档/重命名/删除/下载，目录可展开折叠）/ 审核历史时间线；⑤ 权限分级：给某角色勾 view:l2（不勾 l3），登录后只能看 level≤2 的项目，level=3 机密项目列表不可见；无系统权限的用户作为 MEMBER 加入项目后只能看参与的项目；⑥ 下载需 canOp(download) 通过才下发链接，编辑需 canOp(edit) 通过，LEADER 全权；⑦ 删项目级联软删 member+project_file+file_object 三类，对象本体由 FileGcTask 回收；⑧ article_id 字段已预留（文章管理模块待开发时关联，非必填）。
+
+### 2026-07-08 项目管理模块修订（类型补齐+批量加成员+弹窗职责分离）
+
+用户反馈 4 个问题逐条修正：① 项目类型只加了 COMPETITION 一种（用户原话提到比赛/练习/运维，本意是子表不需要但类型要全）；② 审核弹窗多了个"审核状态"项（应只有通过/驳回+意见）；③ 添加成员应参考 rookie 通知分组（搜用户+加入，不是手输 userId）；④ 新增项目按钮只有项目基础信息，成员/文件等关键信息添加方式都没有，只在只读详情里能加不合理。
+
+**类型补齐（不改原 SQL/表）**：新建 `sql/knowhub-project-patch.sql` 追加 project_type 的 PRACTICE/OPS（dict_data 121/122，INSERT IGNORE 幂等），原 knowhub-project.sql 不改、已建 project_competition 表不动。ProjectType 枚举启用 COMPETITION/PRACTICE/OPS 三值（原注释的预留位启用）。PRACTICE/OPS 无子表——用户澄清"子表的东西主表都可以覆盖或者不需要这些属性"，所需属性由主表 description/summary + 项目文件覆盖；比赛子表 project_competition 保留（存比赛名/获奖等级/比赛/获奖时间等比赛特有字段）。
+
+**批量加成员接口（参考通知分组）**：后端 ProjectService.addMembersBatch(projectId, userIds) + ProjectController `POST /project/member/batch/{projectId}`（body 为 userIds 数组，默认 MEMBER 角色，按角色给默认标志位，已存在跳过幂等批量加）。单点改角色/权限标志位仍走 PUT /project/member。前端 addProjectMembersBatchApi 封装。
+
+**添加成员 UX 改造**：新建 `ProjectMemberAddDialog.vue`（照搬 GroupMemberAddDialog：搜索字段 ElSelect 昀称/用户名/手机号 + 关键词 ElInput + ElTable 分页候选 + 行内"加入"按钮，调 GET /sys/user/list 搜索，excludeUserIds 控制已加入禁用态）。ProjectMemberPanel 重写："添加成员"打开搜用户子弹窗→逐个"加入"调批量接口；主表格行内"编辑"改角色/权限标志位（ElSwitch）+ "删除"（LEADER 禁用）。去掉原来手输 userId 的方式。
+
+**弹窗职责分离（用户明确要求：详情和审核是看数据的，哪能改数据）**：
+- 新建 `ProjectEditDialog.vue`（新增+编辑共用）：ElTabs 三标签页"项目信息/团队成员/项目文件"。创建态只显示"项目信息"页（提交创建拿 projectId 后自动切编辑态解锁"团队成员/项目文件"页）；编辑态三页全可操作。项目信息页 ElForm（title/type/level/summary/description），团队成员页内嵌 ProjectMemberPanel，项目文件页内嵌 ProjectFileTree。
+- `ProjectDetailDialog.vue` 改只读：canEdit 强制 false（成员/文件操作按钮不显，仅展示），canDownload 保留（下载属查看行为）。
+- `index.vue` 重构：列表用 SharedTablePanel 仅展示表格（:form-visible="false" 不放内置表单），编辑用独立 ProjectEditDialog；审核弹窗精简为"项目名称+简介（只读展示）+审核结果（通过/驳回 radio）+审核意见"，去掉多余项。
+- 弹窗职责：新增/编辑弹窗=改数据；详情弹窗=只读查看；审核弹窗=只给审核结果。
+
+**校验**：`mvn -pl knowhub -am compile` BUILD SUCCESS（addMembersBatch 已编译入 ProjectServiceImpl.class）；`rookie-ui npm run type-check` 通过（无错误输出）。
+
+**待用户人工验证**：① 跑 sql/knowhub-project-patch.sql 后 project_type 字典 3 行（108 COMPETITION/121 PRACTICE/122 OPS）；② 新增项目弹窗：填项目信息→创建→自动解锁"团队成员/项目文件"标签页→添加成员（搜用户子弹窗：输入昵称/用户名/手机号搜索→行内"加入"批量加默认 MEMBER）→上传文件（GitHub 式树）；③ 编辑项目弹窗三标签页全可操作；④ 详情弹窗只读（无添加成员/上传文件按钮，仅下载可用）；⑤ 审核弹窗只有通过/驳回+意见（无多余项）；⑥ 成员行内编辑改角色/权限标志位、LEADER 不可删。

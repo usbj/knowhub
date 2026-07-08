@@ -2,6 +2,7 @@ package com.knowhub.pojo.quarry;
 
 import java.util.Date;
 import java.util.List;
+import org.springframework.format.annotation.DateTimeFormat;
 
 /**
  * 博客文章列表查询条件，作为 Mapper parameterType 与列表接口入参。
@@ -27,8 +28,12 @@ public class BlogQuarry {
     /** 创建人(作者)过滤 */
     private String createBy;
 
+    /** 创建时间区间起（含）；前端 daterange 传 yyyy-MM-dd，ISO.DATE 显式声明避免依赖 Spring 默认转换器 */
+    @DateTimeFormat(iso = DateTimeFormat.ISO.DATE)
     private Date beginTime;
 
+    /** 创建时间区间止（含）；前端 daterange 传 yyyy-MM-dd */
+    @DateTimeFormat(iso = DateTimeFormat.ISO.DATE)
     private Date endTime;
 
     public BlogQuarry() {

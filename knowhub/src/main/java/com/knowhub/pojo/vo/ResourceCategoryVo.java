@@ -1,8 +1,10 @@
 package com.knowhub.pojo.vo;
 
+import java.util.Date;
+
 /**
  * 资源分类对外 VO，供 Controller 入参/出参。
- * 时间字段沿用项目约定用 String（BeanUtil 复制 Date→String）。
+ * 时间字段一律用 java.util.Date（不要用 String），序列化由全局 jackson.date-format 统一格式化。
  * 树形展示用 {@link ResourceCategoryTreeVo}（带 children）；本 VO 为扁平结构，供列表/增改入参。
  */
 public class ResourceCategoryVo {
@@ -20,11 +22,11 @@ public class ResourceCategoryVo {
 
     private String createBy;
 
-    private String createTime;
+    private Date createTime;
 
     private String updateBy;
 
-    private String updateTime;
+    private Date updateTime;
 
     public ResourceCategoryVo() {
     }
@@ -77,11 +79,11 @@ public class ResourceCategoryVo {
         this.createBy = createBy;
     }
 
-    public String getCreateTime() {
+    public Date getCreateTime() {
         return createTime;
     }
 
-    public void setCreateTime(String createTime) {
+    public void setCreateTime(Date createTime) {
         this.createTime = createTime;
     }
 
@@ -93,11 +95,11 @@ public class ResourceCategoryVo {
         this.updateBy = updateBy;
     }
 
-    public String getUpdateTime() {
+    public Date getUpdateTime() {
         return updateTime;
     }
 
-    public void setUpdateTime(String updateTime) {
+    public void setUpdateTime(Date updateTime) {
         this.updateTime = updateTime;
     }
 

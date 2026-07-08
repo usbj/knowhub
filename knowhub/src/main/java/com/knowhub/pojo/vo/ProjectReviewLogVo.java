@@ -3,19 +3,20 @@ package com.knowhub.pojo.vo;
 import java.util.Date;
 
 /**
- * 资源审核流水对外 VO，供审核历史接口出参。
- * 与博客 ReviewLogVo 结构同（字段名 resource 化），时间字段一律用 java.util.Date
+ * 项目审核流水对外 VO，供审核历史接口出参。
+ * 与资源 ResourceReviewLogVo 结构同（字段名 project 化），时间字段一律用 java.util.Date
  * （不要用 String），序列化由全局 jackson.date-format 统一格式化。
  * operatorNickname 由后端 join sys_user 带出，供前端直接展示操作人昵称，
  * 不必前端再二次查询；operator(username) 也保留作账号快照。
+ * action/role 复用 ReviewAction 枚举 + review_action 字典（博客/资源/项目共用）。
  */
-public class ResourceReviewLogVo {
+public class ProjectReviewLogVo {
 
     private Long reviewLogId;
 
-    private Long resourceId;
+    private Long projectId;
 
-    /** 审核动作 code：SUBMIT/APPROVE/REJECT/REVOKE/PUBLISH（见字典 review_action） */
+    /** 审核动作 code：SUBMIT/APPROVE/REJECT/REVOKE/PUBLISH（见字典 review_action，复用） */
     private String action;
 
     private Long operatorId;
@@ -33,7 +34,7 @@ public class ResourceReviewLogVo {
 
     private Date createTime;
 
-    public ResourceReviewLogVo() {
+    public ProjectReviewLogVo() {
     }
 
     public Long getReviewLogId() {
@@ -44,12 +45,12 @@ public class ResourceReviewLogVo {
         this.reviewLogId = reviewLogId;
     }
 
-    public Long getResourceId() {
-        return resourceId;
+    public Long getProjectId() {
+        return projectId;
     }
 
-    public void setResourceId(Long resourceId) {
-        this.resourceId = resourceId;
+    public void setProjectId(Long projectId) {
+        this.projectId = projectId;
     }
 
     public String getAction() {
@@ -110,9 +111,9 @@ public class ResourceReviewLogVo {
 
     @Override
     public String toString() {
-        return "ResourceReviewLogVo{" +
+        return "ProjectReviewLogVo{" +
                 "reviewLogId=" + reviewLogId +
-                ", resourceId=" + resourceId +
+                ", projectId=" + projectId +
                 ", action='" + action + '\'' +
                 ", operator='" + operator + '\'' +
                 ", operatorNickname='" + operatorNickname + '\'' +

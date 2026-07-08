@@ -1,0 +1,107 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.knowhub.mapper.ProjectFileMapper">
+
+    <!--
+      项目文件树结果映射。
+      含 join 带出的展示字段（非表字段）：originalName/contentLength/contentType/businessType
+      由 join file_object on object_id 带出（目录为 null，LEFT JOIN 不影响）。
+    -->
+    <resultMap id="ProjectFileResultMap" type="com.knowhub.pojo.entity.ProjectFile">
+        <id property="fileId" column="file_id"/>
+        <result property="projectId" column="project_id"/>
+        <result property="parentId" column="parent_id"/>
+        <result property="name" column="name"/>
+        <result property="isDir" column="is_dir"/>
+        <result property="objectId" column="object_id"/>
+        <result property="sort" column="sort"/>
+        <result property="createBy" column="create_by"/>
+        <result property="createTime" column="create_time"/>
+        <result property="updateBy" column="update_by"/>
+        <result property="updateTime" column="update_time"/>
+        <result property="deleted" column="deleted"/>
+        <!-- join 带出的展示字段（非表字段） -->
+        <result property="originalName" column="original_name"/>
+        <result property="contentLength" column="content_length"/>
+        <result property="contentType" column="content_type"/>
+        <result property="businessType" column="business_type"/>
+    </resultMap>
+
+    <!--
+      按 projectId 查全部文件树节点（扁平，带 parentId）。
+      叶子节点(is_dir=0) join file_object 带出文件元数据；目录(is_dir=1) object_id=null 无 join 行。
+      按 parent_id, sort, file_id 排序，便于 service 层按 parentId 归集 children 组装树。
+    -->
+    <select id="listByProjectId" parameterType="long" resultMap="ProjectFileResultMap">
+        select f.file_id, f.project_id, f.parent_id, f.name, f.is_dir, f.object_id, f.sort,
+               f.create_by, f.create_time, f.update_by, f.update_time, f.deleted,
+               o.original_name as original_name, o.content_length as content_length,
+               o.content_type as content_type, o.business_type as business_type
+        from project_file f
+                left join file_object o on f.object_id = o.object_id and o.deleted = 0
+        where f.project_id = #{projectId} and f.deleted = 0
+        order by f.parent_id asc, f.sort asc, f.file_id asc
+    </select>
+
+    <select id="getFileById" parameterType="long" resultMap="ProjectFileResultMap">
+        select f.*, o.original_name, o.content_length, o.content_type, o.business_type
+        from project_file f
+                left join file_object o on f.object_id = o.object_id and o.deleted = 0
+        where f.file_id = #{fileId} and f.deleted = 0
+    </select>
+
+    <!--
+      新增树节点（目录或文件叶子），回填主键。
+      object_id 仅文件叶子有（目录为 null）；parent_id 根节点为 null。
+    -->
+    <insert id="addFile" parameterType="com.knowhub.pojo.entity.ProjectFile" useGeneratedKeys="true" keyProperty="fileId">
+        insert into project_file
+        <trim prefix="(" suffix=")" suffixOverrides=",">
+            <if test="projectId != null">project_id,</if>
+            <if test="parentId != null">parent_id,</if>
+            <if test="name != null">name,</if>
+            <if test="isDir != null">is_dir,</if>
+            <if test="objectId != null">object_id,</if>
+            <if test="sort != null">sort,</if>
+            create_by, create_time, update_by, update_time
+        </trim>
+        values
+        <trim prefix="(" suffix=")" suffixOverrides=",">
+            <if test="projectId != null">#{projectId},</if>
+            <if test="parentId != null">#{parentId},</if>
+            <if test="name != null">#{name},</if>
+            <if test="isDir != null">#{isDir},</if>
+            <if test="objectId != null">#{objectId},</if>
+            <if test="sort != null">#{sort},</if>
+            #{createBy}, now(), #{updateBy}, now()
+        </trim>
+    </insert>
+
+    <!-- 编辑树节点（动态列，改名/移动/排序） -->
+    <update id="editFile" parameterType="com.knowhub.pojo.entity.ProjectFile">
+        update project_file
+        <set>
+            <if test="parentId != null">parent_id = #{parentId},</if>
+            <if test="name != null and name != ''">name = #{name},</if>
+            <if test="isDir != null">is_dir = #{isDir},</if>
+            <if test="objectId != null">object_id = #{objectId},</if>
+            <if test="sort != null">sort = #{sort},</if>
+            <if test="deleted != null">deleted = #{deleted},</if>
+            update_by = #{updateBy},
+            update_time = now()
+        </set>
+        where file_id = #{fileId}
+    </update>
+
+    <update id="softDeleteFile" parameterType="long">
+        update project_file set deleted = 1, update_time = now() where file_id = #{fileId}
+    </update>
+
+    <!-- 按 projectId 软删全部树节点（删项目时级联） -->
+    <update id="softDeleteByProjectId" parameterType="long">
+        update project_file set deleted = 1, update_time = now() where project_id = #{projectId} and deleted = 0
+    </update>
+
+</mapper>

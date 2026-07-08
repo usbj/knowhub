@@ -1,8 +1,10 @@
 package com.knowhub.pojo.vo;
 
+import java.util.Date;
+
 /**
- * 文件对象元数据回显 VO。列表/详情接口出参，时间字段沿用 BlogVo 约定用 String
- * （BeanUtil 复制 Date→String）。
+ * 文件对象元数据回显 VO。列表/详情接口出参。
+ * 时间字段一律用 java.util.Date（不要用 String），序列化由全局 jackson.date-format 统一格式化。
  */
 public class FileObjectVo {
 
@@ -30,11 +32,11 @@ public class FileObjectVo {
 
     private String createBy;
 
-    private String createTime;
+    private Date createTime;
 
     private String updateBy;
 
-    private String updateTime;
+    private Date updateTime;
 
     public Long getObjectId() {
         return objectId;
@@ -132,11 +134,11 @@ public class FileObjectVo {
         this.createBy = createBy;
     }
 
-    public String getCreateTime() {
+    public Date getCreateTime() {
         return createTime;
     }
 
-    public void setCreateTime(String createTime) {
+    public void setCreateTime(Date createTime) {
         this.createTime = createTime;
     }
 
@@ -148,11 +150,11 @@ public class FileObjectVo {
         this.updateBy = updateBy;
     }
 
-    public String getUpdateTime() {
+    public Date getUpdateTime() {
         return updateTime;
     }
 
-    public void setUpdateTime(String updateTime) {
+    public void setUpdateTime(Date updateTime) {
         this.updateTime = updateTime;
     }
 
