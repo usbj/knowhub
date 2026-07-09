@@ -7,6 +7,7 @@
     <resultMap id="BlogResultMap" type="com.knowhub.pojo.entity.Blog">
         <id property="blogId" column="blog_id"/>
         <result property="authorId" column="author_id"/>
+        <result property="level" column="level"/>
         <result property="title" column="title"/>
         <result property="content" column="content"/>
         <result property="summary" column="summary"/>
@@ -43,6 +44,7 @@
         <if test="keyword != null and keyword != ''">
             and MATCH(b.title, b.content) AGAINST(#{keyword} IN BOOLEAN MODE)
         </if>
+        <if test="level != null">and b.level = #{level}</if>
         <if test="status != null and status != ''">and b.status = #{status}</if>
         <if test="reviewStatus != null and reviewStatus != ''">and b.review_status = #{reviewStatus}</if>
         <if test="createBy != null and createBy != ''">and b.create_by = #{createBy}</if>
@@ -54,6 +56,13 @@
             group by b.blog_id
             having count(distinct bt.tag_id) = #{tagIds.size()}
         </if>
+        <!-- 权限过滤（service 层透传 userViewLevel/userId，博客无成员表轻量模型，对齐文章）：
+             level <= userViewLevel OR author_id = userId（作者始终能看自己的博客，不看等级）。
+             无系统查看权限者 userViewLevel=0，level<=0 永假，只走 author_id=userId 分支 → 只看自己写的。 -->
+        and (
+            b.level &lt;= #{userViewLevel}
+            or b.author_id = #{userId}
+        )
         order by b.publish_time desc, b.blog_id desc
     </select>
 
@@ -65,6 +74,7 @@
         insert into blog
         <trim prefix="(" suffix=")" suffixOverrides=",">
             <if test="authorId != null">author_id,</if>
+            <if test="level != null">level,</if>
             <if test="title != null">title,</if>
             <if test="content != null">content,</if>
             <if test="summary != null">summary,</if>
@@ -83,6 +93,7 @@
         values
         <trim prefix="(" suffix=")" suffixOverrides=",">
             <if test="authorId != null">#{authorId},</if>
+            <if test="level != null">#{level},</if>
             <if test="title != null">#{title},</if>
             <if test="content != null">#{content},</if>
             <if test="summary != null">#{summary},</if>
@@ -103,6 +114,7 @@
     <update id="editBlogInfo" parameterType="com.knowhub.pojo.entity.Blog">
         update blog
         <set>
+            <if test="level != null">level = #{level},</if>
             <if test="title != null and title != ''">title = #{title},</if>
             <if test="content != null and content != ''">content = #{content},</if>
             <if test="summary != null">summary = #{summary},</if>

@@ -29,7 +29,10 @@ public enum FileBusinessType {
     RESOURCE_FILE("RESOURCE_FILE", "资源模块文件资源", FileAccess.PRIVATE),
 
     /** 插件市场插件包：access=PRIVATE，类型 .jar，上限 50MB */
-    PLUGIN_JAR("PLUGIN_JAR", "插件市场插件包", FileAccess.PRIVATE);
+    PLUGIN_JAR("PLUGIN_JAR", "插件市场插件包", FileAccess.PRIVATE),
+
+    /** 文章封面图：access=PUBLIC，类型图片，上限 5MB（对齐 BLOG_COVER，biz_ref_id=article_id） */
+    ARTICLE_COVER("ARTICLE_COVER", "文章封面图", FileAccess.PUBLIC);
 
     private final String code;
 

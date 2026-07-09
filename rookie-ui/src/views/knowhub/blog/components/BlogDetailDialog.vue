@@ -94,6 +94,7 @@ watch(
 
       <div class="blog-detail__meta">
         <DictTag dict-key="blog_status" :value="blog.status" />
+        <DictTag dict-key="blog_level" :value="String(blog.level ?? '')" />
         <DictTag v-if="blog.reviewStatus" dict-key="review_status" :value="blog.reviewStatus" />
       </div>
 

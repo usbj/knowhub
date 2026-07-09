@@ -3,7 +3,10 @@ package com.knowhub.service.impl;
 import cn.hutool.core.bean.BeanUtil;
 import cn.hutool.json.JSONUtil;
 import com.github.pagehelper.PageInfo;
+import com.knowhub.support.BlogPermissionResolver;
+import com.knowhub.support.BlogPermissionResolver.BlogPermissionLevel;
 import com.knowhub.config.BlogConfigReader;
+import com.knowhub.enums.BlogLevel;
 import com.knowhub.enums.BlogStatus;
 import com.knowhub.enums.ReviewAction;
 import com.knowhub.enums.ReviewStatus;
@@ -26,6 +29,7 @@ import com.knowhub.pojo.entity.BlogLike;
 import com.knowhub.pojo.entity.BlogTag;
 import com.knowhub.pojo.entity.Tag;
 import com.rookie.common.util.PageUtil;
+import com.rookie.framework.security.pojo.Permission;
 import com.rookie.framework.security.pojo.UserInfo;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -42,6 +46,19 @@ import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
+/**
+ * 博客文章 Service 实现。
+ *
+ * 权限模型（轻量，仅系统级 + 作者归属，无成员表，对齐文章模块）：
+ * - 系统权限（全局、分等级、所有博客）：view/edit:lN，BlogPermissionResolver 一次扫描
+ *   List<Permission> 取最高等级（admin 零特判，登录时全 perm_key 已塞入）
+ * - 作者归属：博客 author_id 是单一所有者，作者对自己的博客全权（不看等级），
+ *   由 canOp 在系统权限外补 author_id==userId 分支
+ * 判定公式 canOp(U,B,op)：userLvl(op) >= B.level OR author_id == userId（作者全权）
+ * delete：author 或 hasPerm('knowhub:blog:delete')
+ *
+ * 审核流程复用博客/项目范式（状态机+回避+流水表+对账任务）：照搬旧逻辑，仅权限门改等级。
+ */
 @Service
 public class BlogServiceImpl implements BlogService {
 
@@ -83,11 +100,17 @@ public class BlogServiceImpl implements BlogService {
 
     @Override
     public PageInfo<BlogVo> quarryBlog(BlogQuarry quarry) {
+        // 一次扫描 perms 取查看等级（admin 自然 3，无权限者 0）；回填 userId 走"作者能看自己博客"分支
+        BlogPermissionLevel lvl = BlogPermissionResolver.resolve();
+        UserInfo user = currentUser();
+        quarry.setUserViewLevel(lvl.view());
+        quarry.setUserId(user.getUserId());
         PageUtil.startPage();
         List<Blog> list = blogMapper.quarryBlog(quarry);
         PageInfo<Blog> page = PageUtil.packagedPageInfo(list);
         PageInfo<BlogVo> voPage = PageUtil.copyPageInfo(page, BlogVo.class);
         fillTagNamesForList(voPage.getList());
+        // 列表不回填权限态（详情接口才回填），对齐文章模块
         return voPage;
     }
 
@@ -100,6 +123,8 @@ public class BlogServiceImpl implements BlogService {
             BlogVo cached = JSONUtil.toBean(json, BlogVo.class);
             // 缓存命中仍实时刷新点赞/收藏状态与浏览计数
             fillCurrentUserInteract(cached);
+            // 权限态随当前登录用户变，不信任缓存里的 canView/canEdit/isAuthor，实时按当前用户重算
+            fillPermissionState(cached, blogId);
             incrView(blogId);
             return cached;
         }
@@ -108,6 +133,10 @@ public class BlogServiceImpl implements BlogService {
         Blog blog = blogMapper.getBlogInfoById(blogId);
         if (blog == null) {
             throw new ServiceException(500, "文章不存在");
+        }
+        // 二次权限校验：canOp(view)（作者能看自己的博客，不看等级；防止越权遍历 ID 看不可见博客）
+        if (!canOp(blog, "view")) {
+            throw new ServiceException(500, "无权查看该博客");
         }
         BlogVo vo = BeanUtil.toBean(blog, BlogVo.class);
         List<Long> tagIds = blogTagMapper.getTagIdsByBlogId(blogId);
@@ -118,6 +147,8 @@ public class BlogServiceImpl implements BlogService {
             vo.setTagNames(names);
         }
         fillCurrentUserInteract(vo);
+        // 回填当前用户对该博客的权限态（供前端控制编辑/发布按钮显隐）
+        fillPermissionState(vo, blog);
         // 3. 回写缓存（带默认过期）
         redisTemplate.opsForValue().set(key, JSONUtil.toJsonStr(vo));
         redisTemplate.expire(key, java.time.Duration.ofMinutes(30));
@@ -140,12 +171,15 @@ public class BlogServiceImpl implements BlogService {
         blog.setUpdateBy(userInfo.getUsername());
         blog.setCreateTime(new Date());
         blog.setUpdateTime(new Date());
-        // 新建即草稿；审核相关字段初始化
+        // 新建即草稿；审核相关字段初始化；level 缺省 L1 公开
         blog.setStatus(BlogStatus.DRAFT.getCode());
         blog.setReviewStatus(ReviewStatus.NONE.getCode());
         blog.setViewCount(0L);
         blog.setLikeCount(0L);
         blog.setCollectCount(0L);
+        if (blog.getLevel() == null) {
+            blog.setLevel(BlogLevel.L1.getCode());
+        }
         try {
             blogMapper.addBlog(blog);
         } catch (Exception e) {
@@ -176,12 +210,23 @@ public class BlogServiceImpl implements BlogService {
         if (BlogStatus.PENDING_REVIEW.getCode().equals(cur)) {
             throw new ServiceException(500, "审核中文章不能编辑，如需修改请先驳回或撤回后操作");
         }
-        checkOwnerOrAdmin(exist);
+        // 权限校验：canOp(edit)（作者能编辑自己的博客，不看等级）
+        if (!canOp(exist, "edit")) {
+            throw new ServiceException(500, "无权编辑该博客");
+        }
         validateTagIds(vo.getTagIds());
 
         Blog blog = BeanUtil.toBean(vo, Blog.class);
         UserInfo userInfo = currentUser();
         blog.setUpdateBy(userInfo.getUsername());
+        // 改 level 要校验：操作者自己的 edit 等级 >= 新 level（否则能把自己够不着的博客降级再让别人改）
+        if (blog.getLevel() != null && exist.getLevel() != null && blog.getLevel() > exist.getLevel()) {
+            BlogPermissionLevel lvl = BlogPermissionResolver.resolve();
+            // 作者改自己博客的 level 也要校验（防止作者把博客提到 L3 机密后自己又不想担）
+            if (lvl.edit() < blog.getLevel() && !isAuthor(exist, userInfo)) {
+                throw new ServiceException(500, "无权提升博客到更高等级（自身编辑等级不足）");
+            }
+        }
         try {
             blogMapper.editBlogInfo(blog);
         } catch (Exception e) {
@@ -197,12 +242,23 @@ public class BlogServiceImpl implements BlogService {
     @Override
     @Transactional
     public Boolean deleteBlogInfo(Long[] blogIds) {
+        UserInfo userInfo = currentUser();
         try {
             for (Long id : blogIds) {
+                Blog exist = blogMapper.getBlogInfoById(id);
+                if (exist == null) {
+                    continue;
+                }
+                // 删除权限：作者 或 knowhub:blog:delete 按钮权限
+                if (!isAuthor(exist, userInfo) && !hasButtonPerm("knowhub:blog:delete")) {
+                    throw new ServiceException(500, "无权删除该博客（仅作者或拥有删除权限）");
+                }
                 blogTagMapper.deleteBlogTagByBlogId(id);
                 blogMapper.softDeleteBlog(id);
                 evictDetail(id);
             }
+        } catch (ServiceException se) {
+            throw se;
         } catch (Exception e) {
             throw new ServiceException(500, "文章删除失败", e.getMessage());
         }
@@ -225,7 +281,10 @@ public class BlogServiceImpl implements BlogService {
         if (BlogStatus.PENDING_REVIEW.getCode().equals(cur)) {
             throw new ServiceException(500, "文章审核中，请勿重复提交");
         }
-        checkOwnerOrAdmin(exist);
+        // 权限校验：canOp(edit)（发布属编辑范畴；作者能发布自己的博客）
+        if (!canOp(exist, "edit")) {
+            throw new ServiceException(500, "无权发布该博客");
+        }
         UserInfo userInfo = currentUser();
         Date now = new Date();
         // 经审核开关决定目标状态：开关关→直接发布；开→待审核
@@ -267,7 +326,10 @@ public class BlogServiceImpl implements BlogService {
         if (!BlogStatus.PUBLISHED.getCode().equals(exist.getStatus())) {
             throw new ServiceException(500, "仅已发布文章可撤回");
         }
-        checkOwnerOrAdmin(exist);
+        // 权限校验：canOp(edit)（作者能撤回自己的博客）
+        if (!canOp(exist, "edit")) {
+            throw new ServiceException(500, "无权撤回该博客");
+        }
         UserInfo userInfo = currentUser();
         Blog update = new Blog();
         update.setBlogId(blogId);
@@ -461,14 +523,63 @@ public class BlogServiceImpl implements BlogService {
         blogTagMapper.insertBlogTags(rels);
     }
 
-    /** 校验当前用户是作者本人或管理员（具备 knowhub:blog:review 权限视为管理员） */
-    private void checkOwnerOrAdmin(Blog blog) {
-        UserInfo userInfo = currentUser();
-        boolean isAdmin = userInfo.getPermissions() != null
-                && userInfo.getPermissions().contains("knowhub:blog:review");
-        if (!userInfo.getUsername().equals(blog.getCreateBy()) && !isAdmin) {
-            throw new ServiceException(500, "无权操作他人文章");
+    /**
+     * 权限判定核心：用户对博客 B 是否有操作 op 权限（对齐文章模块）。
+     * 公式：userLvl(op) >= B.level OR author_id == userId（作者全权，不看等级）。
+     * admin 因 perms 含全 l3 自然 userLvl=3，对所有博客全权（系统权限分支）。
+     */
+    private boolean canOp(Blog blog, String op) {
+        BlogPermissionLevel lvl = BlogPermissionResolver.resolve();
+        // 系统权限等级够 → 直接通过
+        if (blog.getLevel() != null && lvl.levelOf(op) >= blog.getLevel()) {
+            return true;
         }
+        // 作者归属：作者对自己的博客全权（无成员表，直接 author_id 比对）
+        return isAuthor(blog, currentUser());
+    }
+
+    /** 当前用户是否该博客作者（author_id 比对，userId 稳定锁定，username 可改不影响） */
+    private boolean isAuthor(Blog blog, UserInfo user) {
+        return blog.getAuthorId() != null && blog.getAuthorId().equals(user.getUserId());
+    }
+
+    /** 判断当前用户是否拥有某按钮权限（非等级，如 knowhub:blog:delete）。
+     *  注意：UserInfo.getPermissions() 是 List<Permission>，需遍历比 permKey，不能用 contains(String)
+     *  （旧 checkOwnerOrAdmin 用 contains(String) 对 List<Permission> 永远 false 的隐坑已修） */
+    private boolean hasButtonPerm(String permKey) {
+        UserInfo u = currentUser();
+        if (u.getPermissions() == null) {
+            return false;
+        }
+        for (Permission p : u.getPermissions()) {
+            if (permKey.equals(p.getPermKey())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** 详情接口回填当前用户对该博客的权限态（供前端控制编辑/发布按钮显隐）。
+     *  缓存命中与未命中两路都调（不信任缓存里的权限态字段，按当前登录用户实时算）。
+     *  缓存命中分支无 Blog 实体，按 blogId 重取一次轻量级实体取 level/author_id（详情已带，开销可忽略）。 */
+    private void fillPermissionState(BlogVo vo, Blog blog) {
+        BlogPermissionLevel lvl = BlogPermissionResolver.resolve();
+        UserInfo user = currentUser();
+        boolean author = isAuthor(blog, user);
+        vo.setIsAuthor(author);
+        // canView/canEdit：系统权限够 OR 作者全权
+        vo.setCanView(author || (blog.getLevel() != null && lvl.view() >= blog.getLevel()));
+        vo.setCanEdit(author || (blog.getLevel() != null && lvl.edit() >= blog.getLevel()));
+    }
+
+    /** 缓存命中分支重载：仅有 BlogVo（无 Blog 实体），按 blogId 取 level/author_id 再算权限态。
+     *  与 fillPermissionState(BlogVo,Blog) 共用判定逻辑，避免缓存命中时权限态串用户。 */
+    private void fillPermissionState(BlogVo vo, Long blogId) {
+        Blog blog = blogMapper.getBlogInfoById(blogId);
+        if (blog == null) {
+            return;
+        }
+        fillPermissionState(vo, blog);
     }
 
     /**

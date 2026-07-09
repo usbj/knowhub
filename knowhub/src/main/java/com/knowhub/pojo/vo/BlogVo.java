@@ -16,6 +16,9 @@ public class BlogVo {
 
     private Long authorId;
 
+    /** 博客等级 1公开/2内部/3机密（见 BlogLevel 枚举，对标系统 view/edit:lN 权限等级） */
+    private Integer level;
+
     private String title;
 
     private String content;
@@ -60,6 +63,16 @@ public class BlogVo {
     /** 当前登录用户是否已收藏（详情接口回填） */
     private Boolean hasCollected;
 
+    // ---- 当前用户对该博客的权限态（详情接口回填，列表不回填，供前端控制按钮显隐） ----
+    /** 当前用户是否有查看权限（系统 view 等级够 OR 作者全权） */
+    private Boolean canView;
+
+    /** 当前用户是否有编辑权限（系统 edit 等级够 OR 作者全权） */
+    private Boolean canEdit;
+
+    /** 当前用户是否该博客作者（author_id 比对） */
+    private Boolean isAuthor;
+
     public BlogVo() {
     }
 
@@ -77,6 +90,14 @@ public class BlogVo {
 
     public void setAuthorId(Long authorId) {
         this.authorId = authorId;
+    }
+
+    public Integer getLevel() {
+        return level;
+    }
+
+    public void setLevel(Integer level) {
+        this.level = level;
     }
 
     public String getTitle() {
@@ -245,6 +266,30 @@ public class BlogVo {
 
     public void setHasCollected(Boolean hasCollected) {
         this.hasCollected = hasCollected;
+    }
+
+    public Boolean getCanView() {
+        return canView;
+    }
+
+    public void setCanView(Boolean canView) {
+        this.canView = canView;
+    }
+
+    public Boolean getCanEdit() {
+        return canEdit;
+    }
+
+    public void setCanEdit(Boolean canEdit) {
+        this.canEdit = canEdit;
+    }
+
+    public Boolean getIsAuthor() {
+        return isAuthor;
+    }
+
+    public void setIsAuthor(Boolean isAuthor) {
+        this.isAuthor = isAuthor;
     }
 
     @Override

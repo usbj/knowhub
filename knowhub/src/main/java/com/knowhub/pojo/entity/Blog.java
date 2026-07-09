@@ -18,6 +18,9 @@ public class Blog extends BaseEntity {
 
     private Long authorId;
 
+    /** 博客等级 1公开/2内部/3机密（见 BlogLevel 枚举，对标系统 view/edit:lN 权限等级） */
+    private Integer level;
+
     private String title;
 
     private String content;
@@ -50,12 +53,13 @@ public class Blog extends BaseEntity {
     }
 
     public Blog(Date createTime, Date updateTime, String createBy, String updateBy,
-                Long blogId, Long authorId, String title, String content, String summary, String coverUrl,
+                Long blogId, Long authorId, Integer level, String title, String content, String summary, String coverUrl,
                 String status, Date publishTime, Long viewCount, Long likeCount, Long collectCount,
                 String reviewStatus, String reviewer, Date reviewTime, String reviewAdvice, Integer deleted) {
         super(createTime, updateTime, createBy, updateBy);
         this.blogId = blogId;
         this.authorId = authorId;
+        this.level = level;
         this.title = title;
         this.content = content;
         this.summary = summary;
@@ -86,6 +90,14 @@ public class Blog extends BaseEntity {
 
     public void setAuthorId(Long authorId) {
         this.authorId = authorId;
+    }
+
+    public Integer getLevel() {
+        return level;
+    }
+
+    public void setLevel(Integer level) {
+        this.level = level;
     }
 
     public String getTitle() {

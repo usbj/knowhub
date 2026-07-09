@@ -56,6 +56,9 @@ export const SYSTEM_PERMISSION_KEYS = {
   },
   // ---- knowhub 二开新增业务模块（博客文章 / 受控标签 / 文件存储）----
   // 权限键三段式 knowhub:模块:动作，与 sys_menu 中 knowhub:* 行的 perm_key 首值对齐。
+  // 等级权限(view/edit:l1-l3)由后端 BlogPermissionResolver 扫 perms 取最高等级判定，
+  // 前端 hasPermission 仅按钮显隐门槛；实际可见性/可操作性由后端 SQL 过滤 + canOp 判定。
+  // 编辑复用既有 knowhub:blog:edit 键(博客历史存量保留，渐进增强等级门控)；admin 登录时全 perm_key 已塞入自然得 l3 全权。
   blog: {
     create: ['knowhub:blog:add'],
     edit: ['knowhub:blog:edit'],
@@ -64,6 +67,13 @@ export const SYSTEM_PERMISSION_KEYS = {
     revoke: ['knowhub:blog:revoke'],
     review: ['knowhub:blog:review'],
     info: ['knowhub:blog:info'],
+    // 等级权限（前端按需用 hasPermission 判断等级按钮显隐，实际门控在后端）
+    viewL1: ['knowhub:blog:view:l1'],
+    viewL2: ['knowhub:blog:view:l2'],
+    viewL3: ['knowhub:blog:view:l3'],
+    editL1: ['knowhub:blog:edit:l1'],
+    editL2: ['knowhub:blog:edit:l2'],
+    editL3: ['knowhub:blog:edit:l3'],
   },
   tag: {
     create: ['knowhub:tag:add'],
@@ -120,5 +130,41 @@ export const SYSTEM_PERMISSION_KEYS = {
     editL1: ['knowhub:project:edit:l1'],
     editL2: ['knowhub:project:edit:l2'],
     editL3: ['knowhub:project:edit:l3'],
+  },
+  // ---- 文章管理（章节集合，等级对标权限，无成员表/无下载）----
+  // 权限键三段式 knowhub:article:动作，与 sys_menu 中 knowhub:article:* 行对齐。
+  // 等级权限(view/edit:l1-l3)由后端 ArticlePermissionResolver 扫 perms 取最高等级判定，
+  // 前端 hasPermission 仅按钮显隐门槛；实际可见性/可操作性由后端 SQL 过滤 + canOp 判定。
+  // edit 不设非等级按钮(纯等级门控)；admin 登录时全 perm_key 已塞入自然得 l3 全权。
+  // 编辑复用 add 权限键(与项目一致，无独立 edit 键)；无 download(文章无下载)；无 member(无成员表)。
+  article: {
+    create: ['knowhub:article:add'],
+    delete: ['knowhub:article:delete'],
+    publish: ['knowhub:article:publish'],
+    revoke: ['knowhub:article:revoke'],
+    review: ['knowhub:article:review'],
+    reviewLog: ['knowhub:article:reviewLog'],
+    info: ['knowhub:article:info'],
+    quarry: ['knowhub:article:quarry'],
+    // 等级权限（前端按需用 hasPermission 判断等级按钮显隐，实际门控在后端）
+    viewL1: ['knowhub:article:view:l1'],
+    viewL2: ['knowhub:article:view:l2'],
+    viewL3: ['knowhub:article:view:l3'],
+    editL1: ['knowhub:article:edit:l1'],
+    editL2: ['knowhub:article:edit:l2'],
+    editL3: ['knowhub:article:edit:l3'],
+  },
+  // ---- 章节管理（文章子模块，无独立菜单页，从文章列表点"章节"跳二级路由页）----
+  // 权限键三段式 knowhub:chapter:动作，挂文章菜单(menu_id=136)下作隐形 menu_type=3（不渲染为菜单项）。
+  // 章节编辑/审核实际可见性由后端按章节可见性=文章可见性 + 提交者/作者归属判定，前端仅按钮显隐门槛。
+  chapter: {
+    create: ['knowhub:chapter:add'],
+    delete: ['knowhub:chapter:delete'],
+    publish: ['knowhub:chapter:publish'],
+    revoke: ['knowhub:chapter:revoke'],
+    review: ['knowhub:chapter:review'],
+    reviewLog: ['knowhub:chapter:reviewLog'],
+    info: ['knowhub:chapter:info'],
+    quarry: ['knowhub:chapter:quarry'],
   },
 } as const

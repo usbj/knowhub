@@ -178,6 +178,7 @@ const handleQueryFormUpdate = (nextValue: Record<string, unknown>) => {
   queryForm.title = String(nextValue.title ?? '')
   queryForm.keyword = String(nextValue.keyword ?? '')
   queryForm.tagIds = Array.isArray(nextValue.tagIds) ? nextValue.tagIds.map((item) => Number(item)) : []
+  queryForm.level = nextValue.level != null && nextValue.level !== '' ? Number(nextValue.level) : undefined
   queryForm.status = nextValue.status ? String(nextValue.status) : undefined
   queryForm.reviewStatus = nextValue.reviewStatus ? String(nextValue.reviewStatus) : undefined
   queryForm.createBy = String(nextValue.createBy ?? '')
@@ -194,6 +195,7 @@ const buildListParams = (): BlogListQuery => {
     pageSize: pageState.value.pageSize,
     title: queryForm.title.trim() || undefined,
     keyword: queryForm.keyword.trim() || undefined,
+    level: queryForm.level,
     tagIds: queryForm.tagIds.length ? queryForm.tagIds : undefined,
     status: queryForm.status,
     reviewStatus: queryForm.reviewStatus,
@@ -373,6 +375,10 @@ const handleFormModelUpdate = (nextValue: Record<string, unknown>) => {
       nextValue.coverUrl === undefined || nextValue.coverUrl === null
         ? formModel.value.coverUrl
         : String(nextValue.coverUrl),
+    level:
+      nextValue.level === undefined || nextValue.level === null || nextValue.level === ''
+        ? formModel.value.level
+        : Number(nextValue.level),
   }
 }
 
@@ -409,6 +415,7 @@ const handleSubmitForm = async () => {
       summary: formModel.value.summary?.trim() || '',
       coverUrl: formModel.value.coverUrl?.trim() || '',
       tagIds: formModel.value.tagIds ?? [],
+      level: formModel.value.level ?? 1,
     }
 
     if (dialogMode.value === 'create') {

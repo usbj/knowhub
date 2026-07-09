@@ -1091,6 +1091,174 @@ Accept-Ranges: none
 
 ---
 
+### 文章管理模块
+
+文章=章节集合（参考 Vue/Element-Plus 官方文档站：一篇文章是一本"文档书"，章节是其中的"页面"）。系统审核颗粒度到文章（对外发布把关）；章节走文章内部可见性三档（PRIVATE/SEMIPUBLIC/PUBLIC）+ 作者审核（仅半公开）。权限模型轻量：系统级 view/edit:l1-l3 分等级 + 作者归属（author_id 单一所有者，作者全权不看等级/不看 visibility），无成员表/无项目内标志位。
+
+**权限键**：按钮(非等级) knowhub:article:动作 走 @PreAuthorize；等级(view/edit:lN)由后端 ArticlePermissionResolver 扫 perms 取最高等级判定，非框架 hasAuthority。
+
+#### `GET /article/list` — 获取文章列表
+
+**权限**：`knowhub:article:quarry`（进页面门槛；列表可见性由后端 SQL 过滤：level<=userViewLevel OR author_id=userId）
+
+**请求参数**（query string）：
+
+| 参数 | 类型 | 说明 |
+|---|---|---|
+| pageNum | number | 页码 |
+| pageSize | number | 每页条数 |
+| title | string | 标题模糊（可选） |
+| level | number | 等级 1/2/3（可选） |
+| visibility | string | 可见性 PRIVATE/SEMIPUBLIC/PUBLIC（可选） |
+| status | string | 状态（可选） |
+| reviewStatus | string | 审核状态（可选） |
+| createBy | string | 作者用户名（可选） |
+| authorId | number | 作者userId过滤，"我的文章"场景（可选） |
+| beginTime | string | 创建时间起 yyyy-MM-dd（可选） |
+| endTime | string | 创建时间止 yyyy-MM-dd（可选） |
+
+**响应**：`Result<PageInfo<ArticleVo>>`（列表含 authorNickname join 带出，不回填权限态）
+
+#### `GET /article/{articleId}` — 获取文章详情
+
+**权限**：`knowhub:article:info`（二次校验 canOp(view)：作者能看自己文章不看等级）
+
+**响应**：`Result<ArticleVo>`（回填 canView/canEdit/isAuthor 供前端控制按钮显隐）
+
+#### `POST /article` — 新增文章
+
+**权限**：`knowhub:article:add`
+
+**请求体**：`ArticleVo`（title/level/visibility/summary/coverObjectKey；authorId=当前用户由后端写）
+
+**响应**：`Result<Boolean>`
+
+#### `PUT /article` — 编辑文章
+
+**权限**：`knowhub:article:add`（编辑复用 add 权限键，无独立 edit 键）
+
+**逻辑**：PUBLISHED 禁编须先撤回；改 level 升级需自身 edit 等级>=新 level（作者除外）。
+
+**请求体**：`ArticleVo`（articleId 必填）
+
+**响应**：`Result<Boolean>`
+
+#### `DELETE /article/{articleIds}` — 批量删除文章
+
+**权限**：`knowhub:article:delete`（作者或 delete 权限可删；级联软删 chapter + 封面 file_object）
+
+**响应**：`Result<Boolean>`
+
+#### `PUT /article/publish/{articleId}` — 发布文章
+
+**权限**：`knowhub:article:publish`（canOp(edit) 校验）
+
+**逻辑**：审核开关开→PENDING_REVIEW+SET Redis 标记+写流水 SUBMIT；关→PUBLISHED+写流水 PUBLISH。
+
+**响应**：`Result<Boolean>`
+
+#### `PUT /article/revoke/{articleId}` — 撤回文章
+
+**权限**：`knowhub:article:revoke`（仅 PUBLISHED 可撤回；canOp(edit) 校验）
+
+**响应**：`Result<Boolean>`
+
+#### `PUT /article/review` — 审核文章
+
+**权限**：`knowhub:article:review`（仅 PENDING_REVIEW 可审；作者不能审自己 author_id 比对回避）
+
+**请求体**：`ArticleReviewVo`（articleId/pass/advice；pass=false 时 advice 必填）
+
+**响应**：`Result<Boolean>`
+
+#### `GET /article/review-log/{articleId}` — 获取文章审核历史
+
+**权限**：`knowhub:article:reviewLog`
+
+**响应**：`Result<List<ArticleReviewLogVo>>`（按时间升序，含 operatorNickname join 带出）
+
+### 章节管理模块
+
+章节是文章子模块（无独立菜单页，从文章列表"章节"按钮跳二级路由页 /knowhub/article/chapters?articleId=）。章节≈博客，正文走主表不分表。章节提交状态机由文章 visibility + 提交者是否文章作者决定；章节作者审核（仅 SEMIPUBLIC）走 chapter_review_log，不受系统审核开关影响。
+
+**权限键**：按钮 knowhub:chapter:动作 走 @PreAuthorize（挂文章菜单下作隐形 menu_type=3）；章节编辑/审核实际可见性由后端按章节可见性=文章可见性 + 提交者/作者归属判定。
+
+#### `GET /chapter/list` — 获取章节列表（按 articleId 过滤）
+
+**权限**：`knowhub:chapter:quarry`（需能看文章；章节可见性=文章可见性：能看文章即看 PUBLISHED 章节，非 PUBLISHED 仅章节作者/文章作者可见）
+
+**请求参数**（query string）：
+
+| 参数 | 类型 | 说明 |
+|---|---|---|
+| articleId | number | 所属文章ID（必传） |
+| pageNum/pageSize | number | 分页 |
+| chapterName | string | 章节名模糊（可选） |
+| status | string | 状态（可选） |
+| reviewStatus | string | 审核状态（可选） |
+| authorId | number | 章节作者userId（可选） |
+| beginTime/endTime | string | 创建时间区间 yyyy-MM-dd（可选） |
+
+**响应**：`Result<PageInfo<ChapterVo>>`（列表不带 content 大字段，含 authorNickname/articleTitle/articleVisibility join 带出）
+
+#### `GET /chapter/{chapterId}` — 获取章节详情（含正文 content）
+
+**权限**：`knowhub:chapter:info`（二次校验章节可见性，回填 canEdit/canReview）
+
+**响应**：`Result<ChapterVo>`（带 content 大字段 + join article 带出 articleTitle/articleVisibility/articleLevel）
+
+#### `POST /chapter` — 新增/提交章节
+
+**权限**：`knowhub:chapter:add`
+
+**逻辑**：按 visibility+提交者是否作者决定状态机分支——作者提交任意 visibility 免审 PUBLISHED；非作者 PRIVATE 拒绝；非作者 SEMIPUBLIC 进 PENDING_AUTHOR_REVIEW+写流水 SUBMIT；非作者 PUBLIC 免审 PUBLISHED。
+
+**请求体**：`ChapterVo`（articleId/chapterName/content 必填，sortOrder 可选）
+
+**响应**：`Result<Boolean>`
+
+#### `PUT /chapter` — 编辑章节
+
+**权限**：`knowhub:chapter:add`（编辑复用 add；canEdit 校验：章节作者 OR 文章作者 OR 系统编辑权限够）
+
+**逻辑**：PUBLISHED 禁编须先撤回；PENDING_AUTHOR_REVIEW 审核中不能改。
+
+**请求体**：`ChapterVo`（chapterId 必填）
+
+**响应**：`Result<Boolean>`
+
+#### `DELETE /chapter/{chapterIds}` — 批量删除章节
+
+**权限**：`knowhub:chapter:delete`（章节作者/文章作者或 delete 权限可删）
+
+**响应**：`Result<Boolean>`
+
+#### `PUT /chapter/publish/{chapterId}` — 提交/发布章节
+
+**权限**：`knowhub:chapter:publish`（DRAFT/REJECTED/REVOKED 再提交，按 visibility 决定走不走作者审）
+
+**响应**：`Result<Boolean>`
+
+#### `PUT /chapter/revoke/{chapterId}` — 撤回章节
+
+**权限**：`knowhub:chapter:revoke`（仅 PUBLISHED 可撤回 → REVOKED）
+
+**响应**：`Result<Boolean>`
+
+#### `PUT /chapter/review` — 章节作者审核
+
+**权限**：`knowhub:chapter:review`（仅 PENDING_AUTHOR_REVIEW 可审；审核人=文章作者 OR 系统审权限代审；章节提交者回避）
+
+**请求体**：`ChapterReviewVo`（chapterId/pass/advice；pass=false 时 advice 必填）
+
+**响应**：`Result<Boolean>`
+
+#### `GET /chapter/review-log/{chapterId}` — 获取章节审核历史
+
+**权限**：`knowhub:chapter:reviewLog`
+
+**响应**：`Result<List<ChapterReviewLogVo>>`（按时间升序，仅 SEMIPUBLIC 场景有记录）
+
 ### 接口更新日志
 
 #### 2026-07-07 项目管理模块新增（19 接口）
@@ -1102,4 +1270,26 @@ Accept-Ranges: none
 - **项目类型字典补齐**：`sql/knowhub-project-patch.sql` 追加 project_type 的 PRACTICE/OPS（dict_data 121/122），原 knowhub-project.sql 不改、表不动；ProjectType 枚举启用三值。PRACTICE/OPS 无子表（主表 description/summary + 项目文件覆盖所需属性），比赛子表 project_competition 保留。
 - **批量加成员接口**：新增 `POST /project/member/batch/{projectId}`，body 为 userIds 数组，默认 MEMBER 角色，已存在跳过（参考通知分组 UX，前端搜用户子弹窗调 GET /sys/user/list 搜索后逐个"加入"）。单点改角色/权限标志位仍走 PUT /project/member。
 - **弹窗职责分离**（用户明确要求）：新增/编辑弹窗内嵌"项目信息/团队成员/项目文件"三标签页，改数据全在编辑弹窗；详情弹窗只读（仅展示+下载，下载属查看行为）；审核弹窗只给通过/驳回+意见，不展示其它数据、不承担改数据职责。前端新增 ProjectEditDialog/ProjectMemberAddDialog 组件，index.vue 列表改用独立编辑弹窗（SharedTablePanel 仅展示表格）。
+- 校验：mvn -pl knowhub -am compile BUILD SUCCESS；rookie-ui npm run type-check 通过。
+
+#### 2026-07-09 文章管理模块新增（17 接口）
+
+新增文章管理模块全部接口：文章 9 个（list/info/add/edit/delete/publish/revoke/review/review-log）+ 章节 9 个（list/info/submit-add/edit/delete/publish/revoke/review/review-log），共 18 个接口。详见上方「文章管理模块」「章节管理模块」章节。
+
+- **权限**：文章等级权限(view/edit:l1-l3)由后端 ArticlePermissionResolver 扫 perms 取最高等级判定，非框架 hasAuthority；无成员表（轻量：系统级+作者归属，作者全权不看等级/不看 visibility）；无 download（文章无下载）。
+- **双重审核流**：文章系统审核照搬博客范式（状态机+回避+流水表+对账任务，开关走 sys_config knowhub.article.review_enabled 默认 true）；章节作者审核仅 SEMIPUBLIC 触发（走 chapter_review_log，不受系统审核开关影响，是 visibility tier 固有机制）。
+- **章节提交状态机**：作者提交任意 visibility 免审 PUBLISHED；非作者 PRIVATE 拒绝 / SEMIPUBLIC 进 PENDING_AUTHOR_REVIEW 待作者审 / PUBLIC 免审 PUBLISHED。
+- **主表不冗余审核快照**（reviewer/review_time/review_advice 全在流水表），照项目范式（比博客主表更干净）；章节正文不分表（用户拍板，整页 Markdown 列表不带 content 即可）。
+- **关联**：project.article_id 单向关联文章，文章侧不反查、不加 project_id。
+- 校验：mvn -pl knowhub -am compile BUILD SUCCESS；rookie-ui npm run type-check 通过（修一处 ChapterEditDialog import 路径）。
+
+#### 2026-07-09 博客管理加 L1~L3 等级查询权限（对齐文章模块范式）
+
+博客原只有按钮权限，无等级概念。本次照文章模块范式加等级：blog 表加 `level`(1/2/3)，列表按 `level<=userViewLevel OR author_id=userId` 过滤，操作按 `canOp=userLvl(op)>=level OR author_id==userId` 判定（作者全权不看等级）。review 保持按钮权限（非等级）。
+
+- **新增接口**：无（沿用博客 9 个接口，仅入参/出参加 level + 详情回填权限态；BlogListQuery 加 level 筛选参数；BlogVo 出参加 level + canView/canEdit/isAuthor）。
+- **权限**：新增系统等级权限 `knowhub:blog:view:l1/l2/l3` + `knowhub:blog:edit:l1/l2/l3`（menu 159-164），由后端 BlogPermissionResolver 扫 perms 取最高等级判定（非框架 hasAuthority）；无成员表（轻量：系统级+作者归属，作者全权不看等级）；review 保持 knowhub:blog:review 按钮权限（非等级）；编辑仍保留既有 knowhub:blog:edit 独立键（博客历史存量，渐进增强）。
+- **SQL**：`sql/knowhub-blog-level-patch.sql`：blog 加 level tinyint NOT NULL DEFAULT 1（存量 L1）+ idx_blog_level；menu 159-164（6 等级权限）；dict blog_level(34)+dict_data 140-142。续编前查 DB MAX(menu_id)=158/MAX(dict_id)=33/MAX(dict_data_id)=139。
+- **缓存**：getBlogInfo 缓存命中与未命中两路都调 fillPermissionState 按当前登录用户实时重算 canView/canEdit/isAuthor（不信任缓存里的权限态字段，避免跨用户串态）。
+- **修隐坑**：旧 checkOwnerOrAdmin 用 `List<Permission>.contains(String)` 永远 false（List 存的是 Permission 对象非 String），改遍历比 permKey。
 - 校验：mvn -pl knowhub -am compile BUILD SUCCESS；rookie-ui npm run type-check 通过。

@@ -11,12 +11,15 @@ import type { NormalizedPageResult, PageQueryParams } from '../system/common'
 
 /**
  * 博客文章记录，与后端 BlogVo 字段对齐。
- * status 取值见字典 blog_status；reviewStatus 见字典 review_status。
+ * status 取值见字典 blog_status；reviewStatus 见字典 review_status；level 见字典 blog_level。
  * authorId 为作者用户ID(userId)，与 createBy(username) 互补，前台展示昵称走 join sys_user。
+ * canView/canEdit/isAuthor 为详情接口回填的当前用户权限态（管理台列表一般不消费，供按钮显隐）。
  */
 export interface BlogRecord {
   blogId?: number
   authorId?: number
+  /** 博客等级 1公开/2内部/3机密（字典 blog_level，对标系统 view/edit:lN 权限等级） */
+  level?: number
   title: string
   content: string
   summary?: string
@@ -38,16 +41,23 @@ export interface BlogRecord {
   updateTime?: string
   hasLiked?: boolean
   hasCollected?: boolean
+  // ---- 当前用户对该博客的权限态（详情接口回填，列表不回填） ----
+  canView?: boolean
+  canEdit?: boolean
+  isAuthor?: boolean
 }
 
 /**
  * 博客列表查询参数，与后端 BlogQuarry + 分页参数对齐。
  * tagIds 为标签 id 列表，后端要求同时命中全部所选标签；
+ * level 为按等级筛选（1/2/3）；
  * beginTime / endTime 由页面把日期范围控件拆成两个字段回传后端。
+ * userViewLevel/userId 为后端回填字段，前端不传。
  */
 export interface BlogListQuery extends Partial<PageQueryParams> {
   title?: string
   keyword?: string
+  level?: number
   tagIds?: number[]
   status?: string
   reviewStatus?: string

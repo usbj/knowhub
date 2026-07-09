@@ -23,6 +23,7 @@ export interface BlogQueryFormState {
   title: string
   keyword: string
   tagIds: number[]
+  level: number | undefined
   status: string | undefined
   reviewStatus: string | undefined
   createBy: string
@@ -41,6 +42,7 @@ export const createDefaultBlogQuery = (): BlogQueryFormState => ({
   title: '',
   keyword: '',
   tagIds: [],
+  level: undefined,
   status: undefined,
   reviewStatus: undefined,
   createBy: '',
@@ -50,6 +52,7 @@ export const createDefaultBlogQuery = (): BlogQueryFormState => ({
 /**
  * 方法效果：
  * 生成博客弹窗表单的初始状态，新建即草稿，status/统计量由后端写不参与表单。
+ * level 默认 L1 公开（对标系统 view/edit:lN 权限等级）。
  * 参数：
  * - 无。
  * 返回值：
@@ -61,6 +64,7 @@ export const createDefaultBlogForm = (): BlogRecord => ({
   summary: '',
   coverUrl: '',
   tagIds: [],
+  level: 1,
 })
 
 /**
@@ -104,13 +108,25 @@ export const createBlogQuerySchema = (
     // 由页面 #field-tagIds 插槽接管为 ElSelect multiple；选项由页面传入
     options: tagOptions,
   },
+  level: {
+    label: '等级',
+    inputType: 'select',
+    placeholder: '请选择等级',
+    tableVisible: false,
+    formVisible: true,
+    formOrder: 4,
+    span: 4,
+    clearable: true,
+    dictKey: 'blog_level',
+    props: { style: { width: '100%' } },
+  },
   status: {
     label: '状态',
     inputType: 'select',
     placeholder: '请选择状态',
     tableVisible: false,
     formVisible: true,
-    formOrder: 4,
+    formOrder: 5,
     span: 4,
     clearable: true,
     dictKey: 'blog_status',
@@ -122,7 +138,7 @@ export const createBlogQuerySchema = (
     placeholder: '请选择审核状态',
     tableVisible: false,
     formVisible: true,
-    formOrder: 5,
+    formOrder: 6,
     span: 4,
     clearable: true,
     dictKey: 'review_status',
@@ -134,7 +150,7 @@ export const createBlogQuerySchema = (
     placeholder: '请输入作者用户名',
     tableVisible: false,
     formVisible: true,
-    formOrder: 6,
+    formOrder: 7,
     span: 4,
     props: { style: { width: '100%' } },
   },
@@ -143,7 +159,7 @@ export const createBlogQuerySchema = (
     inputType: 'daterange',
     tableVisible: false,
     formVisible: true,
-    formOrder: 7,
+    formOrder: 8,
     span: 6,
     props: {
       unlinkPanels: true,
@@ -181,13 +197,25 @@ export const createBlogSchema = (
     tableMinWidth: 180,
     span: 24,
   },
+  level: {
+    label: '等级',
+    inputType: 'select',
+    placeholder: '请选择等级',
+    tableVisible: true,
+    formVisible: true,
+    tableOrder: 3,
+    formOrder: 5,
+    tableWidth: 90,
+    span: 12,
+    dictKey: 'blog_level',
+  },
   summary: {
     label: '摘要',
     inputType: 'textarea',
     placeholder: '请输入摘要（可选，留空可由正文截取）',
     tableVisible: true,
     formVisible: true,
-    tableOrder: 3,
+    tableOrder: 4,
     formOrder: 2,
     tableMinWidth: 200,
     span: 24,
@@ -223,7 +251,7 @@ export const createBlogSchema = (
     inputType: 'custom',
     tableVisible: false,
     formVisible: true,
-    formOrder: 5,
+    formOrder: 6,
     span: 24,
   },
   status: {
@@ -302,4 +330,5 @@ export const blogFormRules: FormRules = {
     { min: 2, max: 200, message: '标题长度需在 2 到 200 位之间', trigger: 'blur' },
   ],
   content: [{ required: true, message: '请输入正文', trigger: 'blur' }],
+  level: [{ required: true, message: '请选择博客等级', trigger: 'change' }],
 }

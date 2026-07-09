@@ -707,3 +707,99 @@ knowhub 项目管理模块开发，详见 `doc/knowhub-project-design.md`。项�
 **校验**：`mvn -pl knowhub -am compile` BUILD SUCCESS（addMembersBatch 已编译入 ProjectServiceImpl.class）；`rookie-ui npm run type-check` 通过（无错误输出）。
 
 **待用户人工验证**：① 跑 sql/knowhub-project-patch.sql 后 project_type 字典 3 行（108 COMPETITION/121 PRACTICE/122 OPS）；② 新增项目弹窗：填项目信息→创建→自动解锁"团队成员/项目文件"标签页→添加成员（搜用户子弹窗：输入昵称/用户名/手机号搜索→行内"加入"批量加默认 MEMBER）→上传文件（GitHub 式树）；③ 编辑项目弹窗三标签页全可操作；④ 详情弹窗只读（无添加成员/上传文件按钮，仅下载可用）；⑤ 审核弹窗只有通过/驳回+意见（无多余项）；⑥ 成员行内编辑改角色/权限标志位、LEADER 不可删。
+
+### 2026-07-09 文章管理模块开发（文章=章节集合，双重审核流，轻量权限）
+
+文章管理模块定稿实施。文章=章节集合（参考 Vue/Element-Plus 官方文档站结构：一篇文章是一本"文档书"，章节是其中的"页面"），章节≈博客（Markdown 正文，整页文档语义）。系统审核颗粒度到文章（对外发布把关）；章节走文章内部权限的三档可见性 + 作者审核（仅半公开场景）。权限模型轻量：仅系统级（view/edit:l1-l3 分等级）+ 作者归属（author_id 单一所有者，作者全权不看等级/不看 visibility），无成员表/无项目内标志位（用户拍板"没有成员那种，系统级就够"）。
+
+**双重审核流并存，共用 ReviewAction 枚举 + review_action 字典(dict_id=25)**：
+- 文章系统审核（对外发布把关）：照搬博客范式，流水 article_review_log；开关 knowhub.article.review_enabled 走 sys_config，对账任务走 yml。
+- 章节作者审核（半公开场景内部把关）：仅 visibility=SEMIPUBLIC 触发，流水 chapter_review_log；不受系统审核开关影响（是 visibility tier 固有机制）。
+
+**文章内部可见性三档（visibility，决定章节提交审不审）**：
+- PRIVATE 未公开：仅作者能写章节，章节提交免审直接 PUBLISHED
+- SEMIPUBLIC 半公开：有文章更改权限者(hold knowhub:article:edit:lN≥level 或作者)可提交章节，提交后需文章作者审核（走 chapter_review_log）
+- PUBLIC 全公开：有文章更改权限者可提交章节，提交后直接 PUBLISHED 免审
+
+**主表不冗余审核快照**（reviewer/review_time/review_advice 全在流水表），只留 status+review_status+publish_time。比博客主表更干净，照项目范式（用户明确要求砍掉三个审核快照字段，多次审核历史全走流水表）。章节正文不分表（文档站语义：整页 Markdown，列表不带 content 即可，用户拍板"章节正文不用走分表，没必要"）。
+
+**关联**：project.article_id 单向关联文章（项目表已预留字段），文章侧不反查、不加 project_id（用户拍板单向）。
+
+**SQL（sql/knowhub-article.sql，增量幂等，DROP IF EXISTS+INSERT IGNORE）**：
+- 4 张表：article（主表·level·visibility·author_id·审核状态机·不存正文·cover_object_key 走 file_object ARTICLE_COVER）/ chapter（≈博客·正文走主表 mediumtext 不分表·status 多 PENDING_AUTHOR_REVIEW·author_id=提交者）/ article_review_log（文章系统审核流水，照 blog_review_log 同构）/ chapter_review_log（章节作者审核流水，仅 SEMIPUBLIC 用，action 仅 SUBMIT/APPROVE/REJECT 三值）。
+- 菜单 menu_id 136-158 共 23 条：136 文章管理页 + 137-144(8按钮:quarry/info/add/delete/publish/revoke/review/reviewLog) + 145-150(6等级权限:view:l1-3/edit:l1-3) + 151-158(8章节隐形按钮权限键 menu_type=3 挂文章菜单下:chapter:quarry/info/add/delete/reviewLog/publish/revoke/review)。章节无独立菜单页（用户拍板"独立页但无菜单：章节是文章点进去的二级页"）。
+- 字典 dict_id 30-33：article_status(5值 123-127)/article_level(3值 128-130)/article_visibility(3值 131-133)/chapter_status(5值 134-138)；review_status(14)/review_action(25) 复用；file_business_type(15) 续编 ARTICLE_COVER(139)。
+- sys_config knowhub.article.review_enabled=true（文章审核默认开启，与项目一致）。
+- 编号续编前查实际数据库 MAX(menu_id)=135/MAX(dict_id)=29/MAX(dict_data_id)=122/MAX(config_id)=11，避开已占段（吸取 [[knowhub-sql-id-numbering-pitfall]] 教训）。
+
+**后端（com.knowhub.* 同包，不新建 Maven 模块）**
+- article/support/ArticlePermissionResolver.java：照 ProjectPermissionResolver 抄，去 download，正则 ^knowhub:article:(view|edit):l([1-3])$ 一次扫描 List<Permission> 取 view/edit 最高等级，admin 零特判，record ArticlePermissionLevel(view, edit)。
+- enums/ArticleStatus.java(DRAFT/PUBLISHED/REVOKED/PENDING_REVIEW/REJECTED 无 ARCHIVED)/ArticleLevel.java(L1/L2/L3)/ArticleVisibility.java(PRIVATE/SEMIPUBLIC/PUBLIC)/ChapterStatus.java(DRAFT/PENDING_AUTHOR_REVIEW/PUBLISHED/REJECTED/REVOKED)。enums/FileBusinessType.java 追加 ARTICLE_COVER(PUBLIC)。
+- pojo/entity/Article.java(extends BaseEntity·articleId/title/summary/level/visibility/authorId/coverObjectKey/status/reviewStatus/publishTime/deleted + 非表字段 authorNickname/canView/canEdit/isAuthor)/Chapter.java(extends BaseEntity·chapterId/articleId/chapterName/sortOrder/authorId/content(mediumtext)/status/reviewStatus/publishTime/deleted + 非表字段 authorNickname/articleTitle/articleVisibility/articleLevel/articleAuthorId/canEdit/canReview)/ArticleReviewLog.java+ChapterReviewLog.java(不继承 BaseEntity，构造器接业务字段)。
+- pojo/vo/ArticleVo.java/ChapterVo.java/ArticleReviewVo.java/ChapterReviewVo.java/ArticleReviewLogVo.java/ChapterReviewLogVo.java（时间用 Date，照 ProjectVo/ProjectReviewLogVo 范式）。
+- pojo/quarry/ArticleQuarry.java(透传 userViewLevel/userId，文章无成员表列表过滤 level<=userViewLevel OR author_id=userId)/ChapterQuarry.java(透传 userViewLevel/userId/articleAuthorId，章节可见性=文章可见性：能看文章即看 PUBLISHED 章节，非 PUBLISHED 仅章节作者/文章作者可见)。
+- mapper/ArticleMapper.java+ChapterMapper.java+ArticleReviewLogMapper.java+ChapterReviewLogMapper.java + XML 放 resources/mapper/article/。ArticleMapper.xml 列表透传 userViewLevel/userId 过滤；ChapterMapper.xml 列表不带 content 大字段、详情带 content、join article 带出 articleTitle/articleVisibility/articleLevel/articleAuthorId + 章节可见性权限过滤（PUBLISHED 章节：能看文章即可；非 PUBLISHED：chapter.author_id=userId OR article.author_id=userId）；动态列 insert trim+if，update set+if，审计列固定 now()。
+- service/ArticleService.java+impl/ArticleServiceImpl.java：CRUD+publish(状态机+开关+写流水+Redis标记 article:review:pending-flag)+revoke+review(状态机+回避 author_id 比对+写流水)+reconcilePendingReview(逐条放行+PUBLISH/SYSTEM 流水)。canOp 判定核心：userLvl(op)>=level OR author_id==userId（作者全权，无成员表）。fillPermissionState 详情回填 canView/canEdit/isAuthor。删文章级联 chapter(softDeleteByArticleId)+封面 file_object(softDeleteByBizRef ARTICLE_COVER)。改 level 升级需自身 edit>=新level（作者除外）。
+- service/ChapterService.java+impl/ChapterServiceImpl.java：submitChapter(按 visibility+提交者是否作者决定状态机分支：作者提交任意 visibility 免审 PUBLISHED；非作者 PRIVATE 拒绝；非作者 SEMIPUBLIC 进 PENDING_AUTHOR_REVIEW；非作者 PUBLIC 免审 PUBLISHED)+editChapterInfo(PUBLISHED 禁编须先撤回)+publishChapter(submitChapter 的再提交别名)+revokeChapter+reviewChapter(仅 PENDING_AUTHOR_REVIEW 可审，审核人=文章作者 OR hasPerm chapter:review，章节提交者回避)+listReviewLog。canEditChapter：章节作者 OR 文章作者 OR 系统编辑权限够。
+- controller/ArticleController.java(/article：list/info/add/edit/delete/publish/revoke/review/review-log)+ChapterController.java(/chapter：list/info/submit(add)/edit/delete/publish/revoke/review/review-log)。@PreAuthorize 用按钮权限做进页面门槛，等级权限走 ArticlePermissionResolver 判定。
+- config/ArticleConfigReader.java：isReviewEnabled() 走 SysConfigUtil 读 knowhub.article.review_enabled（同 ProjectConfigReader）。
+- task/ArticleReviewReconcileTask.java：@Scheduled 对账任务（照搬 ProjectReviewReconcileTask，fixedDelayString 用 SpEL 读 yml knowhub.article.reconcile-interval-minutes，两段省扫表）。章节作者审核是 visibility 固有机制不走开关，章节无对账任务。
+- rookie-admin/application.yml：追加 knowhub.article.reconcile-interval-minutes: 5（@Scheduled 读 yml，改需重启）。
+
+**前端（rookie-ui knowhub 二开）**
+- api/knowhub/article.ts：文章 CRUD+发布/撤回/审核+审核历史全部接口。api/knowhub/chapter.ts：章节 CRUD+提交/撤回/作者审核+审核历史全部接口。
+- types/api/knowhub/article.ts：ArticleRecord/ArticleListQuery/ArticlePageResult/ArticleReviewPayload/ArticleReviewLogRecord + ARTICLE_VISIBILITY/ARTICLE_STATUS 常量。types/api/knowhub/chapter.ts：ChapterRecord/ChapterListQuery/ChapterPageResult/ChapterReviewPayload/ChapterReviewLogRecord + CHAPTER_STATUS 常量。
+- constants/systemPermissions.ts：加 article(create/delete/publish/revoke/review/reviewLog/info/quarry + viewL1-3/editL1-3 等级权限，无 download 无 member) + chapter(create/delete/publish/revoke/review/reviewLog/info/quarry) 两组。
+- views/knowhub/article/config.ts：查询/表格/表单字段 schema，level/visibility/status/reviewStatus 走字典，summary 走 textarea，buildArticleFormRules（标题/等级/可见性必填）。
+- views/knowhub/article/index.vue：文章管理列表页（SharedTablePanel+SearchFilterPanel，行操作含"章节"跳二级路由页+编辑/发布/撤回/审核/详情/删除，审核弹窗内联）。
+- views/knowhub/article/components/ArticleEditDialog.vue：文章新增/编辑弹窗（单页 ElForm：标题/等级/可见性/前言/封面 ArticleCoverUploader；编辑态 canEdit 控制可改）。
+- views/knowhub/article/components/ArticleCoverUploader.vue：文章封面上传组件（照抄 BlogCoverUploader 改 businessType=ARTICLE_COVER，access=PUBLIC，presignedUploadFlow）。
+- views/knowhub/article/components/ArticleDetailDialog.vue：文章详情弹窗（只读，DictTag 渲染 status/reviewStatus/level/visibility，封面 img，前言展示，审核历史 timeline DictTag 渲染 review_action）。
+- views/knowhub/article/chapters/config.ts：章节查询/表格/表单字段 schema，status/reviewStatus/articleVisibility 走字典，content 走 markdown，buildChapterFormRules（章节名必填）。
+- views/knowhub/article/chapters/index.vue：章节管理二级路由页（从文章列表"章节"按钮跳 /knowhub/article/chapters?articleId=，顶部显示所属文章标题+可见性+返回按钮，章节列表+新增/编辑/提交/撤回/审核/详情/删除行操作）。
+- views/knowhub/article/components/ChapterEditDialog.vue：章节新增/编辑弹窗（章节名/排序 + 正文 MarkdownEditor；新建调 submitChapterApi 后端按 visibility 决定状态机分支，编辑调 updateChapterApi）。
+- views/knowhub/article/components/ChapterReviewDialog.vue：章节详情/审核双用弹窗（reviewMode=false 只读详情含正文 MarkdownPreview+审核历史；reviewMode=true 审核模式通过/驳回+意见+正文预览）。
+- router/index.ts：layout children 加静态路由 knowhub/article/chapters → ArticleChaptersView（章节无菜单，不走动态路由注册，同 dict-data 范式静态注册）。
+
+**遵守约定**：未修改任何 rookie-* 模块代码（application.yml 仅追加 knowhub.article 配置段，router/index.ts 属 rookie-ui 前端工程非后端 rookie-* 模块，加静态路由同 dict-data/profile/dashboard 先例）；新模块产物全在 knowhub 模块内（com.knowhub.* 同包）+ rookie-ui knowhub 二开目录；不新建 Maven 模块；编号续编前已查实际数据库 MAX 避开已占段；ReviewAction 枚举代码层复用不动值，字典 review_action(25)/review_status(14) 复用不新建；时间字段后端 Date/前端 string（契约不变）；主表不冗余审核快照照项目范式（比博客主表更干净）。
+
+**校验**：mvn -pl knowhub -am compile BUILD SUCCESS（ArticlePermissionResolver/ArticleServiceImpl/ChapterServiceImpl/ArticleController/ChapterController 等类均生成）；rookie-ui npm run type-check 通过（无错误输出，仅修一处 ChapterEditDialog 的 createDefaultChapterForm import 路径从 ../config 改 ../chapters/config）。
+
+**待用户人工验证**：① 跑 sql/knowhub-article.sql 后，4 张表(article/chapter/article_review_log/chapter_review_log)+23 菜单(136-158)+4 新字典(30-33)+16 dict_data(123-138)+ARTICLE_COVER(139)+sys_config review_enabled=true 到位；② 文章管理页：新增文章（填标题/等级/可见性/前言/封面→保存草稿→发布），审核开关默认开→发布进 PENDING_REVIEW，审核员（非作者）点审核→通过/驳回，驳回需 advice；③ 关审核开关后发布→直接 PUBLISHED，遗留待审文章 ≤5 分钟由对账任务放行；④ 章节管理：文章列表点"章节"跳二级路由页，新增章节——作者提交任意 visibility 免审直接 PUBLISHED；非作者提交 PRIVATE 拒绝、SEMIPUBLIC 进 PENDING_AUTHOR_REVIEW 待作者审、PUBLIC 免审 PUBLISHED；半公开文章作者在章节页"审核"按钮审非作者提交的章节；⑤ PUBLISHED 文章/章节禁编须先撤回（防绕审改已发布）；⑥ 权限分级：给某角色勾 view:l2（不勾 l3），登录后只能看 level≤2 的文章，level=3 机密文章列表不可见；作者能看自己所有状态的文章（不看等级）；⑦ 改 level 升级需自身 edit 等级>=新 level（作者除外）；⑧ 删文章级联软删 chapter + 封面 file_object，对象本体由 FileGcTask 回收；⑨ 项目编辑弹窗选文章关联（project.article_id 已预留字段，文章侧不反查）。
+
+### 2026-07-09 博客管理加 L1~L3 等级查询权限（对齐文章模块范式）
+
+**背景**：博客原只有按钮权限(quarry/info/add/edit/delete/publish/revoke/review)，任意有 info 权限者能看全部博客，无等级概念。新文章模块已上轻量等级权限(系统级 view/edit:l1-l3 + 作者归属，无成员表)，兄弟模块语义不统一。本次把博客也改造为同款：blog 表加 level(1/2/3)，列表按 `level<=userViewLevel OR author_id=userId` 过滤，操作按 `canOp = userLvl(op)>=level OR author_id==userId` 判定(作者全权不看等级)。review 保持按钮权限(非等级)，与文章一致。
+
+**用户拍板方向**：①作者归属对齐文章（作者全权＝能改/发/撤/审自己的博客，不看等级）；② review 不单独加 L1~L3 等级，保持按钮权限。
+
+**SQL**(新文件 `sql/knowhub-blog-level-patch.sql`，已执行落库)：blog 表加 `level tinyint NOT NULL DEFAULT 1`(存量博客一律 L1 保持可见) + 索引 idx_blog_level；menu 159-164(3 view:lN + 3 edit:lN，挂博客菜单 menu_id=64 下隐形 menu_type=3)；dict blog_level(dict_id=34)+dict_data 140-142(L1 公开/L2 内部/L3 机密)。续编前已查 DB MAX(menu_id)=158/MAX(dict_id)=33/MAX(dict_data_id)=139(记 knowhub-sql-id-numbering-pitfall 教训)。ALTER COLUMN 幂等用 information_schema 判断。
+
+**后端**(com.knowhub，不新建 Maven 模块)：
+- 新增 `blog/support/BlogPermissionResolver`(抄 ArticlePermissionResolver，正则 `^knowhub:blog:(view|edit):l([1-3])$`，record BlogPermissionLevel(view,edit)，admin 零特判，不与 ArticlePermissionResolver 共用因 perm_key 前缀不同)。
+- 新增枚举 `BlogLevel`(L1=1/L2=2/L3=3，独立定义解耦)。
+- `Blog` 实体加 level(字段+构造器+getter/setter)；`BlogVo` 加 level + canView/canEdit/isAuthor(详情回填，列表不回填，对齐文章)；`BlogQuarry` 加 level(前端筛选用)+透传 userViewLevel/userId(service 回填 Mapper 过滤用)。
+- `BlogMapper.xml`：resultMap 加 level；quarryBlog select 已含 level(b.*)+where 加 `<if test="level!=null">and b.level=#{level}</if>` 筛选 + 权限过滤 `and (b.level<=#{userViewLevel} or b.author_id=#{userId})`；addBlog/editBlogInfo 动态列加 level。
+- `BlogServiceImpl`：quarryBlog 入口 BlogPermissionResolver.resolve() 取 view 等级+回填 userId；getBlogInfo 加二次权限校验 canOp(view)(防越权遍历 ID 看不可见博客)+缓存命中与未命中两路都调 fillPermissionState 实时按当前用户重算权限态(不信任缓存里的 canView/canEdit/isAuthor 避免串用户)；editBlogInfo publishBlog revokeBlog 的 checkOwnerOrAdmin → canOp(edit)；editBlogInfo 加改 level 升级校验(非作者提升需自身 edit>=新 level，作者改自己不卡)；deleteBlogInfo 加权限校验(作者 OR hasButtonPerm('knowhub:blog:delete'))；addBlogInfo 缺省 level=L1；新增私有 canOp/isAuthor/hasButtonPerm/fillPermissionState(抄 ArticleServiceImpl)；**修旧 checkOwnerOrAdmin 用 List<Permission>.contains(String) 永远 false 的隐坑**(改遍历比 permKey)。
+- `BlogController`：@PreAuthorize 全部不动(list 仍 knowhub:blog:quarry 进页面门槛，可见性下沉 SQL；edit 仍保留既有 knowhub:blog:edit 独立键——博客历史存量保留，渐进增强等级门控，与文章"编辑复用 add"略异但可接受)。
+
+**前端**(rookie-ui)：
+- `types/api/knowhub/blog.ts`：BlogRecord 加 level+canView/canEdit/isAuthor；BlogListQuery 加 level。
+- `views/knowhub/blog/config.ts`：BlogQueryFormState 加 level+createDefaultBlogQuery/createDefaultBlogForm 初始化(level 默认 1)；查询 schema 加 level(select dictKey=blog_level)；表格 schema 加 level(dictKey=blog_level tableVisible true tableWidth 90)+表单 level(formOrder 5 span 12)；blogFormRules 加 level required。
+- `views/knowhub/blog/index.vue`：handleQueryFormUpdate/buildListParams/handleFormModelUpdate/payload 都带 level。
+- `constants/systemPermissions.ts` blog 组加 viewL1-3/editL1-3(照 article 组)。
+- `views/knowhub/blog/components/BlogDetailDialog.vue` meta 加 blog_level DictTag(String(blog.level))。
+
+**遵守约定**：未修改任何 rookie-* 模块代码；新模块产物全在 knowhub 模块内(com.knowhub.* 同包)+ rookie-ui knowhub 二开目录；不新建 Maven 模块；编号续编前已查 DB MAX；时间字段后端 Date/前端 string(契约不变)。
+
+**校验**：mvn -pl knowhub -am compile BUILD SUCCESS；rookie-ui npm run type-check 通过(无错误输出)。
+
+**待用户人工验证**：① 跑 sql/knowhub-blog-level-patch.sql 后 blog.level 列+menu 159-164+blog_level 字典(34)+3 dict_data(140-142) 到位(已执行落库)；② 给某角色勾 knowhub:blog:view:l2(不勾 l3)，登录后列表只见 level<=2 博客，level=3 机密博客不可见；level=3 博客作者本人仍可见(不看等级分支)；③ 非 L3 作者用户编辑/发布/撤回 level=3 博客被拒(无权编辑/发布/撤回该博客)；④ 作者改自己博客 level L1→L3 不卡；非作者把 level=2 博客提到 L3 需自身 edit>=L3；⑤ 删除：作者或拥有 knowhub:blog:delete 权限可删，否则拒；⑥ 详情弹窗展示等级 DictTag；⑦ 缓存命中场景权限态按当前登录用户正确(无串用户)。
+
+### 2026-07-09 PermissionResolver 统一收 com.knowhub.support 包
+
+三个等级权限解析器(Article/Project/Blog)原分放在 `article/support`、`project/support`、`blog/support` 各自模块包下，因只读 `UserInfo.getPermissions()` 扫 perm_key 取最高等级、无模块特定依赖(不注入 mapper/service)，分三处纯冗余。统一移到 `com.knowhub.support` 一个包下：`ArticlePermissionResolver`/`ProjectPermissionResolver`/`BlogPermissionResolver`。
+
+改动：mv 三文件到 `knowhub/src/main/java/com/knowhub/support/` + 改 package 声明 + 同包 `{@link}` 简化去全限定名 + 改 4 个 ServiceImpl(Article/Chapter/Project/Blog) 的 import；删空的 `article/`、`project/`、`blog/` 父目录(此前只放 support 子包，删后 com.knowhub 顶层剩 config/controller/enums/mapper/pojo/service/support/task)。
+
+校验：mvn -pl knowhub -am compile BUILD SUCCESS。
