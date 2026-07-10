@@ -14,6 +14,14 @@ export const getSysDictPageApi = (params: SysDictListQuery) =>
     params,
   }) as Promise<SysDictPageResult>
 
+/**
+ * 全量查询启用字典类型，供前端登录后初始化消费。
+ * 公共读取接口，仅需登录即可，不加按钮权限，对标系统设置按 key 取值接口的公开读语义。
+ * 返回字典类型基础信息（不含数据项），前端拿到 dictKey 后再逐个调 getSysDictDataByTypeApi。
+ */
+export const getSysDictAllApi = () =>
+  get<ApiResult<SysDictRecord[]>>('/sys/dict/all')
+
 export const getSysDictDetailApi = (dictId: number) => get<ApiResult<SysDictRecord>>(`/sys/dict/${dictId}`)
 
 export const createSysDictApi = (data: SysDictRecord) =>

@@ -857,6 +857,44 @@
 
 ---
 
+### 6. 获取全部启用字典类型（前端初始化）
+
+#### 6.1 基本信息
+**请求接口：** `/sys/dict/all`
+**请求方式：** GET
+**所需权限：** 需要登录（不加按钮权限，公共读取，对标系统设置 `GET /sys/system-config/configKey/{configKey}`）
+**基本信息：** 返回全部启用状态（status=1）的字典类型，不分页。供前端登录后初始化拿 dictKey 列表，再逐个调 `GET /sys/dist/data/type/{dictKey}` 拉数据项。与 `GET /sys/dict/list`（需 `system:dict:quarry` 权限）的区别：本接口面向所有登录用户，让没有字典管理权限的普通用户也能正常使用字典下拉/标签等基础功能
+
+#### 6.2 请求头
+| 参数名 | 参数说明           | 参数类型 | 是否必填 |
+| ------ | ------------------ | -------- | -------- |
+| Token  | JWT 令牌（无前缀） | string   | 是       |
+
+#### 6.3 请求体
+无
+
+#### 6.4 响应示例
+`Result<List<SysDictVO>>`
+
+```json
+{
+  "code": 200,
+  "msg": "请求成功",
+  "data": [
+    {
+      "dictId": 1,
+      "dictName": "用户性别",
+      "dictKey": "sys_user_sex",
+      "status": 1,
+      "remake": "",
+      "createTime": "2026-07-07 10:00:00"
+    }
+  ]
+}
+```
+
+---
+
 ## 六、字典数据
 
 **模块前缀：** `/sys/dist/data`
@@ -1801,42 +1839,44 @@ PUBLISHED → REVOKED | **响应：** `Result<Boolean>`
 
 ---
 
-### 7. 获取全部启用系统设置（前端启动加载）
+### 7. 按设置键获取设置值（前端按需读取）
 
 #### 7.1 基本信息
-**请求接口：** `/sys/system-config/list-all`
+**请求接口：** `/sys/system-config/configKey/{configKey}`
 **请求方式：** GET
-**所需权限：** 需要登录（不加按钮权限，公共读取，对标字典 `GET /sys/dist/data/type/{dictKey}`）
-**基本信息：** 返回全部启用状态（status=1）的系统设置项，不分页。供前端登录后全量加载到内存缓存，页面/组件按 configKey 读取，对标字典启动加载
+**所需权限：** 需要登录（不加按钮权限，公共读取，对标若依 `GET /system/config/configKey/{configKey}`）
+**基本信息：** 按设置键返回当前设置值，供前端按需读取运用，避免全量拉取暴露关键设置。只返回 `configValue` 字符串，不暴露 valueType/isSystem/remark 等元信息。命中且启用（status=1）返回值，未命中或停用返回 `null`（业务码仍 200）
 
 #### 7.2 请求头
 | 参数名 | 参数说明           | 参数类型 | 是否必填 |
 | ------ | ------------------ | -------- | -------- |
 | Token  | JWT 令牌（无前缀） | string   | 是       |
 
-#### 7.3 请求体
+#### 7.3 路径参数
+| 参数名    | 参数说明 | 参数类型 | 是否必填 |
+| --------- | -------- | -------- | -------- |
+| configKey | 设置键   | string   | 是       |
+
+#### 7.4 请求体
 无
 
-#### 7.4 响应示例
-`Result<List<SysConfigVo>>`
+#### 7.5 响应示例
+`Result<String>`
 
+命中：
 ```json
 {
   "code": 200,
   "msg": "请求成功",
-  "data": [
-    {
-      "configId": 1,
-      "configKey": "sys.user.initPassword",
-      "configName": "用户初始密码",
-      "configValue": "123456",
-      "valueType": "STRING",
-      "isSystem": 1,
-      "remark": "新建用户与重置密码时的初始密码",
-      "status": 1,
-      "createTime": "2026-07-07 10:00:00",
-      "updateTime": "2026-07-07 10:00:00"
-    }
-  ]
+  "data": "123456"
+}
+```
+
+未命中或停用：
+```json
+{
+  "code": 200,
+  "msg": "请求成功",
+  "data": null
 }
 ```

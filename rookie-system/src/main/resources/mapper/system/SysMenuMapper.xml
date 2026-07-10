@@ -119,5 +119,14 @@
         </foreach>
         order by parent_id, menu_id
     </select>
-    
+
+    <!-- 查询全部启用且未删除的菜单（含目录/菜单/按钮），供超级管理员菜单树兜底。
+         不限 menuId，复用 sysMenuVo resultMap，与 getSysMenuByMenuIds 返回结构一致。 -->
+    <select id="getSysMenuAllEnabled" resultMap="sysMenuVo">
+        select * from sys_menu
+        where `delete` = 0
+          and status = 1
+        order by parent_id, menu_id
+    </select>
+
 </mapper>

@@ -10,6 +10,48 @@
 
 ---
 
+## 2026-07-10
+### — admin 超级管理员全权限直通（菜单 + 按钮鉴权 + 绕过缓存）
+
+此前 admin 只在后端按钮权限做了兜底（`UserDetailServiceImpl` 走 `selectAllPermKey()` 加载全部 permKey），但有两处缺口导致「新建接口/权限后 admin 用不了，必须先改角色权限」：①菜单树 `getUserMenuTreeByUserId` → `getSysMenuByRoleList` 纯靠 `sys_role_menu` 授权，admin 看到的菜单 = 给 admin 角色授过的菜单，新菜单没给 admin 授权就看不到，前端 `buttonPermissionKeys`（从菜单树提取按钮节点）也缺；②登录时 `UserInfo`（含 permissions 快照）被 `TokenService` 缓存进 Redis，`TokenVerifyFilter` 每次从缓存取 `UserInfo` 做 `@PreAuthorize` 鉴权，新权限的 perm_key 进不进缓存，要等 token 过期/重登。本次改造成果：只要检测到用户是 admin，所有目录/菜单/按钮权限自动获取且都能用，新建权限没更新缓存也能立刻用，**不修改任何现有 `@PreAuthorize` 注解**。
+
+- `rookie-framework/src/main/java/com/rookie/framework/security/pojo/UserInfo.java` — 新增 `private boolean admin;` + `isAdmin()/setAdmin()`，toString 带上 admin。admin 标记随 UserInfo 缓存，但不随菜单增删变化（仅随 admin 角色授予/撤销变化），无缓存陈旧问题；老缓存 hutool 反序列化缺字段默认 false，仅影响已登录 admin，重登即恢复
+- `rookie-framework/src/main/java/com/rookie/framework/security/service/UserDetailServiceImpl.java` — `isAdmin` 提升为方法级变量（原局部变量作用域够不到第二个 try 块），`userInfo.setPermissions(list)` 后追加 `userInfo.setAdmin(isAdmin)`
+- `rookie-framework/src/main/java/com/rookie/framework/security/expression/AdminBypassExpressionRoot.java` — 新建。`implements MethodSecurityExpressionOperations`（**不继承 SecurityExpressionRoot**，因其 hasAuthority/hasAnyAuthority/hasRole/hasAnyRole 在 6.5 是 final 不可重写）。持有 Authentication + 默认 root 委托：admin 命中时 hasAuthority/hasAnyAuthority/hasRole/hasAnyRole/hasPermission 短路 true，其余方法转发默认 root 保留原生语义（ROLE_ 前缀、PermissionEvaluator、trustResolver 等不重复实现）
+- `rookie-framework/src/main/java/com/rookie/framework/security/expression/AdminBypassMethodSecurityExpressionHandler.java` — 新建。继承 `DefaultMethodSecurityExpressionHandler`，重写 **public** `createEvaluationContext(Supplier<Authentication>, MethodInvocation)`（6.5 实际走此入口，重写 protected 的 createSecurityExpressionRoot 不生效因被 private Supplier 路径绕过）：admin 时用 super 的 protected `createSecurityExpressionRoot` 拿默认 root 作委托、包成 AdminBypassExpressionRoot、装入公共 `StandardEvaluationContext`（package-private 的 MethodSecurityEvaluationContext 外部包不可用）+ setBeanResolver；非 admin 时 `return super.createEvaluationContext(...)` 完整走 Spring Security 默认鉴权，行为零变化
+- `rookie-framework/src/main/java/com/rookie/framework/config/SecurityConfig.java` — 注册 `@Bean MethodSecurityExpressionHandler` 为自定义 handler，`@EnableMethodSecurity` 自动检测并替换默认实现；import 补 MethodSecurityExpressionHandler
+- `rookie-system/src/main/java/com/rookie/system/mapper/SysMenuMapper.java` — 新增 `getSysMenuAllEnabled()`（全部启用且未删除菜单，含按钮节点）
+- `rookie-system/src/main/resources/mapper/system/SysMenuMapper.xml` — 新增 `getSysMenuAllEnabled` SQL：`select * from sys_menu where delete=0 and status=1 order by parent_id, menu_id`，复用 sysMenuVo resultMap
+- `rookie-system/src/main/java/com/rookie/system/service/SysMenuService.java` + `impl/SysMenuServiceImpl.java` — 新增 `getSysMenuAllEnabled()`，直接调 mapper，不经 role_menu
+- `rookie-system/src/main/java/com/rookie/system/service/impl/SysLoginServiceImpl.java` — `getUserMenuTreeByUserId` 先判 admin（sysRoles 含 roleKey=="admin" 且启用），admin 走 `getSysMenuAllEnabled()` 拿全部启用菜单，否则走原 `getSysMenuByRoleList`；buildMenuTree 逻辑不变
+
+前端无改动：`buttonPermissionKeys`（stores/navigation.ts）从后端菜单树提取按钮权限，菜单树含按钮节点即自然齐全。所有现有 `@PreAuthorize` 注解（约 60+ 个）一律未动。验证：`mvn -pl rookie-admin -am compile` 全量编译通过。
+
+### — 系统设置前端获取方式改造：全量拉取 → 按 key 单项拉取
+
+原前端系统设置与字典一致，登录后全量拉取所有启用项到内存 + localStorage，组件按 key 同步读缓存。问题：系统设置可能含不宜整体暴露给前端的关键信息（初始密码、阈值、密钥类配置），全量接口把所有启用项的值一股脑下发存在安全隐患。本次改为若依风格——前端按需通过接口获取**指定设置项**的值再运用，不再全量拉取。字典保持全量不变（字典是展示用枚举数据，无敏感信息）。
+
+- `rookie-system/src/main/java/com/rookie/system/controller/SysConfigController.java` — 删除 GET /sys/system-config/list-all 全量接口；新增 GET /sys/system-config/configKey/{configKey} 按 key 取值接口（公共读取，仅需登录，不加 @PreAuthorize/@Log），只返回 configValue 字符串，不暴露 valueType/isSystem/remark 元信息，命中且启用返回值，未命中/停用返回 null
+- `rookie-system/src/main/java/com/rookie/system/service/SysConfigService.java` — 删除 listAllEnabledSysConfig()；新增 getConfigValueByKey(configKey)，复用 SysConfigUtil.getConfig 只读缓存（不走数据库，与「工具只读缓存」约束一致），命中且 status=1 返回 configValue，否则 null
+- `rookie-system/src/main/java/com/rookie/system/service/impl/SysConfigServiceImpl.java` — 实现 getConfigValueByKey，删除 listAllEnabledSysConfig 实现
+- `rookie-ui/src/api/system/system-config.ts` — 删除 getSysConfigAllApi；新增 getSysConfigValueApi(configKey) 调 GET /sys/system-config/configKey/{configKey}，返回 ApiResult<string|null>
+- `rookie-ui/src/stores/system-config.ts` — 重构为按 key 内存缓存 + 异步拉取：configMap 改为 Record<configKey, string|null>（只存值，只存已请求过的 key）；fetchSysConfig(key, force) 命中且非 force 复用缓存，否则调接口写缓存（null 也写入避免重复请求未命中项）；删除 initializeSysConfigs/getSysConfig/initialized/loading；clearSysConfigCache 保留
+- `rookie-ui/src/composables/useSysConfig.ts` — 全部改为异步：getString/getBoolean/getNumber/getObject/getList 均返回 Promise，调用方需 await；删除 resolveSysConfig（不再有整条记录概念）；类型转换逻辑不变，只是从异步拿到的字符串上做
+- `rookie-ui/src/router/index.ts` — 删除 sysConfigStore import、守卫首次加载段的 initializeSysConfigs() 调用、非首次加载段的 if(!initialized) 兜底块（系统设置不再启动全量预加载）
+- `rookie-ui/src/stores/user.ts` — logout 仍调 sysConfigStore.clearSysConfigCache()（方法保留，清理逻辑不变）
+- `doc/api.md` — 删除「7. 获取全部启用系统设置」章节，新增「7. 按设置键获取设置值」章节
+
+### — 字典系统补无权限全量接口（修复普通用户字典功能不可用）
+
+延续系统设置「公共读取接口」思路排查字典，发现一个遗留 bug：前端字典初始化（`initializeDictionaries`）第一步调的是 `GET /sys/dict/list`，该接口加 `@PreAuthorize('system:dict:quarry')`，**没有字典管理权限的普通用户会 403**，连 dictKey 列表都拿不到，导致普通业务页的字典下拉/标签全部失效。`GET /sys/dist/data/type/{dictKey}`（按 key 拉数据项）本身已无 `@PreAuthorize`、仅需登录，问题只出在「取 dictKey 列表」这一步。本次补一个无权限的全量字典类型接口替代它，字典数据按 key 拉取流程不变。
+
+- `rookie-system/src/main/java/com/rookie/system/controller/SysDictController.java` — 新增 `GET /sys/dict/all`（无 @PreAuthorize、无 @Log，仅需登录），返回全部启用字典类型基础信息（不含数据项）。与 `GET /sys/dict/list` 区分：本接口面向所有登录用户，list 仍保留权限给字典管理页用
+- `rookie-system/src/main/java/com/rookie/system/service/SysDictService.java` — 新增 `listAllEnabledDict()` 返回 `List<SysDictVO>`
+- `rookie-system/src/main/java/com/rookie/system/service/impl/SysDictServiceImpl.java` — 实现 `listAllEnabledDict`：构造 `DictQuarry(status=1)` 直接调 `sysDictMapper.quarrySysDict`（不走 PageUtil，避免被分页插件截断），新增 `toDictVoList` 私有方法转 VO 列表
+- `rookie-ui/src/api/system/dict.ts` — 新增 `getSysDictAllApi()` 调 `GET /sys/dict/all`，返回 `ApiResult<SysDictRecord[]>`；`getSysDictPageApi` 保留（字典管理页仍用有权限分页接口）
+- `rookie-ui/src/stores/dict.ts` — `initializeDictionaries` 改调 `getSysDictAllApi()` 取 dictKey 列表（原来是 `getSysDictPageApi({pageNum:1,pageSize:500,status:1})`），从 `result.data` 取数组替代 `result.records`；按 key 拉数据项流程不变
+- `doc/api.md` — 字典模块新增「6. 获取全部启用字典类型（前端初始化）」章节
+
 ## 2026-07-07
 ### 16:28 — 前端系统设置加载 + 表格 fixed 列 hover 重叠修复 + 时间格式化全局处理
 

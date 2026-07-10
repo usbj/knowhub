@@ -136,10 +136,13 @@ public class SysConfigServiceImpl implements SysConfigService {
     }
 
     @Override
-    public List<SysConfigVo> listAllEnabledSysConfig() {
-        // 全量启用项供前端启动加载，复用 getAllSysConfig 与现有 VO 转换逻辑
-        List<SysConfig> all = sysConfigMapper.getAllSysConfig();
-        return toConfigVoList(all);
+    public String getConfigValueByKey(String configKey) {
+        // 只读缓存、不走数据库：命中且启用返回值，未命中或停用返回 null
+        SysConfig config = SysConfigUtil.getConfig(configKey);
+        if (config == null || config.getStatus() == null || config.getStatus() != 1) {
+            return null;
+        }
+        return config.getConfigValue();
     }
 
     /**

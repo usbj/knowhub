@@ -11,13 +11,12 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.List;
-
 /**
  * 系统设置 Controller。
  * <p>
- * 提供系统设置的分页查询、详情、新增、编辑、删除、刷新缓存六个接口。
- * 写操作加 {@link Log} 采集操作日志，全部接口加 {@code @PreAuthorize} 鉴权，
+ * 提供系统设置的分页查询、详情、新增、编辑、删除、刷新缓存六个管理接口，
+ * 以及一个按设置键取值的公共读取接口（仅需登录，供前端按需读取运用）。
+ * 写操作加 {@link Log} 采集操作日志，管理接口加 {@code @PreAuthorize} 鉴权，
  * 权限码与 {@code sys_menu.perm_key} 对齐：{@code system:systemConfig:*}。
  */
 @RestController
@@ -74,14 +73,16 @@ public class SysConfigController {
     }
 
     /**
-     * 全量查询启用系统设置项，供前端启动加载消费。
+     * 按设置键获取当前设置值，供前端按需读取运用（对标若依 getConfigKey）。
      * <p>
-     * 公共读取接口：不分页、不加按钮权限、不记操作日志，仅需登录即可调用，
-     * 对标字典 {@code GET /sys/dict/data/type/{dictKey}}。
+     * 公共读取接口：不分页、不加按钮权限、不记操作日志，仅需登录即可调用。
+     * 只返回 {@code configValue} 字符串，不暴露 valueType/isSystem/remark 等元信息，
+     * 避免前端一次性全量拉取所有设置项导致关键信息泄露。
+     * 命中且启用返回值，未命中或停用返回 {@code null}（业务码仍 200），前端按 null 判空。
      */
-    @GetMapping("/list-all")
-    public Result<List<SysConfigVo>> listAllEnabledSysConfig() {
-        List<SysConfigVo> list = sysConfigService.listAllEnabledSysConfig();
-        return Result.success(list);
+    @GetMapping("/configKey/{configKey}")
+    public Result<String> getConfigValueByKey(@PathVariable String configKey) {
+        String value = sysConfigService.getConfigValueByKey(configKey);
+        return Result.success(value);
     }
 }

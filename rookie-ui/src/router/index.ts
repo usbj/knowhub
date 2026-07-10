@@ -1,7 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { useUserStore } from '@/stores/user'
 import { useDictStore } from '@/stores/dict'
-import { useSysConfigStore } from '@/stores/system-config'
 import { useLayoutNavigationStore } from '@/stores/navigation'
 import { useNoticeStore } from '@/stores/notice'
 import { finishPageTransition, startPageTransition } from '@/composables/usePageTransition'
@@ -93,7 +92,6 @@ router.beforeEach(async (to) => {
    */
   const userStore = useUserStore()
   const dictStore = useDictStore()
-  const sysConfigStore = useSysConfigStore()
   const layoutNavigationStore = useLayoutNavigationStore()
   const noticeStore = useNoticeStore()
 
@@ -130,7 +128,6 @@ router.beforeEach(async (to) => {
       registerDynamicRoutes(router, layoutNavigationStore.rawMenuTree)
       layoutNavigationStore.markDynamicRoutesReady()
       await dictStore.initializeDictionaries().catch(() => undefined)
-      await sysConfigStore.initializeSysConfigs().catch(() => undefined)
       // 首屏即拉取当前用户的通知，让头导航铃铛在网站加载时就显示最新未读
       await noticeStore.fetchMyNotices().catch(() => undefined)
 
@@ -149,10 +146,6 @@ router.beforeEach(async (to) => {
 
     if (!dictStore.initialized) {
       await dictStore.initializeDictionaries().catch(() => undefined)
-    }
-
-    if (!sysConfigStore.initialized) {
-      await sysConfigStore.initializeSysConfigs().catch(() => undefined)
     }
   } catch {
     userStore.logout()
