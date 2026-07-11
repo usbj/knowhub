@@ -109,6 +109,13 @@ public class SysMenuServiceImpl implements SysMenuService {
         return sysMenuMapper.getSysMenuByMenuIds(menuIds);
     }
 
+    @Override
+    public List<SysMenuVo> getSysMenuAllEnabled() {
+        // 超级管理员菜单树兜底：直接取全部启用且未删除的菜单（含按钮节点），不经 role_menu 授权。
+        // 前端 buttonPermissionKeys 从菜单树提取按钮权限，含按钮节点即可保证 admin 拥有全部按钮权限。
+        return sysMenuMapper.getSysMenuAllEnabled();
+    }
+
     private List<SysMenuVo> buildMenuTree(List<SysMenuVo> sysMenuVos) {
         HashMap<Long,SysMenuVo> hashMap = new HashMap<>();
         for (SysMenuVo sysMenuVo : sysMenuVos) {

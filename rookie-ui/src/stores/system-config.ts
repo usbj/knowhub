@@ -1,28 +1,27 @@
 /**
  * 文件作用：
- * 系统设置（system_config）Pinia store，对标字典 store（stores/dict.ts）。
- * 登录后启动时一次性全量加载所有启用设置项到内存，供页面/组件按 `configKey` 读取。
+ * 系统设置（system_config）Pinia store，对标若依 config store 的按需拉取模式。
+ * 与字典 store 的「登录后全量预加载」不同：系统设置可能含不宜整体暴露的关键信息，
+ * 故改为按 `configKey` 单项异步拉取，内存只缓存「已请求过的 key 的值」，
+ * 未请求的 key 不会进缓存、也不会被下发，避免全量暴露。
  * 关键能力：
- * - `configMap`：按 `configKey` 存放 `SysConfigRecord` 的内存缓存。
- * - `initializeSysConfigs(force)`：登录后调 `getSysConfigAllApi` 拉全部启用项写入 configMap。
- * - `getSysConfig(key)`：按 key 读取单条设置记录，未命中返回 null。
+ * - `configMap`：按 `configKey` 存放已拉取过的设置值（仅值字符串，不存整条记录）。
+ * - `fetchSysConfig(key, force)`：按 key 拉取设置值，命中且非 force 时复用缓存，否则调接口并写缓存（含 null，避免重复请求未命中项）。
  * - `clearSysConfigCache()`：退出登录时清空内存与本地缓存。
- * 与字典的区别：系统设置体量小、启动加载一次即可，不需要按 key 懒加载。
  */
 import { ref } from 'vue'
 import { defineStore } from 'pinia'
-import { getSysConfigAllApi } from '@/api/system/system-config'
-import type { SysConfigRecord } from '@/types/api/system/system-config'
+import { getSysConfigValueApi } from '@/api/system/system-config'
 
 export const SYS_CONFIG_CACHE_STORAGE_KEY = 'rookie-system-config-cache'
 
-type SysConfigMap = Record<string, SysConfigRecord>
+type SysConfigValueMap = Record<string, string | null>
 
 /**
- * 读取本地缓存的系统设置数据。
- * 优先恢复最近一次可用的设置内容，避免刷新后页面先空一拍。
+ * 读取本地缓存的系统设置值。
+ * 优先恢复最近一次已拉取的设置值，避免刷新后对已知 key 重复请求。
  */
-const readStoredSysConfigCache = (): SysConfigMap => {
+const readStoredSysConfigCache = (): SysConfigValueMap => {
   const rawCache = localStorage.getItem(SYS_CONFIG_CACHE_STORAGE_KEY)
 
   if (!rawCache) {
@@ -30,7 +29,7 @@ const readStoredSysConfigCache = (): SysConfigMap => {
   }
 
   try {
-    return JSON.parse(rawCache) as SysConfigMap
+    return JSON.parse(rawCache) as SysConfigValueMap
   } catch {
     localStorage.removeItem(SYS_CONFIG_CACHE_STORAGE_KEY)
     return {}
@@ -39,16 +38,10 @@ const readStoredSysConfigCache = (): SysConfigMap => {
 
 export const useSysConfigStore = defineStore('system-config', () => {
   /**
-   * 当前前端已缓存的所有系统设置，按 `configKey` 索引存储。
+   * 当前前端已缓存的所有系统设置值，按 `configKey` 索引存储。
+   * 仅记录「已请求过的 key」，不是全量；null 表示该 key 已确认未命中/停用。
    */
-  const configMap = ref<SysConfigMap>(readStoredSysConfigCache())
-
-  /**
-   * 标记当前会话是否已经完成过一次系统设置预加载。
-   * 即使本地有缓存，也会在登录后的首轮导航中再刷新一次。
-   */
-  const initialized = ref(false)
-  const loading = ref(false)
+  const configMap = ref<SysConfigValueMap>(readStoredSysConfigCache())
 
   const persistSysConfigCache = () => {
     localStorage.setItem(SYS_CONFIG_CACHE_STORAGE_KEY, JSON.stringify(configMap.value))
@@ -56,51 +49,30 @@ export const useSysConfigStore = defineStore('system-config', () => {
 
   /**
    * 方法效果：
-   * 登录后预加载全部启用系统设置项，供全局页面直接按 key 消费。
-   * 参数：
-   * - `force`：是否强制重新拉取全部设置项。
-   * 返回值：
-   * - Promise<void>，在全部拉取完成后结束。
-   */
-  const initializeSysConfigs = async (force = false) => {
-    if (initialized.value && !force) {
-      return
-    }
-
-    loading.value = true
-
-    try {
-      const result = await getSysConfigAllApi()
-      const records = result.data ?? []
-
-      const nextMap: SysConfigMap = {}
-      for (const record of records) {
-        const normalizedKey = record.configKey?.trim()
-        if (!normalizedKey) {
-          continue
-        }
-        nextMap[normalizedKey] = record
-      }
-
-      configMap.value = nextMap
-      persistSysConfigCache()
-      initialized.value = true
-    } finally {
-      loading.value = false
-    }
-  }
-
-  /**
-   * 方法效果：
-   * 按 `configKey` 读取当前已缓存的系统设置记录。
+   * 按 `configKey` 异步拉取设置值，命中且非强制时复用内存缓存，否则调后端接口并写缓存。
+   * 未命中/停用的 key 也会把 null 写入缓存，避免同一未命中 key 被重复请求。
    * 参数：
    * - `configKey`：设置项键值。
+   * - `force`：是否强制重新拉取（绕过缓存）。
    * 返回值：
-   * - 命中时返回完整 `SysConfigRecord`，未命中返回 `null`。
+   * - 设置值字符串；未命中或停用时返回 null。
    */
-  const getSysConfig = (configKey: string) => {
+  const fetchSysConfig = async (configKey: string, force = false): Promise<string | null> => {
     const normalizedKey = configKey.trim()
-    return configMap.value[normalizedKey] ?? null
+    if (!normalizedKey) {
+      return null
+    }
+
+    if (!force && Object.prototype.hasOwnProperty.call(configMap.value, normalizedKey)) {
+      return configMap.value[normalizedKey] ?? null
+    }
+
+    const result = await getSysConfigValueApi(normalizedKey)
+    const value = result.data ?? null
+
+    configMap.value = { ...configMap.value, [normalizedKey]: value }
+    persistSysConfigCache()
+    return value
   }
 
   /**
@@ -113,17 +85,12 @@ export const useSysConfigStore = defineStore('system-config', () => {
    */
   const clearSysConfigCache = () => {
     configMap.value = {}
-    initialized.value = false
-    loading.value = false
     localStorage.removeItem(SYS_CONFIG_CACHE_STORAGE_KEY)
   }
 
   return {
     configMap,
-    initialized,
-    loading,
-    initializeSysConfigs,
-    getSysConfig,
+    fetchSysConfig,
     clearSysConfigCache,
   }
 })

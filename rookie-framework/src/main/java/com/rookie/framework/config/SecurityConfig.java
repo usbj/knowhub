@@ -1,10 +1,12 @@
 package com.rookie.framework.config;
 
 
+import com.rookie.framework.security.expression.AdminBypassMethodSecurityExpressionHandler;
 import com.rookie.framework.security.filter.TokenVerifyFilter;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.security.access.expression.method.MethodSecurityExpressionHandler;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
@@ -88,5 +90,18 @@ public class SecurityConfig {
     @Bean
     public AuthenticationManager authenticationManagerBean(AuthenticationConfiguration authenticationConfiguration) throws Exception {
         return authenticationConfiguration.getAuthenticationManager();
+    }
+
+    /**
+     * 注册自定义方法级安全表达式处理器，让超级管理员（admin）短路放行所有 @PreAuthorize。
+     * <p>
+     * Spring Security 6 的 {@code @EnableMethodSecurity} 检测到容器中存在自定义
+     * {@link MethodSecurityExpressionHandler} Bean 时，自动用它替换默认实现，无需额外配置。
+     * 效果：admin 命中任意 {@code hasAuthority/hasAnyAuthority/hasRole/hasAnyRole} 直接返回 true，
+     * 不再依赖缓存的权限快照——新建菜单/权限后无需更新缓存、无需给 admin 角色授权即可访问。
+     */
+    @Bean
+    public MethodSecurityExpressionHandler methodSecurityExpressionHandler() {
+        return new AdminBypassMethodSecurityExpressionHandler();
     }
 }

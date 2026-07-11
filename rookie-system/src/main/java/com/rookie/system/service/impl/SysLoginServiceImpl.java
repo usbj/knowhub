@@ -113,7 +113,13 @@ public class SysLoginServiceImpl implements SysLoginService {
         if (sysRoles == null || sysRoles.isEmpty()) {
             return new ArrayList<>();
         }
-        List<SysMenuVo> sysMenuVos = sysMenuService.getSysMenuByRoleList(sysRoles);
+        // 超级管理员（roleKey == "admin"，状态启用）直通兜底：直接返回全部启用菜单（目录/菜单/按钮），
+        // 不再依赖 role_menu 逐菜单授权，避免新增菜单后忘记给 admin 角色授权导致前端看不到目录/菜单/按钮。
+        boolean isAdmin = sysRoles.stream()
+                .anyMatch(role -> role.getStatus() != null && role.getStatus() != 0 && "admin".equals(role.getRoleKey()));
+        List<SysMenuVo> sysMenuVos = isAdmin
+                ? sysMenuService.getSysMenuAllEnabled()
+                : sysMenuService.getSysMenuByRoleList(sysRoles);
         if (sysMenuVos == null || sysMenuVos.isEmpty()) {
             return new ArrayList<>();
         }
