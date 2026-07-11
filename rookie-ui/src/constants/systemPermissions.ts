@@ -56,9 +56,11 @@ export const SYSTEM_PERMISSION_KEYS = {
   },
   // ---- knowhub 二开新增业务模块（博客文章 / 受控标签 / 文件存储）----
   // 权限键三段式 knowhub:模块:动作，与 sys_menu 中 knowhub:* 行的 perm_key 首值对齐。
-  // 等级权限(view/edit:l1-l3)由后端 BlogPermissionResolver 扫 perms 取最高等级判定，
-  // 前端 hasPermission 仅按钮显隐门槛；实际可见性/可操作性由后端 SQL 过滤 + canOp 判定。
-  // 编辑复用既有 knowhub:blog:edit 键(博客历史存量保留，渐进增强等级门控)；admin 登录时全 perm_key 已塞入自然得 l3 全权。
+  // 查看等级权限(view:l1-l3)由后端 BlogPermissionResolver 扫 perms 取最高等级判定，
+  // 前端 hasPermission 仅按钮显隐门槛；列表实际可见性由后端 SQL 过滤(level<=userViewLevel OR author_id=userId)。
+  // 编辑/发布/撤回不分等级：仅作者本人 OR 超级管理员可改(后端 canEditBlog 强判 isAuthor||isAdmin)，
+  //   前端编辑/发布/撤回按钮 visible 按 row.authorId===当前用户 OR isAdmin 显隐(permKey 仅作进页面门槛)。
+  // 删除走独立 knowhub:blog:delete 按钮权限(admin 走框架短路全权)；review 走按钮权限+审核员回避。
   blog: {
     create: ['knowhub:blog:add'],
     edit: ['knowhub:blog:edit'],
@@ -67,13 +69,10 @@ export const SYSTEM_PERMISSION_KEYS = {
     revoke: ['knowhub:blog:revoke'],
     review: ['knowhub:blog:review'],
     info: ['knowhub:blog:info'],
-    // 等级权限（前端按需用 hasPermission 判断等级按钮显隐，实际门控在后端）
+    // 查看等级权限（前端按需用 hasPermission 判断等级按钮显隐，实际可见性门控在后端 SQL）
     viewL1: ['knowhub:blog:view:l1'],
     viewL2: ['knowhub:blog:view:l2'],
     viewL3: ['knowhub:blog:view:l3'],
-    editL1: ['knowhub:blog:edit:l1'],
-    editL2: ['knowhub:blog:edit:l2'],
-    editL3: ['knowhub:blog:edit:l3'],
   },
   tag: {
     create: ['knowhub:tag:add'],

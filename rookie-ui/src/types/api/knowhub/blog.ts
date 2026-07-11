@@ -13,12 +13,14 @@ import type { NormalizedPageResult, PageQueryParams } from '../system/common'
  * 博客文章记录，与后端 BlogVo 字段对齐。
  * status 取值见字典 blog_status；reviewStatus 见字典 review_status；level 见字典 blog_level。
  * authorId 为作者用户ID(userId)，与 createBy(username) 互补，前台展示昵称走 join sys_user。
- * canView/canEdit/isAuthor 为详情接口回填的当前用户权限态（管理台列表一般不消费，供按钮显隐）。
+ * canView 为详情接口回填的当前用户查看权限态（系统 view 等级够 OR 作者）；
+ * canEdit 为详情接口回填的编辑权限态（作者本人 OR 超级管理员，编辑不分等级）；
+ * isAuthor 为当前用户是否该博客作者。管理台列表一般不消费这三个字段，供详情按钮显隐。
  */
 export interface BlogRecord {
   blogId?: number
   authorId?: number
-  /** 博客等级 1公开/2内部/3机密（字典 blog_level，对标系统 view/edit:lN 权限等级） */
+  /** 博客等级 1公开/2内部/3机密（字典 blog_level，对标系统 view:lN 查看权限等级；编辑不分等级） */
   level?: number
   title: string
   content: string

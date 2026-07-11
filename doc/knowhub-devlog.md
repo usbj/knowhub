@@ -803,3 +803,24 @@ knowhub 项目管理模块开发，详见 `doc/knowhub-project-design.md`。项�
 改动：mv 三文件到 `knowhub/src/main/java/com/knowhub/support/` + 改 package 声明 + 同包 `{@link}` 简化去全限定名 + 改 4 个 ServiceImpl(Article/Chapter/Project/Blog) 的 import；删空的 `article/`、`project/`、`blog/` 父目录(此前只放 support 子包，删后 com.knowhub 顶层剩 config/controller/enums/mapper/pojo/service/support/task)。
 
 校验：mvn -pl knowhub -am compile BUILD SUCCESS。
+
+### 2026-07-11 博客编辑权限收紧：去 edit:lN 等级，仅作者+超级管理员可改
+
+上一轮(2026-07-09)给博客加了文章同款的 L1~L3 等级权限(view/edit:lN + 作者归属)。用户现改方向：**博客编辑不分等级**——只有「作者本人 + 超级管理员」能改/发/撤，即便有 knowhub:blog:edit 按钮权限也不能改别人的博客。**查看等级(view:l1-l3 + 作者)保留**（防低权用户看机密博客的核心诉求）。借 rookie `06b3303` 引入的 admin 短路框架(UserInfo.isAdmin + AdminBypassExpressionRoot)，admin 进接口/前端按钮/service 判定全程自洽，不另设 admin 权限键。
+
+**用户拍板三点**：① 删除保持现状(knowhub:blog:delete 按钮权限，admin 走框架短路全权)，不收紧删除；② 编辑接口 @PreAuthorize('knowhub:blog:edit') 按钮权限门槛保留(进接口门槛)，service 层强判 isAuthor OR isAdmin 兜底；③ DB 已建的 knowhub:blog:edit:l1/l2/l3 三条菜单(menu 162-164)删除，view:l1-l3(159-161)保留。
+
+**改动**：
+- SQL `sql/knowhub-blog-edit-level-cleanup.sql`(新)：DELETE sys_menu WHERE perm_key IN ('knowhub:blog:edit:l1','l2','l3')，幂等；可选清 sys_role_menu 162-164。
+- `support/BlogPermissionResolver`：正则 `^knowhub:blog:(view|edit):l([1-3])$` → `^knowhub:blog:view:l([1-3])$`；record `BlogPermissionLevel(view,edit)` → 单字段 `(view)`；删 edit 分支；javadoc 说明编辑改走作者+admin。单字段化强制 service 层所有 lvl.edit() 调用点编译报错，正好兜底改完。
+- `BlogServiceImpl`：canOp 只留 view(view 仍走等级+作者)；新增 `canEditBlog(blog)=isAuthor||currentUser().isAdmin()`；editBlogInfo/publishBlog/revokeBlog 的 canOp(exist,"edit") → canEditBlog(exist)，报错文案改「无权编辑/发布/撤回该博客（仅作者或超级管理员）」；删 level 升级校验块(非作者进不来编辑，作者全权含改 level，admin 全权，旧 edit:lN 门已废)；fillPermissionState canEdit 改 `author||user.isAdmin()`(canView 不变)；deleteBlogInfo 不动；顶部权限模型 javadoc 更新。
+- `BlogController`：全部 @PreAuthorize 不动(editBlog 仍 knowhub:blog:edit 进接口门槛，service 强判兜底)。
+- 前端 `constants/systemPermissions.ts`：blog 组删 editL1-3，保留 viewL1-3，注释更新(编辑不分等级，按钮显隐走 row.authorId===当前用户 OR isAdmin)。
+- 前端 `views/knowhub/blog/index.vue`：引 useUserStore，算 currentUserId/isAdmin/canEditRow；编辑/发布/撤回按钮 visible 加 `&& canEditRow(row)`；审核/删除按钮不动。
+- 前端 `types/api/knowhub/blog.ts`：canEdit 注释改「作者 OR 超级管理员，编辑不分等级」；level 注释 view:lN(去 edit)。
+
+**遵守约定**：未修改 rookie-* 模块代码(借其 06b3303 admin 短路框架，不改)；产物全在 knowhub 模块 + rookie-ui knowhub 二开目录；不新建 Maven 模块；不续编新 menu_id(仅删)；时间字段契约不变。
+
+**校验**：mvn -pl knowhub -am compile BUILD SUCCESS；rookie-ui npm run type-check 通过。
+
+**待用户人工验证**：① 跑 sql/knowhub-blog-edit-level-cleanup.sql 后 sys_menu knowhub:blog:* 应 12 行(无 edit:l1-3)；② 非作者非 admin 用户(即便勾了 knowhub:blog:edit)编辑别人博客→后端拒「无权编辑该博客（仅作者或超级管理员）」，前端列表别人博客不显编辑/发布/撤回按钮；③ 作者改自己博客(含 level L1→L3)通过；④ admin 改任意博客通过；⑤ 查看等级仍生效(非 L3 作者用户列表只见 L1/L2，自己写的 L3 仍可见)。

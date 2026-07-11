@@ -32,6 +32,7 @@ import BlogReviewDialog from './components/BlogReviewDialog.vue'
 import BlogCoverUploader from './components/BlogCoverUploader.vue'
 import BlogContentEditor from './components/BlogContentEditor.vue'
 import { SYSTEM_PERMISSION_KEYS } from '@/constants/systemPermissions'
+import { useUserStore } from '@/stores/user'
 import type { NormalizedPageResult } from '@/types/api/system/common'
 import type { BlogListQuery, BlogPageResult, BlogRecord, ReviewPayload } from '@/types/api/knowhub/blog'
 import type { SharedActionConfig, SharedFieldSchemaMap } from '@/types/components/data-display'
@@ -63,6 +64,14 @@ const reviewBlog = ref<BlogRecord | null>(null)
 const reviewLoading = ref(false)
 /** 正文全屏编辑器显隐 */
 const contentEditorVisible = ref(false)
+
+// 编辑/发布/撤回仅作者 OR 超级管理员可操作（后端 canEditBlog 强判，前端按钮显隐对齐避免点了报错）
+const userStore = useUserStore()
+const currentUserId = computed(() => userStore.userInfo?.userId ?? -1)
+const isAdmin = computed(() => userStore.userInfo?.userRole?.some((r) => r.roleKey === 'admin') ?? false)
+/** 当前用户是否可改某博客（作者本人 OR 超级管理员） */
+const canEditRow = (row: Record<string, unknown>) =>
+  Number(row.authorId) === currentUserId.value || isAdmin.value
 const pageState = ref<BlogPageResult>({
   records: [],
   pageNum: 1,
@@ -93,8 +102,10 @@ const tableActions = computed<SharedActionConfig<Record<string, unknown>>[]>(() 
     label: '编辑',
     permKey: SYSTEM_PERMISSION_KEYS.blog.edit,
     buttonType: 'primary',
-    // 仅 DRAFT/REJECTED/REVOKED 可编辑；PUBLISHED 须先撤回、PENDING_REVIEW 审核中不能改
-    visible: (row) => !['PUBLISHED', 'PENDING_REVIEW'].includes(String(row.status)),
+    // 仅 DRAFT/REJECTED/REVOKED 可编辑；PUBLISHED 须先撤回、PENDING_REVIEW 审核中不能改；
+    // 且仅作者本人 OR 超级管理员可见（编辑不分等级，对齐后端 canEditBlog）
+    visible: (row) =>
+      !['PUBLISHED', 'PENDING_REVIEW'].includes(String(row.status)) && canEditRow(row),
     onClick: async (row) => {
       await openEditDialog(Number(row.blogId))
     },
@@ -104,8 +115,10 @@ const tableActions = computed<SharedActionConfig<Record<string, unknown>>[]>(() 
     label: '发布',
     permKey: SYSTEM_PERMISSION_KEYS.blog.publish,
     buttonType: 'success',
-    // 仅非发布且非待审状态可发布；PUBLISHED 无需重复发布、PENDING_REVIEW 已在审不可重复提交
-    visible: (row) => !['PUBLISHED', 'PENDING_REVIEW'].includes(String(row.status)),
+    // 仅非发布且非待审状态可发布；PUBLISHED 无需重复发布、PENDING_REVIEW 已在审不可重复提交；
+    // 且仅作者本人 OR 超级管理员可见（发布属编辑范畴）
+    visible: (row) =>
+      !['PUBLISHED', 'PENDING_REVIEW'].includes(String(row.status)) && canEditRow(row),
     onClick: async (row) => {
       await handlePublishBlog(Number(row.blogId))
     },
@@ -115,7 +128,8 @@ const tableActions = computed<SharedActionConfig<Record<string, unknown>>[]>(() 
     label: '撤回',
     permKey: SYSTEM_PERMISSION_KEYS.blog.revoke,
     buttonType: 'warning',
-    visible: (row) => String(row.status) === 'PUBLISHED',
+    // 仅已发布可撤回；且仅作者本人 OR 超级管理员可见（撤回属编辑范畴）
+    visible: (row) => String(row.status) === 'PUBLISHED' && canEditRow(row),
     onClick: async (row) => {
       await handleRevokeBlog(Number(row.blogId))
     },

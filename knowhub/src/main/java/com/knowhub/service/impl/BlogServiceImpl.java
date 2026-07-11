@@ -49,15 +49,17 @@ import java.util.stream.Collectors;
 /**
  * 博客文章 Service 实现。
  *
- * 权限模型（轻量，仅系统级 + 作者归属，无成员表，对齐文章模块）：
- * - 系统权限（全局、分等级、所有博客）：view/edit:lN，BlogPermissionResolver 一次扫描
- *   List<Permission> 取最高等级（admin 零特判，登录时全 perm_key 已塞入）
- * - 作者归属：博客 author_id 是单一所有者，作者对自己的博客全权（不看等级），
- *   由 canOp 在系统权限外补 author_id==userId 分支
- * 判定公式 canOp(U,B,op)：userLvl(op) >= B.level OR author_id == userId（作者全权）
- * delete：author 或 hasPerm('knowhub:blog:delete')
+ * 权限模型（轻量，无成员表）：
+ * - 查看（系统级分等级）：view:lN，BlogPermissionResolver 一次扫描 List<Permission> 取最高等级
+ *   （admin 零特判，登录时全 perm_key 已塞入）。列表按 level<=userViewLevel OR author_id=userId 过滤，
+ *   详情 canOp(view)=userLvl(view)>=level OR 作者（作者能看自己的博客，不看等级）。
+ * - 编辑/发布/撤回（非等级，作者+admin）：2026-07-11 收紧，不再走 edit:lN 等级。
+ *   canEditBlog=author_id==userId OR currentUser().isAdmin()。admin 走 rookie 框架短路
+ *   （UserInfo.isAdmin + AdminBypassExpressionRoot）放行，不扫 edit 等级键。
+ *   Controller @PreAuthorize('knowhub:blog:edit') 按钮权限保留作进接口门槛，service 层强判作者+admin 兜底。
+ * - 删除：author 或 hasButtonPerm('knowhub:blog:delete')（admin 走框架短路全权）。
  *
- * 审核流程复用博客/项目范式（状态机+回避+流水表+对账任务）：照搬旧逻辑，仅权限门改等级。
+ * 审核流程复用博客/项目范式（状态机+回避+流水表+对账任务）：照搬旧逻辑，仅权限门改上述语义。
  */
 @Service
 public class BlogServiceImpl implements BlogService {
@@ -210,23 +212,17 @@ public class BlogServiceImpl implements BlogService {
         if (BlogStatus.PENDING_REVIEW.getCode().equals(cur)) {
             throw new ServiceException(500, "审核中文章不能编辑，如需修改请先驳回或撤回后操作");
         }
-        // 权限校验：canOp(edit)（作者能编辑自己的博客，不看等级）
-        if (!canOp(exist, "edit")) {
-            throw new ServiceException(500, "无权编辑该博客");
+        // 权限校验：canEditBlog（仅作者 OR 超级管理员，不看等级）
+        if (!canEditBlog(exist)) {
+            throw new ServiceException(500, "无权编辑该博客（仅作者或超级管理员）");
         }
         validateTagIds(vo.getTagIds());
 
         Blog blog = BeanUtil.toBean(vo, Blog.class);
         UserInfo userInfo = currentUser();
         blog.setUpdateBy(userInfo.getUsername());
-        // 改 level 要校验：操作者自己的 edit 等级 >= 新 level（否则能把自己够不着的博客降级再让别人改）
-        if (blog.getLevel() != null && exist.getLevel() != null && blog.getLevel() > exist.getLevel()) {
-            BlogPermissionLevel lvl = BlogPermissionResolver.resolve();
-            // 作者改自己博客的 level 也要校验（防止作者把博客提到 L3 机密后自己又不想担）
-            if (lvl.edit() < blog.getLevel() && !isAuthor(exist, userInfo)) {
-                throw new ServiceException(500, "无权提升博客到更高等级（自身编辑等级不足）");
-            }
-        }
+        // 编辑不再分等级：作者改自己博客全权（含改 level L1→L3），admin 全权；
+        // 非作者非 admin 在 canEditBlog 已被拒，无需 level 升级校验（旧 edit:lN 等级门已废）。
         try {
             blogMapper.editBlogInfo(blog);
         } catch (Exception e) {
@@ -281,9 +277,9 @@ public class BlogServiceImpl implements BlogService {
         if (BlogStatus.PENDING_REVIEW.getCode().equals(cur)) {
             throw new ServiceException(500, "文章审核中，请勿重复提交");
         }
-        // 权限校验：canOp(edit)（发布属编辑范畴；作者能发布自己的博客）
-        if (!canOp(exist, "edit")) {
-            throw new ServiceException(500, "无权发布该博客");
+        // 权限校验：canEditBlog（发布属编辑范畴；仅作者 OR 超级管理员）
+        if (!canEditBlog(exist)) {
+            throw new ServiceException(500, "无权发布该博客（仅作者或超级管理员）");
         }
         UserInfo userInfo = currentUser();
         Date now = new Date();
@@ -308,7 +304,7 @@ public class BlogServiceImpl implements BlogService {
         blogMapper.editBlogInfo(update);
         // 写审核流水：作者提交(SUBMIT, AUTHOR) 或 系统直通(PUBLISH, SYSTEM)
         writeReviewLog(blogId, action, userInfo, null);
-        // 审核结果通知作者（预留，待 rookie 支持个人通知后接入，签名零改动）
+        // 审核结果通知作者
         notifyReviewResult(exist, action, null);
         evictDetail(blogId);
         return true;
@@ -326,9 +322,9 @@ public class BlogServiceImpl implements BlogService {
         if (!BlogStatus.PUBLISHED.getCode().equals(exist.getStatus())) {
             throw new ServiceException(500, "仅已发布文章可撤回");
         }
-        // 权限校验：canOp(edit)（作者能撤回自己的博客）
-        if (!canOp(exist, "edit")) {
-            throw new ServiceException(500, "无权撤回该博客");
+        // 权限校验：canEditBlog（撤回属编辑范畴；仅作者 OR 超级管理员）
+        if (!canEditBlog(exist)) {
+            throw new ServiceException(500, "无权撤回该博客（仅作者或超级管理员）");
         }
         UserInfo userInfo = currentUser();
         Blog update = new Blog();
@@ -524,9 +520,11 @@ public class BlogServiceImpl implements BlogService {
     }
 
     /**
-     * 权限判定核心：用户对博客 B 是否有操作 op 权限（对齐文章模块）。
-     * 公式：userLvl(op) >= B.level OR author_id == userId（作者全权，不看等级）。
-     * admin 因 perms 含全 l3 自然 userLvl=3，对所有博客全权（系统权限分支）。
+     * 查看权限判定：用户对博客 B 是否有 view 权限。
+     * 公式：userLvl(view) >= B.level OR author_id == userId（作者全权，不看等级）。
+     * admin 因 perms 含全 l3 自然 userLvl=3，对所有博客可查（系统权限分支）。
+     * <p>
+     * 仅用于 getBlogInfo 二次校验与详情 canView 回填；编辑/发布/撤回走 {@link #canEditBlog}。
      */
     private boolean canOp(Blog blog, String op) {
         BlogPermissionLevel lvl = BlogPermissionResolver.resolve();
@@ -536,6 +534,15 @@ public class BlogServiceImpl implements BlogService {
         }
         // 作者归属：作者对自己的博客全权（无成员表，直接 author_id 比对）
         return isAuthor(blog, currentUser());
+    }
+
+    /**
+     * 编辑权限判定（2026-07-11 收紧，非等级）：仅作者本人 OR 超级管理员可编辑/发布/撤回。
+     * 不看 level、不扫 edit:lN 等级键（已废）。admin 走 rookie 框架短路，currentUser().isAdmin() 直接放行。
+     */
+    private boolean canEditBlog(Blog blog) {
+        UserInfo user = currentUser();
+        return isAuthor(blog, user) || user.isAdmin();
     }
 
     /** 当前用户是否该博客作者（author_id 比对，userId 稳定锁定，username 可改不影响） */
@@ -561,15 +568,17 @@ public class BlogServiceImpl implements BlogService {
 
     /** 详情接口回填当前用户对该博客的权限态（供前端控制编辑/发布按钮显隐）。
      *  缓存命中与未命中两路都调（不信任缓存里的权限态字段，按当前登录用户实时算）。
-     *  缓存命中分支无 Blog 实体，按 blogId 重取一次轻量级实体取 level/author_id（详情已带，开销可忽略）。 */
+     *  缓存命中分支无 Blog 实体，按 blogId 重取一次轻量级实体取 level/author_id（详情已带，开销可忽略）。
+     *  <p>
+     *  canView：系统 view 等级够 OR 作者（查看仍走等级+作者）。
+     *  canEdit：作者 OR 超级管理员（编辑不再分等级，2026-07-11 收紧）。 */
     private void fillPermissionState(BlogVo vo, Blog blog) {
         BlogPermissionLevel lvl = BlogPermissionResolver.resolve();
         UserInfo user = currentUser();
         boolean author = isAuthor(blog, user);
         vo.setIsAuthor(author);
-        // canView/canEdit：系统权限够 OR 作者全权
         vo.setCanView(author || (blog.getLevel() != null && lvl.view() >= blog.getLevel()));
-        vo.setCanEdit(author || (blog.getLevel() != null && lvl.edit() >= blog.getLevel()));
+        vo.setCanEdit(author || user.isAdmin());
     }
 
     /** 缓存命中分支重载：仅有 BlogVo（无 Blog 实体），按 blogId 取 level/author_id 再算权限态。
