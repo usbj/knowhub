@@ -52,3 +52,11 @@ export const deleteSysDictDataApi = (dictDataId: number) =>
 
 export const getSysDictDataByTypeApi = (dictKey: string) =>
   get<ApiResult<SysDictDataRecord[]>>(`/sys/dist/data/type/${dictKey}`)
+
+/**
+ * 清空后端 Redis 中全部字典数据缓存（sys_dict_name:*）。
+ * 前端"刷新字典缓存"先调本接口清后端缓存，再 initializeDictionaries(true) 重拉，
+ * 才能让走 Redis 旧缓存的 getSysDictDataByDictKey 重新查库，解决 SQL 直插/外部改库后接口仍返回旧字典。
+ */
+export const clearDictDataCacheApi = () =>
+  del<ApiResult<boolean>>('/sys/dist/data/cache')

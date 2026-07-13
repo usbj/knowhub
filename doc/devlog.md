@@ -11,6 +11,19 @@
 ---
 
 ## 2026-07-13
+### — 字典缓存一致性：新增后端清字典缓存接口，前端"刷新字典缓存"先清后端再重拉
+
+此前 `SysDictDataServiceImpl.getSysDictDataByDictKey` 命中 Redis 缓存（`sys_dict_name:&lt;dictKey&gt;`）即直接返回、不查库；前端"刷新字典缓存"按钮只清前端 localStorage 并 `initializeDictionaries(true)`，但后端缓存仍在，重拉的 `/sys/dist/data/type/{dictKey}` 依旧返回旧字典。表现：SQL 直插新增 `sys_notice_scope` 的 USER 项后，前端通知范围下拉仍只显示 ALL/GROUP。根因是 mysql 与 redis 缓存一致性问题（`SysDictDataController` 顶部早有 TODO 标记）。本次加一个后端清缓存接口，让前端刷新流程覆盖后端缓存。
+
+- `rookie-system/.../service/SysDictDataService.java` — 接口新增 `clearDictDataCache()`
+- `rookie-system/.../service/impl/SysDictDataServiceImpl.java` — 实现 `clearDictDataCache()`：调 `DictUtil.clearDictData()` 清空全部 `sys_dict_name:*` 键，下次按 dictKey 取值才重新查库并回填缓存
+- `rookie-system/.../controller/SysDictDataController.java` — 新增 `DELETE /sys/dist/data/cache`，调 `clearDictDataCache`，公共接口仅需登录（与前端"刷新字典缓存"按钮现状对齐，不新增按钮权限项）；把顶部"说明 mysql 和 redis 缓存一致性问题"的 TODO 注释改为正常说明，指向本接口
+- `rookie-ui/src/api/system/dict.ts` — 新增 `clearDictDataCacheApi()` → `DELETE /sys/dist/data/cache`
+- `rookie-ui/src/views/system/dict/index.vue` — `handleRefreshDictCache` 改为：先 `clearDictDataCacheApi()` 清后端 Redis 缓存 → 再 `dictStore.clearDictCache()` 清前端 → `initializeDictionaries(true)` 重拉，顺序保证后端缓存清掉后重拉才查库
+- 验证：后端 `mvn -pl rookie-system -am compile` 通过；前端 `npx vue-tsc --noEmit` 通过
+- 未改动：`DictUtil` 本身、`SysConfigUtil` 缓存机制、字典增删改时 `setDictData` 回填（仍保留，写操作路径缓存仍然一致）；现有 `systemPermissions.ts` 不新增 dict 刷新权限键
+
+## 2026-07-13
 ### — 通知管理新增"指定成员"发送范围（USER）
 
 此前通知 `publish_scope` 只支持 `ALL` 全员 / `GROUP` 指定分组，定向只能按预先建好的通知分组发送，缺少"临时勾选若干具体成员、无需先建分组"的能力。本次新增 `USER` 范围，方案 B：新增 `sys_notice_user_rel(notice_id, user_id)` 关联表承载"通知→具体用户"的直接关系，前端复用通知分组模块的 `GroupMemberAddDialog` 搜索+加入交互。`sys_notice_read` 仍保持"用户首次读取时懒生成"语义不变（它是已读跟踪表，不能反推发送范围）。
@@ -25,7 +38,7 @@
 - `rookie-system/src/main/resources/mapper/system/SysNoticeMapper.xml` — `getNoticesForUser` 的可见范围 OR 条件追加一段 `notice_id IN (SELECT notice_id FROM sys_notice_user_rel WHERE user_id=#{userId})`，USER 范围消息对被指名用户可见
 - `rookie-ui/src/types/api/system/notice.ts` — 新增 `NoticeTargetUserRecord` 接口；`SysNoticeRecord` 增 `targetUserIds?`、`targetUsers?`
 - `rookie-ui/src/views/system/notice/notice-content/config.ts` — `createDefaultNoticeForm` 增 `targetUserIds:[]`；`createNoticeSchema` 增 `targetUserIds` 字段（`inputType:'custom'`，`visibleWhen: publishScope==='USER'`，formOrder=8，原 content/remark 顺延）
-- `rookie-ui/src/views/system/notice/notice-content/index.vue` — 引入 `GroupMemberAddDialog`（复用分组模块的搜索+加入交互）与 `NoticeTargetUserRecord`/`SysUserFormData` 类型；**引入 `useDict` 并在 `onMounted` 调 `ensureDictLoaded('sys_notice_scope', true)` 强制重拉范围字典**，修复"DB 已加 USER 项但前端下拉仍只显示 ALL/GROUP"——根因是字典 store 启动时先 `readStoredDictCache()` 恢复 localStorage 旧缓存，而通知页此前未主动加载该 dictKey，登录后路由的 `initializeDictionaries` 在 `initialized=true` 时被早退跳过，旧缓存永不刷新；新增本地 `targetMembers`（单一真源，存展示信息）+ `targetUserAddDialog` ref + `targetUserIdSet` 计算属性（excludeUserIds 控制"已加入"禁用态）；`openCreateDialog` 清空、`openEditDialog` 由后端 `targetUsers` 回显、`handleFormModelUpdate` 保护 `targetUserIds` 不被公共表单 update 清空、新增 `handleOpenTargetUserAddDialog/handleAddTargetUser/handleRemoveTargetUser`；`handleSubmitForm` 在 `publishScope==='USER'` 时由 `targetMembers` 派生 `targetUserIds`，否则清空（防脏数据）；template 新增 `#field-targetUserIds` slot（添加按钮 + 已选成员 tag 列表，tag closable 移除）与独立的 `GroupMemberAddDialog` 实例；style 增对应 class
+- `rookie-ui/src/views/system/notice/notice-content/index.vue` — 引入 `GroupMemberAddDialog`（复用分组模块的搜索+加入交互）与 `NoticeTargetUserRecord`/`SysUserFormData` 类型；新增本地 `targetMembers`（单一真源，存展示信息）+ `targetUserAddDialog` ref + `targetUserIdSet` 计算属性（excludeUserIds 控制"已加入"禁用态）；`openCreateDialog` 清空、`openEditDialog` 由后端 `targetUsers` 回显、`handleFormModelUpdate` 保护 `targetUserIds` 不被公共表单 update 清空、新增 `handleOpenTargetUserAddDialog/handleAddTargetUser/handleRemoveTargetUser`；`handleSubmitForm` 在 `publishScope==='USER'` 时由 `targetMembers` 派生 `targetUserIds`，否则清空（防脏数据）；template 新增 `#field-targetUserIds` slot（添加按钮 + 已选成员 tag 列表，tag closable 移除）与独立的 `GroupMemberAddDialog` 实例；style 增对应 class。注：本轮曾误以为前端未刷新字典导致 USER 不出现在下拉，在 onMounted 加 `ensureDictLoaded('sys_notice_scope', true)` 强刷——后查明根因在后端 Redis 字典缓存（见下条），此误改已回退
 - `doc/api.md` — 消息通知 2/3/4/5/8 节同步：详情响应说明加 `targetUserIds`/`targetUsers`，新增/编辑请求体加 `targetUserIds`，删除级联加 `userRel`，我的消息可见范围加 USER 命中
 - 未改动：`@PreAuthorize` 注解群（指定成员复用 `system:notice:add`/`edit` 权限，不新增按钮权限项）、`sys_notice_read` 机制、铃铛/stores 逻辑
 - 验证：后端 `mvn -pl rookie-system -am compile` 通过；前端 `npx vue-tsc --noEmit` 通过
