@@ -11,6 +11,26 @@
 ---
 
 ## 2026-07-13
+### — 通知管理新增"指定成员"发送范围（USER）
+
+此前通知 `publish_scope` 只支持 `ALL` 全员 / `GROUP` 指定分组，定向只能按预先建好的通知分组发送，缺少"临时勾选若干具体成员、无需先建分组"的能力。本次新增 `USER` 范围，方案 B：新增 `sys_notice_user_rel(notice_id, user_id)` 关联表承载"通知→具体用户"的直接关系，前端复用通知分组模块的 `GroupMemberAddDialog` 搜索+加入交互。`sys_notice_read` 仍保持"用户首次读取时懒生成"语义不变（它是已读跟踪表，不能反推发送范围）。
+
+- `sql/rookie.sql` — `sys_notice_group_rel` 建表语句后新增 `sys_notice_user_rel`（`id/notice_id/user_id` + `uk_notice_user_rel(notice_id,user_id)` 唯一键 + notice/user 双向索引），风格/引擎/字符集与 `sys_notice_group_rel` 一致；字典 `sys_notice_scope` 在 ALL(15)/GROUP(16) 后新增 `USER` 项（id=49，sort=3，tagType=danger）
+- `rookie-system/src/main/java/com/rookie/system/pojo/SysNoticeUserRel.java` — 新建，字段 `id/noticeId/userId` + 全参构造，照抄 `SysNoticeGroupRel` 结构
+- `rookie-system/src/main/java/com/rookie/system/mapper/SysNoticeUserRelMapper.java` — 新建，方法 `insertSysNoticeUserRel/deleteSysNoticeUserRelByNoticeId/getSysNoticeUserRelByNoticeId/getTargetUsersByNoticeId`
+- `rookie-system/src/main/resources/mapper/system/SysNoticeUserRelMapper.xml` — 新建：批量 foreach 插入、按 noticeId 删除/查询、`getTargetUsersByNoticeId` JOIN `sys_user` 取展示信息（userId/username/nickName/phoneNumber/status）
+- `rookie-system/src/main/java/com/rookie/system/pojo/vo/NoticeTargetUserVo.java` — 新建，指定成员回显展示 VO（userId/username/nickName/phoneNumber/status）
+- `rookie-system/src/main/java/com/rookie/system/pojo/vo/SysNoticeVo.java` — 新增字段 `targetUserIds: List<Long>`（提交用）+ `targetUsers: List<NoticeTargetUserVo>`（回显用）及 getter/setter
+- `rookie-system/src/main/java/com/rookie/system/service/impl/SysNoticeServiceImpl.java` — 注入 `SysNoticeUserRelMapper`；`getSysNoticeInfo` 回显 `targetUserIds`/`targetUsers`；`addSysNoticeInfo`/`editSysNoticeInfo` 调用新的 `addTargetUserRelIfNeeded`（编辑先删后建，仿 group_rel）；`deleteSysNoticeInfo` 级联删 `sys_notice_user_rel`；新增私有 `addTargetUserRelIfNeeded`
+- `rookie-system/src/main/resources/mapper/system/SysNoticeMapper.xml` — `getNoticesForUser` 的可见范围 OR 条件追加一段 `notice_id IN (SELECT notice_id FROM sys_notice_user_rel WHERE user_id=#{userId})`，USER 范围消息对被指名用户可见
+- `rookie-ui/src/types/api/system/notice.ts` — 新增 `NoticeTargetUserRecord` 接口；`SysNoticeRecord` 增 `targetUserIds?`、`targetUsers?`
+- `rookie-ui/src/views/system/notice/notice-content/config.ts` — `createDefaultNoticeForm` 增 `targetUserIds:[]`；`createNoticeSchema` 增 `targetUserIds` 字段（`inputType:'custom'`，`visibleWhen: publishScope==='USER'`，formOrder=8，原 content/remark 顺延）
+- `rookie-ui/src/views/system/notice/notice-content/index.vue` — 引入 `GroupMemberAddDialog`（复用分组模块的搜索+加入交互）与 `NoticeTargetUserRecord`/`SysUserFormData` 类型；新增本地 `targetMembers`（单一真源，存展示信息）+ `targetUserAddDialog` ref + `targetUserIdSet` 计算属性（excludeUserIds 控制"已加入"禁用态）；`openCreateDialog` 清空、`openEditDialog` 由后端 `targetUsers` 回显、`handleFormModelUpdate` 保护 `targetUserIds` 不被公共表单 update 清空、新增 `handleOpenTargetUserAddDialog/handleAddTargetUser/handleRemoveTargetUser`；`handleSubmitForm` 在 `publishScope==='USER'` 时由 `targetMembers` 派生 `targetUserIds`，否则清空（防脏数据）；template 新增 `#field-targetUserIds` slot（添加按钮 + 已选成员 tag 列表，tag closable 移除）与独立的 `GroupMemberAddDialog` 实例；style 增对应 class
+- `doc/api.md` — 消息通知 2/3/4/5/8 节同步：详情响应说明加 `targetUserIds`/`targetUsers`，新增/编辑请求体加 `targetUserIds`，删除级联加 `userRel`，我的消息可见范围加 USER 命中
+- 未改动：`@PreAuthorize` 注解群（指定成员复用 `system:notice:add`/`edit` 权限，不新增按钮权限项）、`sys_notice_read` 机制、铃铛/stores 逻辑
+- 验证：后端 `mvn -pl rookie-system -am compile` 通过；前端 `npx vue-tsc --noEmit` 通过
+
+## 2026-07-13
 ### — 登录失败返回真实原因（修复前端只看到"请求失败"）
 
 登录失败时前端统一弹"请求失败"看不到原因，但错误日志后端正常记录——根因在 `GlobalExceptionHandler`：`authenticationManager.authenticate()` 在用户不存在/密码错/账号锁定时抛 `BadCredentialsException`/`InternalAuthenticationServiceException`（均为 `AuthenticationException` 子类），而全局处理器无对应 `@ExceptionHandler`，被 `@ExceptionHandler(Exception.class)` 兜底成 `Result.error()` = `{code:500, msg:"请求失败"}`。前端 `http.ts` 拦截器逻辑正确（原样弹 `payload.msg`），是后端把 msg 设成了无信息量字面量。前端无改动，本次纯后端最小侵入修复。
