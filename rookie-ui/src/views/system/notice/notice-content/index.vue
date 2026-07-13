@@ -27,7 +27,6 @@ import SearchFilterPanel from '@/components/SearchFilterPanel.vue'
 import SharedTablePanel from '@/components/SharedTablePanel.vue'
 import NoticeDetailDialog from '@/components/NoticeDetailDialog.vue'
 import GroupMemberAddDialog from '../notice-group/components/GroupMemberAddDialog.vue'
-import { useDict } from '@/composables/useDict'
 import { SYSTEM_PERMISSION_KEYS } from '@/constants/systemPermissions'
 import type { NormalizedPageResult } from '@/types/api/system/common'
 import type {
@@ -51,7 +50,6 @@ type NoticeDialogMode = 'create' | 'edit'
 
 const queryForm = reactive<NoticeQueryFormState>(createDefaultNoticeQuery())
 const groupOptions = ref<Array<{ label: string; value: number }>>([])
-const { ensureDictLoaded } = useDict()
 const listLoading = ref(false)
 const submitLoading = ref(false)
 const dialogVisible = ref(false)
@@ -436,13 +434,7 @@ const handleDeleteNotice = async (noticeId: number) => {
 }
 
 onMounted(async () => {
-  await Promise.all([
-    fetchGroupOptions(),
-    fetchPage(),
-    // publishScope 下拉由字典 sys_notice_scope 驱动渲染；强制重拉一次，
-    // 防止 localStorage 旧字典缓存（仅含 ALL/GROUP）导致新增的 USER 项在通知弹窗不出现。
-    ensureDictLoaded('sys_notice_scope', true),
-  ])
+  await Promise.all([fetchGroupOptions(), fetchPage()])
 })
 
 /**
