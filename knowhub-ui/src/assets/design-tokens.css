@@ -1,0 +1,138 @@
+/**
+ * knowhub-ui 全局设计令牌（design tokens）
+ * ------------------------------------------------------------------
+ * 前台独立设计语言，不复用后台 rookie-ui 的 --rookie-* 变量体系。
+ * 定位：浅色知识门户 + 温暖社区感融合。
+ * 所有颜色/圆角/字号/阴影/间距集中在此，组件优先消费变量而非硬编码。
+ * 预留 [data-theme='dark'] 切换钩子，demo 阶段只出浅色。
+ */
+
+:root {
+  color-scheme: light;
+
+  /* —— 品牌色 —— */
+  --kh-primary: #2563eb; /* 链接蓝，知识门户基调 */
+  --kh-primary-strong: #1d4ed8;
+  --kh-primary-soft: rgba(37, 99, 235, 0.1);
+  --kh-primary-border: rgba(37, 99, 235, 0.22);
+  --kh-accent: #0ea5e9; /* 天青，呼应后台 teal 血统又不撞 */
+  --kh-accent-soft: rgba(14, 165, 233, 0.12);
+  --kh-warm: #f59e0b; /* 社区温度，AI日报/活跃徽标/强调 */
+  --kh-warm-soft: rgba(245, 158, 11, 0.14);
+
+  /* —— 状态色（仅用于状态表达，不参与大面积装饰） —— */
+  --kh-success: #16a34a;
+  --kh-success-soft: rgba(22, 163, 74, 0.12);
+  --kh-warning: #d97706;
+  --kh-warning-soft: rgba(217, 119, 6, 0.12);
+  --kh-danger: #dc2626;
+  --kh-danger-soft: rgba(220, 38, 38, 0.1);
+  --kh-info: #6366f1;
+  --kh-info-soft: rgba(99, 102, 241, 0.12);
+
+  /* —— 背景与表面 —— */
+  --kh-bg: #f8fafc; /* 页面底 */
+  --kh-bg-soft: #f1f5f9;
+  --kh-surface: #ffffff; /* 卡片 */
+  --kh-surface-muted: #f8fafc;
+  --kh-surface-hover: #f1f5f9;
+  --kh-gradient-hero: linear-gradient(135deg, #eff6ff 0%, #f0fdfa 55%, #fef3c7 120%);
+  --kh-gradient-card: linear-gradient(135deg, rgba(37, 99, 235, 0.06), rgba(14, 165, 233, 0.05));
+  --kh-gradient-warm: linear-gradient(135deg, #fef3c7, #fde68a);
+
+  /* —— 文本 —— */
+  --kh-text: #0f172a;
+  --kh-text-secondary: #475569;
+  --kh-text-tertiary: #94a3b8;
+  --kh-text-inverse: #ffffff;
+  --kh-text-link: var(--kh-primary);
+
+  /* —— 边框 —— */
+  --kh-border: #e2e8f0;
+  --kh-border-strong: #cbd5e1;
+  --kh-border-soft: #eef2f7;
+
+  /* —— 圆角（大圆角社区感） —— */
+  --kh-radius-sm: 8px;
+  --kh-radius: 12px; /* 控件 */
+  --kh-radius-lg: 16px; /* 卡片 */
+  --kh-radius-xl: 24px; /* 大区块/Hero */
+  --kh-radius-pill: 999px; /* 标签/徽标 */
+
+  /* —— 阴影（轻柔） —— */
+  --kh-shadow-xs: 0 1px 2px rgba(15, 23, 42, 0.04);
+  --kh-shadow-sm: 0 2px 8px rgba(15, 23, 42, 0.06);
+  --kh-shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
+  --kh-shadow-lg: 0 18px 48px rgba(15, 23, 42, 0.12);
+  --kh-shadow-primary: 0 12px 32px rgba(37, 99, 235, 0.18);
+
+  /* —— 间距基准（8px 栅格） —— */
+  --kh-space-1: 4px;
+  --kh-space-2: 8px;
+  --kh-space-3: 12px;
+  --kh-space-4: 16px;
+  --kh-space-5: 20px;
+  --kh-space-6: 24px;
+  --kh-space-8: 32px;
+  --kh-space-10: 40px;
+  --kh-space-12: 48px;
+  --kh-space-16: 64px;
+
+  /* —— 字号 —— */
+  --kh-font-size-xs: 12px;
+  --kh-font-size-sm: 13px;
+  --kh-font-size-base: 14px;
+  --kh-font-size-md: 15px;
+  --kh-font-size-lg: 16px;
+  --kh-font-size-xl: 18px;
+  --kh-font-size-2xl: 22px;
+  --kh-font-size-3xl: 28px;
+  --kh-font-size-4xl: 36px;
+  --kh-font-size-5xl: 48px;
+  --kh-font-size-hero: 56px;
+
+  /* —— 字体族 —— */
+  --kh-font-display: 'Space Grotesk', 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --kh-font-body: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --kh-font-mono: 'JetBrains Mono', 'Fira Code', ui-monospace, SFMono-Regular, monospace;
+
+  /* —— 布局尺寸 —— */
+  --kh-header-height: 64px;
+  --kh-container-max: 1200px;
+  --kh-container-wide: 1360px;
+
+  /* —— 过渡 —— */
+  --kh-transition: 200ms cubic-bezier(0.4, 0, 0.2, 1);
+  --kh-transition-fast: 120ms cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* —— 焦点环 —— */
+  --kh-focus-ring: 0 0 0 3px var(--kh-primary-soft);
+
+  /* —— Element Plus 主色映射（让 EP 控件跟随前台主色） —— */
+  --el-color-primary: var(--kh-primary);
+  --el-color-primary-light-3: #4f7ff0;
+  --el-color-primary-light-5: #7da3f5;
+  --el-color-primary-light-7: #abc6f9;
+  --el-color-primary-light-8: #c7d8fb;
+  --el-color-primary-light-9: var(--kh-primary-soft);
+  --el-color-primary-dark-2: var(--kh-primary-strong);
+  --el-border-radius-base: var(--kh-radius);
+  --el-border-color: var(--kh-border);
+  --el-border-color-light: var(--kh-border);
+  --el-border-color-lighter: var(--kh-border-soft);
+  --el-text-color-primary: var(--kh-text);
+  --el-text-color-regular: var(--kh-text-secondary);
+  --el-text-color-secondary: var(--kh-text-tertiary);
+  --el-bg-color: var(--kh-surface);
+  --el-bg-color-page: var(--kh-bg);
+  --el-fill-color: var(--kh-surface-muted);
+  --el-fill-color-light: var(--kh-bg-soft);
+  --el-fill-color-blank: var(--kh-surface);
+  --el-box-shadow-light: var(--kh-shadow-sm);
+  --el-box-shadow: var(--kh-shadow);
+}
+
+/* 深色主题钩子：demo 阶段不填实，仅留接口供后续接入 */
+[data-theme='dark'] {
+  color-scheme: dark;
+}
