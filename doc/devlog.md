@@ -10,6 +10,15 @@
 
 ---
 
+## 2026-07-13
+### — 登录失败返回真实原因（修复前端只看到"请求失败"）
+
+登录失败时前端统一弹"请求失败"看不到原因，但错误日志后端正常记录——根因在 `GlobalExceptionHandler`：`authenticationManager.authenticate()` 在用户不存在/密码错/账号锁定时抛 `BadCredentialsException`/`InternalAuthenticationServiceException`（均为 `AuthenticationException` 子类），而全局处理器无对应 `@ExceptionHandler`，被 `@ExceptionHandler(Exception.class)` 兜底成 `Result.error()` = `{code:500, msg:"请求失败"}`。前端 `http.ts` 拦截器逻辑正确（原样弹 `payload.msg`），是后端把 msg 设成了无信息量字面量。前端无改动，本次纯后端最小侵入修复。
+
+- `rookie-framework/src/main/java/com/rookie/framework/handle/GlobalExceptionHandler.java` — 新增 `@ExceptionHandler(AuthenticationException.class)` + 私有 `resolveAuthMsg`：按子类映射可读消息——`BadCredentialsException`→"用户名或密码错误"、`LockedException`→"账号已锁定…"、`DisabledException`→"账号已禁用…"、`AccountExpiredException`→"账号已过期…"、`CredentialsExpiredException`→"密码已过期…"，其它 `AuthenticationException` 退回"用户名或密码错误"避免泄露内部细节。沿用 `ResultEnum.COMMON_ERROR`（500）**不返回 401**，避免前端 `http.ts` 把 401 当"登录态失效"触发 `redirectToLogin` 重载登录页、清空用户已输入的账号密码；`log.error` + `recordErrorLog` 保持与通用分支一致，确保错误日志仍正常落库。新增对应 import：`AuthenticationException`、`BadCredentialsException`、`LockedException`、`DisabledException`、`AccountExpiredException`、`CredentialsExpiredException`、`ResultEnum`
+- 未改动：`UserDetailServiceImpl`（用户不存在返回 null → 触发 `InternalAuthenticationServiceException`→仍落入新 handler 显示"用户名或密码错误"）、`SecurityConfig`、`@PreAuthorize` 注解群、前端 `http.ts`/`login.ts`
+- 验证：`mvn -q -pl rookie-framework -am compile` 通过
+
 ## 2026-07-10
 ### — admin 超级管理员全权限直通（菜单 + 按钮鉴权 + 绕过缓存）
 
