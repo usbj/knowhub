@@ -1079,7 +1079,7 @@
 **请求接口：** `/sys/notice/{noticeId}`
 **请求方式：** GET
 **所需权限：** 需要登录
-**基本信息：** 获取指定消息通知的详细信息（含已关联的分组 ID 列表）
+**基本信息：** 获取指定消息通知的详细信息。返回含 `groupIds`（关联分组 ID 列表）、`targetUserIds`（指定成员 ID 列表）、`targetUsers`（指定成员展示信息：userId/username/nickName/phoneNumber/status，供编辑弹窗回显）
 
 #### 2.2 请求头
 无
@@ -1098,7 +1098,7 @@
 **请求接口：** `/sys/notice`
 **请求方式：** POST
 **所需权限：** 需要登录
-**基本信息：** 新增消息通知，当 `publishScope=GROUP` 时可同时关联分组
+**基本信息：** 新增消息通知，当 `publishScope=GROUP` 时可同时关联分组；当 `publishScope=USER` 时可同时指定成员（`targetUserIds`）。
 
 #### 3.2 请求头
 无
@@ -1116,6 +1116,7 @@
 | expireTime   | 过期时间   | string        | 否       |
 | routePath    | 前端路由   | string        | 否       |
 | groupIds     | 关联分组 ID | array\<long\> | 否       |
+| targetUserIds | 指定成员用户 ID | array\<long\> | 否     |
 
 **示例：**
 ```json
@@ -1132,7 +1133,7 @@
 ```
 
 #### 3.4 响应示例
-`Result<Boolean>`（消息主表 + group 关联在同一事务内插入）
+`Result<Boolean>`（消息主表 + group 关联 + user 关联在同一事务内插入）
 
 ---
 
@@ -1142,14 +1143,14 @@
 **请求接口：** /sys/notice
 **请求方式：** PUT
 **所需权限：** 需要登录
-**基本信息：** 修改消息通知，编辑时先清旧 group 关联再重新插入（同一事务）
+**基本信息：** 修改消息通知，编辑时先清旧 group 关联与 user 关联再重新插入（同一事务）
 
 
 #### 4.2 请求头
 无
 
 #### 4.3 请求体
-同新增，必须携带 `noticeId`（Long）。编辑时先清旧 group 关联再重新插入（同一事务） | **响应：** `Result<Boolean>`
+同新增，必须携带 `noticeId`（Long）。编辑时先清旧 group 关联与 user 关联再重新插入（同一事务） | **响应：** `Result<Boolean>`
 
 #### 4.4 响应示例
 `Result<Boolean>`
@@ -1162,7 +1163,7 @@
 **请求接口：** /sys/notice/{noticeIds}
 **请求方式：** DELETE
 **所需权限：** 需要登录
-**基本信息：** 批量软删除（delete=1），同时级联清理 groupRel 和 read 表（同一事务）
+**基本信息：** 批量软删除（delete=1），同时级联清理 groupRel、userRel 和 read 表（同一事务）
 
 
 #### 5.2 请求头
@@ -1222,7 +1223,7 @@ PUBLISHED → REVOKED | **响应：** `Result<Boolean>`
 **请求接口：** `/sys/notice/my`
 **请求方式：** GET
 **所需权限：** 需要登录
-**基本信息：** 查询当前用户可见的消息列表。包含 `publishScope=ALL` 全员消息 + 通过所属 group 命中的消息。返回每条消息附带 `hasRead`（是否已读）和 `hasConfirmed`（是否已确认）字段
+**基本信息：** 查询当前用户可见的消息列表。可见范围 = `publishScope=ALL` 全员消息 + 通过所属 group 命中的消息 + `publishScope=USER` 中直接指名该用户的消息。返回每条消息附带 `hasRead`（是否已读）和 `hasConfirmed`（是否已确认）字段
 
 #### 8.2 请求头
 无
