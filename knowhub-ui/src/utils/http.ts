@@ -11,7 +11,7 @@ import axios, { AxiosError } from 'axios'
 import type { AxiosInstance, AxiosRequestConfig, AxiosResponse } from 'axios'
 import { ElMessage } from 'element-plus'
 import { USER_INFO_STORAGE_KEY, USER_TOKEN_STORAGE_KEY } from '@/stores/user'
-import type { ApiResult } from '@/types/api/common'
+import type { ApiResult, NormalizedPageResult, RawPageInfoResult } from '@/types/api/common'
 
 const SUCCESS_CODE = 200
 const AUTH_EXPIRED_CODE = 401
@@ -179,6 +179,33 @@ export const del = <T>(url: string, config?: AxiosRequestConfig) =>
   request<T>({
     ...config,
     method: 'delete',
+    url,
+  })
+
+/**
+ * 把后端 PageInfo 结构转换为前端更易消费的分页结果。
+ * 与后台 rookie-ui http.requestPage 行为一致，供列表页统一抄后台写法。
+ */
+export const requestPage = async <T>(config: AxiosRequestConfig) => {
+  const response = await request<ApiResult<RawPageInfoResult<T>>>(config)
+  const pageInfo = response.data
+
+  return {
+    records: pageInfo.list,
+    pageNum: pageInfo.pageNum,
+    pageSize: pageInfo.pageSize,
+    pages: pageInfo.pages,
+    total: pageInfo.total,
+  } satisfies NormalizedPageResult<T>
+}
+
+/**
+ * 发起分页查询请求，直接返回归一化后的分页结果。
+ */
+export const getPage = <T>(url: string, config?: AxiosRequestConfig) =>
+  requestPage<T>({
+    ...config,
+    method: 'get',
     url,
   })
 

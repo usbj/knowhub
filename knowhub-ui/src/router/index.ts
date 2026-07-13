@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { useUserStore } from '@/stores/user'
 import { useNoticeStore } from '@/stores/notice'
+import { useDictStore } from '@/stores/dict'
 
 /**
  * knowhub 前台路由（静态 + 最简鉴权守卫）
@@ -95,6 +96,7 @@ const router = createRouter({
 router.beforeEach(async (to) => {
   const userStore = useUserStore()
   const noticeStore = useNoticeStore()
+  const dictStore = useDictStore()
 
   if (userStore.isAuthenticated && (to.path === '/login' || to.path === '/register')) {
     return '/'
@@ -108,13 +110,14 @@ router.beforeEach(async (to) => {
   }
 
   // 已登录但刷新页面导致 store userInfo 丢失时，补拉一次个人资料兜底；
-  // 同步惰性拉取公告，让顶栏铃铛在恢复登录态后即显示最新未读（失败不阻塞）
+  // 同步惰性拉取公告与字典，让顶栏铃铛与字典展示在恢复登录态后即就绪（失败不阻塞）
   if (to.meta.requiresAuth && userStore.isAuthenticated) {
     try {
       if (!userStore.userInfo) {
         await userStore.fetchUserProfile()
       }
       noticeStore.fetchMyNotices().catch(() => undefined)
+      dictStore.initializeDictionaries().catch(() => undefined)
     } catch {
       // /person 拉取失败（token 失效等）时 http 工具已处理跳登录，这里不再额外处置
     }

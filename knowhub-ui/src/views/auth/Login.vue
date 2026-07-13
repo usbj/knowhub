@@ -13,11 +13,13 @@ import AuthLayout from '@/components/layout/AuthLayout.vue'
 import { loginApi } from '@/api/system/login'
 import { useUserStore } from '@/stores/user'
 import { useNoticeStore } from '@/stores/notice'
+import { useDictStore } from '@/stores/dict'
 
 const router = useRouter()
 const route = useRoute()
 const userStore = useUserStore()
 const noticeStore = useNoticeStore()
+const dictStore = useDictStore()
 const formRef = ref<FormInstance>()
 const form = reactive({
   account: '',
@@ -55,9 +57,10 @@ const submit = async () => {
       })
       userStore.setLoginSession(loginResult.data)
       // 登录成功后拉个人资料，顶栏/个人中心即可立即展示真实昵称；
-      // 顺带惰性拉公告，让铃铛第一时间显示未读
+      // 顺带惰性拉公告 + 预加载字典，让铃铛与字典展示在首页即就绪
       await userStore.fetchUserProfile()
       noticeStore.fetchMyNotices().catch(() => undefined)
+      dictStore.initializeDictionaries().catch(() => undefined)
       ElMessage.success('登录成功')
       const redirect = typeof route.query.redirect === 'string' ? route.query.redirect : '/'
       await router.replace(redirect)

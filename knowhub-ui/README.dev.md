@@ -44,18 +44,43 @@
   - **未登录隐藏公告铃铛**（前台公告对未登录访客暂未规划公开接口）。
 - **首页公告轮播 / `/notices` 列表**：仍用 `src/mock/notice.ts`。待后端补"面向访客的公开公告接口"后再接（mock 文件首部注释已标记此缺口）。
 
-## 5. 时间工具
+## 5. 字典
+
+照搬后台 `rookie-ui/src/stores/dict.ts` 的实现，仅 localStorage key 前缀改 `knowhub-`。
+
+- **store/api/types**：[`src/stores/dict.ts`](src/stores/dict.ts) / [`src/api/system/dict.ts`](src/api/system/dict.ts) / [`src/types/api/dict.ts`](src/types/api/dict.ts)
+  - 读取接口：`getSysDictAllApi`（GET /sys/dict/all，全量启用字典类型）、`getSysDictDataByTypeApi`（GET /sys/dist/data/type/{dictKey}，按 key 取数据项）。**注意后端字典数据路径拼写为 `/sys/dist/data`（历史 typo），前端必须与之对齐**，勿自作主张改成 `dict`。
+  - 前台只接读取场景，字典类型/数据项的 CRUD 与分页（管理端用）暂未引入，按需再扩。
+- **用法**：
+  - 登录后预加载：`useDictStore().initializeDictionaries()`，在守卫恢复登录态分支与 Login.vue 登录成功后各调用一次（失败不阻塞），与后台守卫首屏初始化口径一致。
+  - 把字典 code 翻成中文标签：`useDictStore().getDictLabel('sys_notice_type', noticeType)`（单值返回 string，数组返回 string[]）。
+  - 渲染下拉：`getDictOptions('sys_xxx')` → `{label,value}[]` 喂 ElSelect；需要数字值传 `'number'`。
+  - 标签样式：`normalizeTagType`/`normalizeTagEffect` 把后端 `tagType`/`tagEffect` 归一化成合法的 ElTag `type`/`effect`，非法值兜底 `info`/`plain`。
+- **缓存语义**：内存按 `dictKey` 分组 + localStorage `knowhub-dict-cache` 持久化；`initializeDictionaries` 恒走 `force=true` 从后端拉最新（避免新增字典项被本地缓存挡住）。退出登录由 `userStore.logout` 调 `clearDictCache` 清内存与本地。
+- **何时用字典 vs 内联映射**：AppHeader 公告通知类型当前是内联 `noticeTypeMap`（前台公告首轮接后端时字典尚未预加载完成，内联兜底更稳）；其余正式业务字段（博客状态/资源类别等）应优先走 `getDictLabel`，等字典 store 预加载完成即可统一翻译，避免硬编码。
+
+## 6. 系统设置
+
+照搬后台 `rookie-ui/src/stores/system-config.ts`，仅 key 前缀改 `knowhub-`。与字典的「全量预加载」不同：系统设置可能含不宜整体暴露的关键信息，故按 `configKey` **单项异步拉取**，内存只缓存「已请求过的 key 的值」，未请求的 key 不进缓存、不会被下发。
+
+- **store/api/types**：[`src/stores/system-config.ts`](src/stores/system-config.ts) / [`src/api/system/system-config.ts`](src/api/system/system-config.ts) / [`src/types/api/system-config.ts`](src/types/api/system-config.ts)
+  - 只接按 key 取值：`getSysConfigValueApi`（GET /sys/system-config/configKey/{configKey}），命中返回值字符串，未命中/停用返回 `null`。
+  - CRUD/分页/刷新缓存（管理端用）暂未引入。
+- **用法**：在需要读取全局开关/配置的页面，`const v = await useSysConfigStore().fetchSysConfig('xxx_key')`；命中缓存复用，`force=true` 绕过缓存重拉。null 也会被缓存以避免重复请求未命中项。
+- **缓存语义**：内存 `configMap` + localStorage `knowhub-system-config-cache`；退出登录由 `userStore.logout` 调 `clearSysConfigCache`。后台系统设置后端缓存在 Redis（`SysConfigUtil`），刷新走后端接口；前端只做按需取值缓存，不主动刷后端缓存。
+
+## 7. 时间工具
 
 [`src/utils/format.ts`](src/utils/format.ts) 照搬后台 `rookie-ui/src/utils/format.ts` 的 `formatDateTime` / `formatDate`：后端 Date 经 jackson 输出 `yyyy-MM-dd HH:mm:ss`，前端统一走这里；时分秒全 0 视为只记录到日，只返回 `YYYY-MM-DD`。新增页面展示时间一律用这两个工具，不要手写格式化。
 
-## 6. Markdown 编辑/预览
+## 8. Markdown 编辑/预览
 
 - 依赖与后台同款：`@kangc/v-md-editor@^2.3.18` + `highlight.js@^11.11.1`。
 - 注册：[`src/utils/markdown.ts`](src/utils/markdown.ts) `setupVmdEditor(app)`，在 `main.ts` 启动时调用一次；样式 import 见 `main.ts`。
 - 页面直接用 `<v-md-editor>`（编辑）/ `<v-md-preview>`（预览）全局组件。
 - **深色模式覆盖暂未做**：前台主题体系（design-tokens.css）目前未建立明暗切换；v-md-editor 的 github 主题是固定浅色。前台后续若引入明暗主题，需同步补 v-md-editor 深色覆盖（见根 `README.dev.md` §12 主题适配清单的 v-md-editor 条目，可照抄后台 `rookie-ui/src/assets/main.css` 的 `.v-md-editor` 深色覆写）。
 
-## 7. 写 UI 时的抄写约定（重要）
+## 9. 写 UI 时的抄写约定（重要）
 
 **写前台 UI 时，若后台 `rookie-ui` 已有类似展示组件，优先抄过来用，再按前台主题变量（`--kh-*`）适配，不要从零另造。** 后台组件在交互细节、无障碍、边界处理上已踩过坑，复用能保持两套前端的认知一致性。
 
@@ -67,17 +92,20 @@
 4. **能复用后台同款依赖就复用**：v-md-editor、highlight.js、format.ts、Element Plus 控件用法均与后台保持一致，不引入同类新库。
 5. 抄过来后在本文件对应章节补一句"参考后台 `rookie-ui/...` 的 xxx 实现"，方便后续追溯。
 
-## 8. 与根文档的关系
+## 10. 与根文档的关系
 
 - 主题适配统一清单见根 [`README.dev.md`](../README.dev.md) §12，前台新增组件时同样按该清单检查（深浅模式、teleported 浮层、滚动条、空状态等）。前台主题体系建立前，至少保证浅色模式下不出现 Element Plus 默认白底残留。
 - 协作约定（范围控制/尊重已有改动/修改前沟通）见根 `README.dev.md` §11，同样适用于本目录。
 - 后端接口契约、`Token` 头、`Result` 结构见根 `README.dev.md` §5；前后端时间字段类型约定见 §5 末尾的"VO/实体时间类"说明。
 
-## 9. 当前已接后端清单
+## 11. 当前已接后端清单
 
 - `POST /login` — 登录（返回 token）
 - `GET /person` — 当前登录用户资料
 - `GET /sys/notice/my` — 当前用户可见通知
 - `POST /sys/notice/read/{noticeId}` — 标记已读
+- `GET /sys/dict/all` — 全量启用字典类型（字典预加载用）
+- `GET /sys/dist/data/type/{dictKey}` — 按 key 取字典数据项
+- `GET /sys/system-config/configKey/{configKey}` — 按 key 取系统设置值
 
 其余页面（博客/项目/资源/文档/笔记/首页）仍消费 `src/mock/*`，按后端模块接口就绪后逐步替换。

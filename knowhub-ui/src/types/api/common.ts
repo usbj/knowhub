@@ -13,3 +13,34 @@ export interface ApiResult<T> {
   msg: string
   data: T
 }
+
+/**
+ * 与后端 PageUtil / PageInfo 对齐的原始分页参数。
+ */
+export interface PageQueryParams {
+  pageNum: number
+  pageSize: number
+}
+
+/**
+ * 与 PageHelper 返回的 PageInfo 结构对齐的原始分页数据。
+ */
+export interface RawPageInfoResult<T> {
+  list: T[]
+  pageNum: number
+  pageSize: number
+  pages: number
+  total: number
+}
+
+/**
+ * 前端归一化后的分页结果。
+ * 页面层统一读取 records / total / pageNum / pageSize 即可，不再关心后端原始命名。
+ */
+export interface NormalizedPageResult<T> {
+  records: T[]
+  pageNum: number
+  pageSize: number
+  pages: number
+  total: number
+}

@@ -10,6 +10,8 @@ import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 import { getPersonalProfileApi } from '@/api/system/user'
 import { useNoticeStore } from '@/stores/notice'
+import { useDictStore } from '@/stores/dict'
+import { useSysConfigStore } from '@/stores/system-config'
 import type { LoginResponseData } from '@/types/api/login'
 import type { SysUserProfile } from '@/types/api/user'
 
@@ -105,12 +107,16 @@ export const useUserStore = defineStore('user', () => {
    */
   const logout = () => {
     const noticeStore = useNoticeStore()
+    const dictStore = useDictStore()
+    const sysConfigStore = useSysConfigStore()
 
     token.value = ''
     userInfo.value = null
     localStorage.removeItem(USER_TOKEN_STORAGE_KEY)
     localStorage.removeItem(USER_INFO_STORAGE_KEY)
     noticeStore.resetNoticeState()
+    dictStore.clearDictCache()
+    sysConfigStore.clearSysConfigCache()
   }
 
   return {
