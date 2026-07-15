@@ -47,7 +47,7 @@ const filteredBlogs = computed<MockBlog[]>(() => {
     )
   }
   if (sortKey.value === 'latest') list = [...list].sort((a, b) => b.publishTime.localeCompare(a.publishTime))
-  else if (sortKey.value === 'hot') list = [...list].sort((a, b) => b.views - a.views)
+  else if (sortKey.value === 'hot') list = [...list].sort((a, b) => b.viewCount - a.viewCount)
   else list = [...list].sort((a, b) => b.rating - a.rating)
   return list
 })
@@ -56,11 +56,11 @@ const filteredBlogs = computed<MockBlog[]>(() => {
 const tagRanking = [...tags].sort((a, b) => b.count - a.count).slice(0, 10)
 
 /** 热门笔记（侧栏） */
-const hotNotes = [...blogs].filter((b) => b.status === 'PUBLISHED').sort((a, b) => b.views - a.views).slice(0, 5)
+const hotNotes = [...blogs].filter((b) => b.status === 'PUBLISHED').sort((a, b) => b.viewCount - a.viewCount).slice(0, 5)
 
 /** Hero 右侧概览卡数据 */
 const publishedBlogCount = blogs.filter((b) => b.status === 'PUBLISHED').length
-const totalReads = blogs.reduce((s, b) => s + b.views, 0).toLocaleString()
+const totalReads = blogs.reduce((s, b) => s + b.viewCount, 0).toLocaleString()
 </script>
 
 <template>
@@ -146,7 +146,7 @@ const totalReads = blogs.reduce((s, b) => s + b.views, 0).toLocaleString()
         </div>
 
         <div v-if="filteredBlogs.length" class="notes__list">
-          <BlogRow v-for="b in filteredBlogs" :key="b.id" :blog="b" />
+          <BlogRow v-for="b in filteredBlogs" :key="b.blogId" :blog="b" />
         </div>
         <KhCard v-else padding="lg" class="notes__empty">
           <KhIcon name="search" :size="40" :stroke="1.4" />
@@ -177,11 +177,11 @@ const totalReads = blogs.reduce((s, b) => s + b.views, 0).toLocaleString()
         <KhCard padding="md" class="notes__panel">
           <KhSectionTitle title="近期热门" />
           <ul class="notes__hot">
-            <li v-for="(b, i) in hotNotes" :key="b.id" class="notes__hot-item" @click="$router.push(`/blog/${b.id}`)">
+            <li v-for="(b, i) in hotNotes" :key="b.blogId" class="notes__hot-item" @click="$router.push(`/blog/${b.blogId}`)">
               <span class="notes__hot-no" :class="{ 'is-top': i < 3 }">{{ i + 1 }}</span>
               <div class="notes__hot-text">
                 <div class="notes__hot-title kh-line-clamp-2">{{ b.title }}</div>
-                <div class="notes__hot-meta">{{ b.views }} 阅读 · {{ b.author }}</div>
+                <div class="notes__hot-meta">{{ b.viewCount }} 阅读 · {{ b.authorNickname }}</div>
               </div>
             </li>
           </ul>
@@ -202,7 +202,7 @@ const totalReads = blogs.reduce((s, b) => s + b.views, 0).toLocaleString()
   display: grid;
   grid-template-columns: 1fr 240px;
   gap: var(--kh-space-8);
-  align-items: start;
+  align-items: center;
 }
 .notes__hero-main {
   min-width: 0;
@@ -254,7 +254,7 @@ const totalReads = blogs.reduce((s, b) => s + b.views, 0).toLocaleString()
 /* —— 右侧概览卡 —— */
 .notes__overview {
   position: relative;
-  padding: var(--kh-space-6);
+  padding: var(--kh-space-5);
   background: var(--kh-surface);
   border: 1px solid var(--kh-border-soft);
   border-radius: var(--kh-radius-lg);
@@ -283,35 +283,37 @@ const totalReads = blogs.reduce((s, b) => s + b.views, 0).toLocaleString()
 .notes__overview-stats {
   position: relative;
   display: flex;
-  flex-direction: column;
   gap: var(--kh-space-3);
 }
 .notes__overview-stat {
+  flex: 1;
+  min-width: 0;
   display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  padding-bottom: var(--kh-space-3);
-  border-bottom: 1px dashed var(--kh-border-soft);
-}
-.notes__overview-stat:last-child {
-  border-bottom: none;
-  padding-bottom: 0;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: var(--kh-space-4) 4px;
+  border-radius: var(--kh-radius);
+  background: var(--kh-bg-soft);
+  text-align: center;
 }
 .notes__overview-value {
   font-family: var(--kh-font-display);
-  font-size: var(--kh-font-size-2xl);
+  font-size: var(--kh-font-size-xl);
   font-weight: 700;
   color: var(--kh-primary);
   font-variant-numeric: tabular-nums;
+  line-height: 1.1;
 }
 .notes__overview-label {
-  font-size: var(--kh-font-size-sm);
+  font-size: 12px;
   color: var(--kh-text-tertiary);
+  white-space: nowrap;
 }
 .notes__overview-hint {
   position: relative;
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 6px;
   padding: var(--kh-space-3);
   border-radius: var(--kh-radius);
@@ -541,14 +543,8 @@ const totalReads = blogs.reduce((s, b) => s + b.views, 0).toLocaleString()
   }
 }
 @media (max-width: 640px) {
-  .notes__overview-stats {
-    flex-direction: row;
-    flex-wrap: wrap;
-  }
   .notes__overview-stat {
     flex: 1 1 40%;
-    border-bottom: none;
-    padding-bottom: 0;
   }
 }
 </style>

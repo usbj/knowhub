@@ -15,24 +15,30 @@ import DocCard from '@/components/doc/DocCard.vue'
 import { docs } from '@/mock/doc'
 
 const keyword = ref('')
-const levelFilter = ref<'ALL' | '入门' | '进阶' | '高级'>('ALL')
 
+/**
+ * 标签筛选：文章标签功能后端后续才上（当前 mock 文档无 tags 字段），
+ * 这里只预留筛选区 UI + 状态，标签列表为空 → 渲染"标签功能即将上线"提示。
+ * 注意：不抄笔记导航的标签云 + 标签排行那套（那是博客场景），文档用平铺筛选 chip。
+ */
+const selectedTags = ref<string[]>([])
+/** 后端标签接口落地后填充，现为空占位 */
+const availableTags: string[] = []
+const toggleTag = (t: string) => {
+  const i = selectedTags.value.indexOf(t)
+  if (i >= 0) selectedTags.value.splice(i, 1)
+  else selectedTags.value.push(t)
+}
+
+/** 过滤：仅关键词（查看等级不参与筛选——后端按当前用户查询等级返回可见内容） */
 const filteredDocs = computed(() => {
   let list = [...docs]
-  if (levelFilter.value !== 'ALL') list = list.filter((d) => d.level === levelFilter.value)
   if (keyword.value.trim()) {
     const k = keyword.value.trim().toLowerCase()
     list = list.filter((d) => d.title.toLowerCase().includes(k) || d.summary.toLowerCase().includes(k))
   }
   return list.sort((a, b) => b.readCount - a.readCount)
 })
-
-const levelOptions: { key: typeof levelFilter.value; label: string }[] = [
-  { key: 'ALL', label: '全部' },
-  { key: '入门', label: '入门' },
-  { key: '进阶', label: '进阶' },
-  { key: '高级', label: '高级' },
-]
 
 /** 阅读量最高的文档（侧栏热门） */
 const hotDocs = [...docs].sort((a, b) => b.readCount - a.readCount).slice(0, 6)
@@ -51,16 +57,23 @@ const totalReads = docs.reduce((s, d) => s + d.readCount, 0).toLocaleString()
         <div class="docs__search">
           <el-icon class="docs__search-icon"><Search /></el-icon>
           <input v-model="keyword" class="docs__search-input" placeholder="搜索文档标题或摘要…" />
-          <div class="docs__search-filter">
+          <button class="docs__search-btn" type="button">搜索</button>
+        </div>
+
+        <!-- 标签筛选区（预留）：后端标签功能上线后填充 availableTags；现为空占位 -->
+        <div class="docs__tags">
+          <span class="docs__tags-label"><KhIcon name="tag" :size="14" /> 标签筛选</span>
+          <div v-if="availableTags.length" class="docs__tags-chips">
             <button
-              v-for="o in levelOptions"
-              :key="o.key"
-              class="docs__level-btn"
-              :class="{ 'is-active': levelFilter === o.key }"
+              v-for="t in availableTags"
+              :key="t"
+              class="docs__tag-chip"
+              :class="{ 'is-active': selectedTags.includes(t) }"
               type="button"
-              @click="levelFilter = o.key"
-            >{{ o.label }}</button>
+              @click="toggleTag(t)"
+            >{{ t }}</button>
           </div>
+          <span v-else class="docs__tags-empty">标签功能即将上线 · 后端文章标签接口就绪后在此筛选</span>
         </div>
       </div>
     </section>
@@ -151,27 +164,65 @@ const totalReads = docs.reduce((s, d) => s + d.readCount, 0).toLocaleString()
   background: transparent;
   font-size: var(--kh-font-size-md);
 }
-.docs__search-filter {
-  display: flex;
-  gap: 4px;
-  padding: 3px;
-  background: var(--kh-bg-soft);
-  border-radius: var(--kh-radius-pill);
-}
-.docs__level-btn {
-  padding: 5px 12px;
+.docs__search-btn {
+  height: 38px;
+  padding: 0 var(--kh-space-5);
   border: none;
-  background: transparent;
   border-radius: var(--kh-radius-pill);
+  background: var(--kh-primary);
+  color: #fff;
+  font-weight: 600;
+  font-size: var(--kh-font-size-sm);
+  cursor: pointer;
+}
+
+/* 标签筛选区（预留，后端标签上线后填充） */
+.docs__tags {
+  display: flex;
+  align-items: center;
+  gap: var(--kh-space-3);
+  margin-top: var(--kh-space-4);
+  max-width: 760px;
+  flex-wrap: wrap;
+}
+.docs__tags-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  color: var(--kh-text-tertiary);
+  font-weight: 600;
+  flex: none;
+}
+.docs__tags-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.docs__tag-chip {
+  padding: 4px 12px;
+  border: 1px solid var(--kh-border);
+  border-radius: var(--kh-radius-pill);
+  background: var(--kh-surface);
   color: var(--kh-text-secondary);
   font-size: 12px;
   font-weight: 500;
   cursor: pointer;
+  transition: all var(--kh-transition-fast);
 }
-.docs__level-btn.is-active {
-  background: var(--kh-surface);
+.docs__tag-chip:hover {
+  border-color: var(--kh-primary-border);
   color: var(--kh-primary);
-  box-shadow: var(--kh-shadow-xs);
+}
+.docs__tag-chip.is-active {
+  background: var(--kh-primary);
+  border-color: var(--kh-primary);
+  color: #fff;
+}
+.docs__tags-empty {
+  font-size: 12px;
+  color: var(--kh-text-tertiary);
+  padding: 4px 0;
 }
 
 .docs__body {

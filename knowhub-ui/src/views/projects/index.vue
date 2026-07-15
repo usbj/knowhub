@@ -35,7 +35,7 @@ const filteredProjects = computed(() => {
     const k = keyword.value.trim().toLowerCase()
     list = list.filter((p) => p.title.toLowerCase().includes(k) || p.summary.toLowerCase().includes(k))
   }
-  return [...list].sort((a, b) => b.activity - a.activity)
+  return [...list].sort((a, b) => b.downloadCount - a.downloadCount)
 })
 
 const typeOptions: { key: typeof typeFilter.value; label: string }[] = [
@@ -91,12 +91,12 @@ const typeOptions: { key: typeof typeFilter.value; label: string }[] = [
           >{{ o.label }}</button>
         </div>
         <div class="projects__sort-hint">
-          <KhIcon name="trending" :size="14" /> 按活跃度排序
+          <KhIcon name="trending" :size="14" /> 按下载量排序
         </div>
       </div>
 
       <div v-if="filteredProjects.length" class="projects__grid">
-        <ProjectCard v-for="p in filteredProjects" :key="p.id" :project="p" />
+        <ProjectCard v-for="p in filteredProjects" :key="p.projectId" :project="p" />
       </div>
       <KhCard v-else padding="lg" class="projects__empty">
         <KhIcon name="search" :size="40" :stroke="1.4" />

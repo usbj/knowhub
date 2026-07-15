@@ -80,6 +80,24 @@ const router = createRouter({
       component: () => import('@/views/project/detail.vue'),
       meta: { title: '项目详情' },
     },
+    {
+      path: '/docs/:id',
+      name: 'doc-detail',
+      component: () => import('@/views/doc/detail.vue'),
+      meta: { title: '文档详情' },
+    },
+    {
+      path: '/docs/:id/read',
+      name: 'doc-read',
+      component: () => import('@/views/doc/read.vue'),
+      meta: { title: '文档阅读' },
+    },
+    {
+      path: '/resource/:id',
+      name: 'resource-detail',
+      component: () => import('@/views/resource/detail.vue'),
+      meta: { title: '资源详情' },
+    },
   ],
   scrollBehavior(_to, _from, saved) {
     return saved ?? { top: 0 }

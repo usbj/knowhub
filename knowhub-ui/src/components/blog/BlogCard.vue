@@ -17,13 +17,13 @@ const props = defineProps<{ blog: MockBlog }>()
 const router = useRouter()
 
 /** 点击卡片跳博客详情 */
-const goDetail = () => router.push(`/blog/${props.blog.id}`)
+const goDetail = () => router.push(`/blog/${props.blog.blogId}`)
 </script>
 
 <template>
   <KhCard clickable padding="none" class="blog-card" @click="goDetail">
     <!-- 封面 -->
-    <div class="blog-card__cover" :style="{ background: blog.cover ?? 'linear-gradient(135deg,#2563eb,#0ea5e9)' }">
+    <div class="blog-card__cover" :style="{ background: blog.coverUrl ?? 'linear-gradient(135deg,#2563eb,#0ea5e9)' }">
       <KhIcon name="blog" :size="28" class="blog-card__cover-icon" />
       <div class="blog-card__cover-tags">
         <KhTag v-if="blog.status !== 'PUBLISHED'" size="sm" :type="blog.status === 'PENDING_REVIEW' ? 'warning' : blog.status === 'REJECTED' ? 'danger' : 'neutral'">
@@ -43,16 +43,16 @@ const goDetail = () => router.push(`/blog/${props.blog.id}`)
 
       <div class="blog-card__meta">
         <div class="blog-card__author">
-          <KhAvatar :item="{ label: blog.author }" :size="24" />
-          <span class="blog-card__author-name">{{ blog.author }}</span>
+          <KhAvatar :item="{ label: blog.authorNickname }" :size="24" />
+          <span class="blog-card__author-name">{{ blog.authorNickname }}</span>
         </div>
         <KhRating :value="blog.rating" :size="12" />
       </div>
 
       <div class="blog-card__stats">
-        <KhStatPill icon="eye" :value="blog.views" />
-        <KhStatPill icon="heart" :value="blog.likes" />
-        <KhStatPill icon="bookmark" :value="blog.collects" />
+        <KhStatPill icon="eye" :value="blog.viewCount" />
+        <KhStatPill icon="heart" :value="blog.likeCount" />
+        <KhStatPill icon="bookmark" :value="blog.collectCount" />
         <span class="blog-card__time">
           <KhIcon name="clock" :size="12" />
           {{ blog.publishTime }}

@@ -4,28 +4,26 @@
   封面色块 + 难度徽标 + 标题 + 简介 + 章节数 + 标签 + 作者 + 阅读量 + 更新时间。
 -->
 <script setup lang="ts">
+import { useRouter } from 'vue-router'
 import KhCard from '@/components/common/KhCard.vue'
 import KhTag from '@/components/common/KhTag.vue'
 import KhAvatar from '@/components/common/KhAvatar.vue'
 import KhStatPill from '@/components/common/KhStatPill.vue'
 import KhIcon from '@/components/common/KhIcon.vue'
 import type { MockDoc } from '@/mock/doc'
+import { viewLevelTagType, getViewLevelLabel } from '@/utils/viewLevel'
 
-defineProps<{ doc: MockDoc }>()
-
-const levelType: Record<string, 'success' | 'warning' | 'danger'> = {
-  入门: 'success',
-  进阶: 'warning',
-  高级: 'danger',
-}
+const props = defineProps<{ doc: MockDoc }>()
+const router = useRouter()
+const goDetail = () => router.push(`/docs/${props.doc.id}`)
 </script>
 
 <template>
-  <KhCard clickable padding="none" class="doc-card">
+  <KhCard clickable padding="none" class="doc-card" @click="goDetail">
     <div class="doc-card__cover" :style="{ background: doc.cover }">
       <KhIcon name="book" :size="28" class="doc-card__cover-icon" />
       <div class="doc-card__level">
-        <KhTag size="sm" :type="levelType[doc.level]">{{ doc.level }}</KhTag>
+        <KhTag size="sm" :type="viewLevelTagType[doc.level] ?? 'neutral'">{{ getViewLevelLabel(doc.level) }}</KhTag>
       </div>
     </div>
 

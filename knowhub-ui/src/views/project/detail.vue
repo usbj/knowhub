@@ -1,12 +1,16 @@
 <!--
   项目详情 /project/:id
   ------------------------------------------------------------------
-  封面 + 标题 + 类型/状态/等级 + Markdown 介绍 + 参与人员卡（负责人/导师/成员）+ GitHub 式文件树 + 源码下载 + 版本说明 + 评分。
+  无封面项目头（标签 + 标题 + 摘要 + 负责人/评分/更新）+ 子页面切换（项目介绍 / 项目文件）
+  + 右栏（项目信息 + 参与人员可滚动）。
+  项目文件：GitHub 式文件树，文件叶子右侧展示上传时间/大小，可点击下载。
+  “下载源码”按钮已去掉（并非所有项目都是编程项目，下载走文件树叶子项）。
 -->
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ArrowLeft, Download, Star, Folder, Document, Plus } from '@element-plus/icons-vue'
+import { ElMessage } from 'element-plus'
+import { ArrowLeft, Download, Folder, Document } from '@element-plus/icons-vue'
 import KhCard from '@/components/common/KhCard.vue'
 import KhTag from '@/components/common/KhTag.vue'
 import KhAvatar from '@/components/common/KhAvatar.vue'
@@ -14,6 +18,8 @@ import KhRating from '@/components/common/KhRating.vue'
 import KhStatPill from '@/components/common/KhStatPill.vue'
 import KhIcon from '@/components/common/KhIcon.vue'
 import { getProjectById, projects, type MockProjectFile } from '@/mock/project'
+import { formatDateTime } from '@/utils/format'
+import { viewLevelTagType, getViewLevelLabel } from '@/utils/viewLevel'
 
 const route = useRoute()
 const router = useRouter()
@@ -34,38 +40,53 @@ const memberRoleLabel: Record<string, string> = { LEADER: '负责人', MENTOR: '
 
 const goBack = () => router.back()
 
-/** 文件树展开状态（按 id 记录） */
+/** 子页面切换：介绍 / 项目文件 */
+type SubTab = 'intro' | 'files'
+const activeTab = ref<SubTab>('intro')
+
+/** 文件树展开状态（按 fileId 记录）；首屏根目录默认展开 */
 const expanded = ref<Record<number, boolean>>({})
+const isNodeOpen = (node: MockProjectFile, depth: number) => expanded.value[node.fileId] ?? depth === 0
 const toggleNode = (node: MockProjectFile) => {
-  if (node.isDir) expanded.value[node.id] = !expanded.value[node.id]
+  if (node.isDir) expanded.value[node.fileId] = !expanded.value[node.fileId]
 }
 
-/** 递归渲染文件树节点 */
-const renderNode = (node: MockProjectFile, depth = 0): MockProjectFile[] => {
-  if (!node.isDir) return [node]
-  const isOpen = expanded.value[node.id] ?? depth === 0
-  const result = [node]
-  if (isOpen && node.children) {
-    for (const child of node.children) {
-      result.push(...renderNode(child, depth + 1))
-    }
-  }
-  return result
-}
-
-/** 拍平后的可视节点列表（含缩进层级） */
+/** 拍平后的可视节点列表（含缩进层级），参考后台 ProjectFileTree 的 GitHub 式拍平渲染 */
 const visibleNodes = computed(() => {
-  const out: { node: MockProjectFile; depth: number; isOpen: boolean }[] = []
+  const out: { node: MockProjectFile; depth: number }[] = []
   const walk = (nodes: MockProjectFile[], depth: number) => {
     for (const n of nodes) {
-      const isOpen = expanded.value[n.id] ?? depth === 0
-      out.push({ node: n, depth, isOpen })
-      if (n.isDir && isOpen && n.children) walk(n.children, depth + 1)
+      out.push({ node: n, depth })
+      if (n.isDir && isNodeOpen(n, depth) && n.children) walk(n.children, depth + 1)
     }
   }
   walk(project.value.files, 0)
   return out
 })
+
+/** 负责人：取成员表 LEADER 角色的 nickname（与项目模块负责人语义一致） */
+const leader = computed(
+  () => project.value.members.find((m) => m.role === 'LEADER')?.nickname ?? project.value.authorNickname,
+)
+
+/**
+ * 方法效果：
+ * 把字节大小格式化为 B/KB/MB/GB 字符串，用于文件叶子右侧元信息展示。
+ * 对齐后台 ProjectFileTree.vue 的 formatSize 口径。
+ */
+const formatSize = (len?: number) => {
+  if (len == null) return '--'
+  if (len < 1024) return `${len} B`
+  if (len < 1024 * 1024) return `${(len / 1024).toFixed(1)} KB`
+  if (len < 1024 * 1024 * 1024) return `${(len / 1024 / 1024).toFixed(1)} MB`
+  return `${(len / 1024 / 1024 / 1024).toFixed(2)} GB`
+}
+
+/** 文件下载（demo：暂未接后端，仅弹提示；真实接口落地后替换为 downloadProjectFileApi） */
+const handleDownloadFile = (node: MockProjectFile) => {
+  if (node.isDir) return
+  ElMessage.info(`下载「${node.name}」（demo 占位，文件下载接口落地后接入）`)
+}
 </script>
 
 <template>
@@ -82,132 +103,118 @@ const visibleNodes = computed(() => {
       <span class="pd__crumb-current">{{ project.title }}</span>
     </div>
 
-    <!-- 项目头 -->
+    <!-- 项目头：无封面（项目不一定有封面），标签 + 标题 + 摘要 + 元信息 -->
     <div class="kh-container kh-container--wide">
-      <KhCard padding="none" class="pd__head">
-        <div class="pd__cover" :style="{ background: project.cover }">
-          <KhIcon :name="project.icon" :size="48" class="pd__cover-icon" />
-          <div class="pd__cover-tags">
-            <span v-if="project.hot" class="pd__hot"><KhIcon name="fire" :size="12" /> 最活跃</span>
-          </div>
+      <KhCard padding="lg" class="pd__head">
+        <div class="pd__head-tags">
+          <KhTag type="primary">{{ typeLabel[project.type] }}</KhTag>
+          <KhTag :type="statusMeta[project.status]?.type ?? 'neutral'" dot>{{ statusMeta[project.status]?.text ?? '未知' }}</KhTag>
+          <KhTag :type="viewLevelTagType[project.level] ?? 'neutral'">{{ getViewLevelLabel(project.level) }}</KhTag>
+          <KhTag v-if="project.competition" type="warm">{{ project.competition.awardLevel }}</KhTag>
         </div>
-        <div class="pd__head-body">
-          <div class="pd__head-tags">
-            <KhTag type="primary">{{ typeLabel[project.type] }}</KhTag>
-            <KhTag :type="statusMeta[project.status]?.type ?? 'neutral'" dot>{{ statusMeta[project.status]?.text ?? '未知' }}</KhTag>
-            <KhTag type="neutral">等级 L{{ project.level }}</KhTag>
-            <KhTag v-if="project.competition" type="warm">{{ project.competition.awardLevel }}</KhTag>
-          </div>
-          <h1 class="pd__title">{{ project.title }}</h1>
-          <p class="pd__summary">{{ project.summary }}</p>
+        <h1 class="pd__title">{{ project.title }}</h1>
+        <p class="pd__summary">{{ project.summary }}</p>
 
-          <div class="pd__head-meta">
-            <div class="pd__head-leader">
-              <KhAvatar :item="{ label: project.leader }" :size="40" />
-              <div>
-                <div class="pd__head-leader-name">{{ project.leader }}</div>
-                <div class="pd__head-leader-role">负责人 · {{ project.members.length }} 人团队</div>
-              </div>
+        <div class="pd__head-meta">
+          <div class="pd__head-leader">
+            <KhAvatar :item="{ label: leader }" :size="40" />
+            <div>
+              <div class="pd__head-leader-name">{{ leader }}</div>
+              <div class="pd__head-leader-role">负责人 · {{ project.members.length }} 人团队</div>
             </div>
-            <div class="pd__head-stats">
-              <KhRating :value="project.rating" :size="16" show-value />
-              <KhStatPill icon="download" :value="project.downloadCount" label="下载" />
-              <KhStatPill icon="clock" :value="project.updateTime" />
-            </div>
-            <div class="pd__head-actions">
-              <button class="pd__download" type="button">
-                <el-icon><Download /></el-icon> 下载源码
-              </button>
-              <button class="pd__feedback" type="button">
-                <KhIcon name="megaphone" :size="14" /> 问题反馈
-              </button>
-            </div>
+          </div>
+          <div class="pd__head-stats">
+            <KhRating :value="project.rating" :size="16" show-value />
+            <KhStatPill icon="download" :value="project.downloadCount" label="下载" />
+            <KhStatPill icon="clock" :value="project.updateTime" />
           </div>
         </div>
       </KhCard>
     </div>
 
-    <!-- 主体布局 -->
+    <!-- 主体布局：左子页面切换（介绍 / 项目文件），右栏（项目信息 + 参与人员） -->
     <div class="kh-container kh-container--wide pd__layout">
-      <!-- 左：介绍 + 团队 + 版本 -->
+      <!-- 左：子页面 -->
       <div class="pd__main">
-        <KhCard padding="lg" class="pd__section">
-          <h2 class="pd__section-title">项目介绍</h2>
+        <!-- 子页面切换页签 -->
+        <div class="pd__tabs">
+          <button
+            class="pd__tab"
+            :class="{ 'is-active': activeTab === 'intro' }"
+            type="button"
+            @click="activeTab = 'intro'"
+          >
+            <KhIcon name="doc" :size="15" /> 项目介绍
+          </button>
+          <button
+            class="pd__tab"
+            :class="{ 'is-active': activeTab === 'files' }"
+            type="button"
+            @click="activeTab = 'files'"
+          >
+            <KhIcon name="file" :size="15" /> 项目文件
+          </button>
+        </div>
+
+        <!-- 子页面：项目介绍 -->
+        <KhCard v-show="activeTab === 'intro'" padding="lg" class="pd__section">
           <div class="pd__content">
-            <pre class="pd__md">{{ project.description }}</pre>
+            <v-md-preview :text="project.description" />
           </div>
         </KhCard>
 
-        <KhCard padding="lg" class="pd__section">
-          <h2 class="pd__section-title">参与人员</h2>
-          <div class="pd__members">
-            <div
-              v-for="m in project.members"
-              :key="m.userId"
-              class="pd__member"
-              :class="`pd__member--${m.role.toLowerCase()}`"
-            >
-              <KhAvatar :item="{ label: m.name }" :size="44" />
-              <div class="pd__member-info">
-                <div class="pd__member-name">{{ m.name }}</div>
-                <div class="pd__member-role">{{ memberRoleLabel[m.role] }}</div>
-              </div>
-              <KhTag v-if="m.role === 'LEADER'" type="warm" size="sm">负责人</KhTag>
-              <KhTag v-else-if="m.role === 'MENTOR'" type="info" size="sm">导师</KhTag>
-            </div>
-          </div>
-        </KhCard>
-
-        <KhCard padding="lg" class="pd__section">
-          <h2 class="pd__section-title">版本说明</h2>
-          <ol class="pd__versions">
-            <li v-for="v in project.versions" :key="v.ver" class="pd__version">
-              <div class="pd__version-dot" />
-              <div class="pd__version-body">
-                <div class="pd__version-head">
-                  <span class="pd__version-ver">{{ v.ver }}</span>
-                  <span class="pd__version-time">{{ v.time }}</span>
-                </div>
-                <p class="pd__version-note">{{ v.note }}</p>
-              </div>
-            </li>
-          </ol>
-        </KhCard>
-      </div>
-
-      <!-- 右：文件树 + 信息卡 -->
-      <aside class="pd__aside">
-        <KhCard padding="md" class="pd__files">
+        <!-- 子页面：项目文件（GitHub 式文件树，文件叶子右侧展示上传时间/大小 + 下载按钮） -->
+        <section v-show="activeTab === 'files'" class="pd__files">
+          <!-- 表头（仅桌面端） -->
           <div class="pd__files-head">
-            <KhIcon name="file" :size="16" /> 项目文件
-            <button class="pd__files-add" type="button"><el-icon><Plus /></el-icon></button>
+            <span class="pd__files-col pd__files-col--name">名称</span>
+            <span class="pd__files-col pd__files-col--time">上传时间</span>
+            <span class="pd__files-col pd__files-col--size">大小</span>
+            <span class="pd__files-col pd__files-col--action" />
           </div>
-          <div class="pd__tree">
+          <div class="pd__files-body">
             <div
               v-for="item in visibleNodes"
-              :key="item.node.id"
+              :key="item.node.fileId"
               class="pd__tree-node"
               :class="{ 'is-dir': item.node.isDir, 'is-file': !item.node.isDir }"
-              :style="{ paddingLeft: `${item.depth * 16 + 10}px` }"
+              :style="{ paddingLeft: `${item.depth * 18 + 12}px` }"
               @click="toggleNode(item.node)"
             >
+              <span class="pd__tree-caret" :class="{ 'is-leaf': !item.node.isDir }">
+                {{ item.node.isDir ? (isNodeOpen(item.node, item.depth) ? '▾' : '▸') : '' }}
+              </span>
               <el-icon v-if="item.node.isDir" class="pd__tree-icon"><Folder /></el-icon>
               <el-icon v-else class="pd__tree-icon"><Document /></el-icon>
               <span class="pd__tree-name">{{ item.node.name }}</span>
-              <el-icon v-if="item.node.isDir" class="pd__tree-arrow">
-                <KhIcon name="chevron-right" :size="12" />
-              </el-icon>
+              <span class="pd__tree-time">{{ item.node.isDir ? '' : (item.node.uploadTime ? formatDateTime(item.node.uploadTime) : '--') }}</span>
+              <span class="pd__tree-size">{{ item.node.isDir ? '' : formatSize(item.node.contentLength) }}</span>
+              <span class="pd__tree-action">
+                <button
+                  v-if="!item.node.isDir"
+                  class="pd__tree-download"
+                  type="button"
+                  title="下载"
+                  @click.stop="handleDownloadFile(item.node)"
+                >
+                  <el-icon><Download /></el-icon>
+                </button>
+              </span>
             </div>
+            <div v-if="!visibleNodes.length" class="pd__tree-empty">暂无文件</div>
           </div>
-        </KhCard>
+        </section>
+      </div>
 
+      <!-- 右：项目信息 + 参与人员（参与人员卡内部可滚动，坐落项目信息下方） -->
+      <aside class="pd__aside">
         <KhCard padding="md" class="pd__info">
           <h3 class="pd__info-title">项目信息</h3>
           <div class="pd__info-row">
             <span>类型</span><b>{{ typeLabel[project.type] }}</b>
           </div>
           <div class="pd__info-row">
-            <span>等级</span><b>L{{ project.level }}（{{ ['公开', '内部', '机密'][project.level - 1] }}）</b>
+            <span>等级</span><b>{{ getViewLevelLabel(project.level) }}</b>
           </div>
           <div class="pd__info-row">
             <span>状态</span><b>{{ statusMeta[project.status]?.text ?? '未知' }}</b>
@@ -223,6 +230,26 @@ const visibleNodes = computed(() => {
           </div>
           <div class="pd__info-row">
             <span>更新</span><b>{{ project.updateTime }}</b>
+          </div>
+        </KhCard>
+
+        <KhCard padding="md" class="pd__members-card">
+          <h3 class="pd__members-title">参与人员 · {{ project.members.length }}</h3>
+          <div class="pd__members-scroll">
+            <div
+              v-for="m in project.members"
+              :key="m.userId"
+              class="pd__member"
+              :class="`pd__member--${m.role.toLowerCase()}`"
+            >
+              <KhAvatar :item="{ label: m.nickname }" :size="40" />
+              <div class="pd__member-info">
+                <div class="pd__member-name">{{ m.nickname }}</div>
+                <div class="pd__member-role">{{ memberRoleLabel[m.role] }}</div>
+              </div>
+              <KhTag v-if="m.role === 'LEADER'" type="warm" size="sm">负责人</KhTag>
+              <KhTag v-else-if="m.role === 'MENTOR'" type="info" size="sm">导师</KhTag>
+            </div>
           </div>
         </KhCard>
       </aside>
@@ -276,44 +303,15 @@ const visibleNodes = computed(() => {
 
 .pd__head {
   display: flex;
+  flex-direction: column;
+  gap: var(--kh-space-3);
   overflow: hidden;
-}
-.pd__cover {
-  position: relative;
-  width: 240px;
-  display: grid;
-  place-items: center;
-  flex: none;
-}
-.pd__cover-icon {
-  color: rgba(255, 255, 255, 0.95);
-}
-.pd__cover-tags {
-  position: absolute;
-  top: var(--kh-space-3);
-  left: var(--kh-space-3);
-}
-.pd__hot {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  padding: 3px 10px;
-  border-radius: var(--kh-radius-pill);
-  background: var(--kh-warm);
-  color: #fff;
-  font-size: 11px;
-  font-weight: 600;
-}
-.pd__head-body {
-  flex: 1;
-  padding: var(--kh-space-6);
-  min-width: 0;
 }
 .pd__head-tags {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 6px;
-  margin-bottom: var(--kh-space-3);
 }
 .pd__title {
   font-size: var(--kh-font-size-3xl);
@@ -321,7 +319,7 @@ const visibleNodes = computed(() => {
   letter-spacing: -0.01em;
 }
 .pd__summary {
-  margin-top: var(--kh-space-3);
+  margin-top: var(--kh-space-2);
   color: var(--kh-text-secondary);
   font-size: var(--kh-font-size-md);
   line-height: 1.7;
@@ -330,8 +328,8 @@ const visibleNodes = computed(() => {
   display: flex;
   align-items: center;
   gap: var(--kh-space-5);
-  margin-top: var(--kh-space-5);
-  padding-top: var(--kh-space-5);
+  margin-top: var(--kh-space-4);
+  padding-top: var(--kh-space-4);
   border-top: 1px solid var(--kh-border-soft);
   flex-wrap: wrap;
 }
@@ -353,48 +351,6 @@ const visibleNodes = computed(() => {
   align-items: center;
   gap: var(--kh-space-5);
 }
-.pd__head-actions {
-  display: flex;
-  gap: var(--kh-space-3);
-  margin-left: auto;
-}
-.pd__download {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 40px;
-  padding: 0 var(--kh-space-5);
-  border: none;
-  border-radius: var(--kh-radius-pill);
-  background: linear-gradient(120deg, var(--kh-primary), var(--kh-primary-strong));
-  color: #fff;
-  font-weight: 600;
-  font-size: var(--kh-font-size-sm);
-  cursor: pointer;
-  box-shadow: var(--kh-shadow-primary);
-}
-.pd__download:hover {
-  transform: translateY(-1px);
-}
-.pd__feedback {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 40px;
-  padding: 0 var(--kh-space-4);
-  border: 1px solid var(--kh-border);
-  border-radius: var(--kh-radius-pill);
-  background: var(--kh-surface);
-  color: var(--kh-text-secondary);
-  font-weight: 500;
-  font-size: var(--kh-font-size-sm);
-  cursor: pointer;
-}
-.pd__feedback:hover {
-  border-color: var(--kh-warm);
-  color: var(--kh-warm);
-  background: var(--kh-warm-soft);
-}
 
 .pd__layout {
   display: grid;
@@ -410,27 +366,212 @@ const visibleNodes = computed(() => {
   gap: var(--kh-space-5);
   min-width: 0;
 }
-.pd__section-title {
-  font-size: var(--kh-font-size-xl);
-  font-weight: 700;
-  margin-bottom: var(--kh-space-5);
+
+/* —— 子页面切换页签 —— */
+.pd__tabs {
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  background: var(--kh-surface-muted);
+  border-radius: var(--kh-radius-pill);
+  align-self: flex-start;
 }
+.pd__tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 18px;
+  border: none;
+  background: transparent;
+  border-radius: var(--kh-radius-pill);
+  color: var(--kh-text-secondary);
+  font-size: var(--kh-font-size-sm);
+  font-weight: 500;
+  cursor: pointer;
+  transition: all var(--kh-transition-fast);
+}
+.pd__tab:hover {
+  color: var(--kh-primary);
+}
+.pd__tab.is-active {
+  background: var(--kh-surface);
+  color: var(--kh-primary);
+  box-shadow: var(--kh-shadow-xs);
+}
+
+.pd__section {
+  /* v-show 控制显隐，无额外样式占位 */
+}
+
+/* 项目介绍：v-md-preview github 主题根类是 github-markdown-body（见 blog/detail.vue 同款约定），
+   清掉主题给 body 的左右内边距让正文与上方标签/标题左对齐、去一二级标题下横线 */
 .pd__content {
   color: var(--kh-text);
 }
-.pd__md {
-  margin: 0;
-  white-space: pre-wrap;
-  word-wrap: break-word;
+.pd__content :deep(.github-markdown-body) {
+  background: transparent;
+  padding: 0;
   font-family: var(--kh-font-body);
   font-size: var(--kh-font-size-md);
   line-height: 1.9;
+  color: var(--kh-text);
+}
+.pd__content :deep(.github-markdown-body h1),
+.pd__content :deep(.github-markdown-body h2) {
+  border-bottom: none;
 }
 
-.pd__members {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-  gap: var(--kh-space-4);
+/* —— 项目文件：GitHub 式文件树独立区块（参考后台 ProjectFileTree） —— */
+.pd__files {
+  background: var(--kh-surface);
+  border: 1px solid var(--kh-border-soft);
+  border-radius: var(--kh-radius-lg);
+  overflow: hidden;
+  max-height: 640px;
+  display: flex;
+  flex-direction: column;
+}
+.pd__files-head {
+  display: flex;
+  align-items: center;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--kh-border-soft);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--kh-text-tertiary);
+  background: var(--kh-surface-muted);
+  flex: none;
+}
+.pd__files-col--name {
+  flex: 1;
+  padding-left: 28px; /* 对齐 caret+icon 的宽度 */
+}
+.pd__files-col--time {
+  width: 120px;
+  flex: none;
+}
+.pd__files-col--size {
+  width: 70px;
+  flex: none;
+}
+.pd__files-col--action {
+  width: 44px;
+  flex: none;
+}
+.pd__files-body {
+  padding: 8px 0;
+  overflow: auto;
+  flex: 1;
+}
+.pd__tree-node {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background var(--kh-transition-fast);
+}
+.pd__tree-node:hover {
+  background: var(--kh-surface-muted);
+}
+.pd__tree-node.is-file:hover .pd__tree-download {
+  opacity: 1;
+}
+.pd__tree-caret {
+  width: 14px;
+  text-align: center;
+  color: var(--kh-text-tertiary);
+  user-select: none;
+  flex: none;
+}
+.pd__tree-caret.is-leaf {
+  cursor: default;
+}
+.pd__tree-icon {
+  font-size: 15px;
+  flex: none;
+}
+.pd__tree-node.is-dir .pd__tree-icon {
+  color: var(--kh-warm);
+}
+.pd__tree-node.is-file .pd__tree-icon {
+  color: var(--kh-accent);
+}
+.pd__tree-name {
+  flex: 1;
+  min-width: 0;
+  color: var(--kh-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pd__tree-time {
+  width: 120px;
+  flex: none;
+  color: var(--kh-text-tertiary);
+  font-family: var(--kh-font-mono);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.pd__tree-size {
+  width: 70px;
+  flex: none;
+  color: var(--kh-text-tertiary);
+  font-family: var(--kh-font-mono);
+  font-size: 12px;
+  text-align: right;
+}
+.pd__tree-action {
+  width: 44px;
+  flex: none;
+  display: flex;
+  justify-content: flex-end;
+}
+.pd__tree-download {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--kh-border);
+  border-radius: var(--kh-radius-sm);
+  background: var(--kh-surface);
+  color: var(--kh-text-secondary);
+  cursor: pointer;
+  opacity: 0;
+  transition: all var(--kh-transition-fast);
+}
+.pd__tree-download:hover {
+  color: var(--kh-primary);
+  border-color: var(--kh-primary-border);
+  background: var(--kh-primary-soft);
+}
+.pd__tree-empty {
+  padding: var(--kh-space-8);
+  text-align: center;
+  color: var(--kh-text-tertiary);
+  font-size: var(--kh-font-size-sm);
+}
+
+/* —— 右栏：参与人员卡（内部可滚动 sticky） —— */
+.pd__members-card {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.pd__members-title {
+  font-size: var(--kh-font-size-md);
+  font-weight: 600;
+  margin-bottom: var(--kh-space-4);
+}
+.pd__members-scroll {
+  max-height: 360px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--kh-space-3);
+  padding-right: 2px;
 }
 .pd__member {
   display: flex;
@@ -464,68 +605,7 @@ const visibleNodes = computed(() => {
   margin-top: 2px;
 }
 
-.pd__versions {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  position: relative;
-}
-.pd__version {
-  display: flex;
-  gap: var(--kh-space-4);
-  padding-bottom: var(--kh-space-5);
-  position: relative;
-}
-.pd__version::before {
-  content: '';
-  position: absolute;
-  left: 5px;
-  top: 14px;
-  bottom: 0;
-  width: 1px;
-  background: var(--kh-border);
-}
-.pd__version:last-child::before {
-  display: none;
-}
-.pd__version-dot {
-  width: 11px;
-  height: 11px;
-  border-radius: 50%;
-  background: var(--kh-primary);
-  border: 2px solid var(--kh-surface);
-  flex: none;
-  margin-top: 4px;
-  position: relative;
-  z-index: 1;
-}
-.pd__version-body {
-  flex: 1;
-}
-.pd__version-head {
-  display: flex;
-  align-items: center;
-  gap: var(--kh-space-3);
-}
-.pd__version-ver {
-  font-family: var(--kh-font-mono);
-  font-size: var(--kh-font-size-sm);
-  font-weight: 700;
-  color: var(--kh-primary);
-}
-.pd__version-time {
-  font-family: var(--kh-font-mono);
-  font-size: 11px;
-  color: var(--kh-text-tertiary);
-}
-.pd__version-note {
-  margin-top: 6px;
-  font-size: var(--kh-font-size-sm);
-  color: var(--kh-text-secondary);
-  line-height: 1.6;
-}
-
-/* 侧栏文件树 */
+/* 侧栏 */
 .pd__aside {
   display: flex;
   flex-direction: column;
@@ -533,71 +613,6 @@ const visibleNodes = computed(() => {
   position: sticky;
   top: calc(var(--kh-header-height) + var(--kh-space-4));
 }
-.pd__files-head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: var(--kh-text-tertiary);
-  font-size: var(--kh-font-size-sm);
-  font-weight: 600;
-  margin-bottom: var(--kh-space-3);
-}
-.pd__files-add {
-  margin-left: auto;
-  width: 24px;
-  height: 24px;
-  display: grid;
-  place-items: center;
-  border: 1px solid var(--kh-border);
-  border-radius: var(--kh-radius-sm);
-  background: var(--kh-surface);
-  color: var(--kh-text-tertiary);
-  cursor: pointer;
-}
-.pd__files-add:hover {
-  color: var(--kh-primary);
-  border-color: var(--kh-primary-border);
-}
-.pd__tree {
-  max-height: 360px;
-  overflow: auto;
-}
-.pd__tree-node {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 8px;
-  border-radius: var(--kh-radius-sm);
-  cursor: pointer;
-  font-size: 13px;
-  transition: background var(--kh-transition-fast);
-}
-.pd__tree-node:hover {
-  background: var(--kh-surface-muted);
-}
-.pd__tree-icon {
-  color: var(--kh-text-tertiary);
-  font-size: 14px;
-  flex: none;
-}
-.pd__tree-node.is-dir .pd__tree-icon {
-  color: var(--kh-warm);
-}
-.pd__tree-node.is-file .pd__tree-icon {
-  color: var(--kh-accent);
-}
-.pd__tree-name {
-  flex: 1;
-  color: var(--kh-text);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.pd__tree-arrow {
-  color: var(--kh-text-tertiary);
-  flex: none;
-}
-
 .pd__info-title {
   font-size: var(--kh-font-size-md);
   font-weight: 600;
@@ -629,18 +644,24 @@ const visibleNodes = computed(() => {
 }
 
 @media (max-width: 1024px) {
-  .pd__head {
-    flex-direction: column;
-  }
-  .pd__cover {
-    width: 100%;
-    height: 140px;
-  }
   .pd__layout {
     grid-template-columns: 1fr;
   }
   .pd__aside {
     position: static;
+  }
+  /* 文件树在窄屏隐藏表头，行右侧元信息列收紧 */
+  .pd__files-col--time,
+  .pd__tree-time {
+    width: 100px;
+  }
+}
+@media (max-width: 640px) {
+  .pd__files-col--time,
+  .pd__tree-time,
+  .pd__files-col--size,
+  .pd__tree-size {
+    display: none;
   }
 }
 </style>

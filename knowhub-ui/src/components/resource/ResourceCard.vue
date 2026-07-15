@@ -4,13 +4,30 @@
   网站资源：缩略 + 访问按钮；文件资源：文件图标 + 大小 + 下载按钮 + 下载数。
 -->
 <script setup lang="ts">
+import { useRouter } from 'vue-router'
 import KhCard from '@/components/common/KhCard.vue'
 import KhTag from '@/components/common/KhTag.vue'
 import KhStatPill from '@/components/common/KhStatPill.vue'
 import KhIcon from '@/components/common/KhIcon.vue'
 import type { MockResource } from '@/mock/resource'
+import toast from '@/utils/toast'
 
 const props = defineProps<{ resource: MockResource }>()
+const router = useRouter()
+const goDetail = () => router.push(`/resource/${props.resource.resourceId}`)
+
+/** 是否网站/工具类（有 linkUrl，直接访问） */
+const isLinkType = () => props.resource.category === 'WEBSITE' || props.resource.category === 'TOOL'
+
+/** 卡片内行动按钮：网站类直接开链接，文件类下载占位。点击不冒泡到卡片跳转 */
+const handleAction = () => {
+  if (isLinkType()) {
+    if (props.resource.linkUrl) window.open(props.resource.linkUrl, '_blank', 'noopener')
+    else toast('该资源未配置访问链接')
+  } else {
+    toast(`下载「${props.resource.title}」（demo 占位，文件下载接口落地后接入）`)
+  }
+}
 
 const categoryLabel: Record<string, string> = {
   WEBSITE: '网站资源',
@@ -19,12 +36,21 @@ const categoryLabel: Record<string, string> = {
   DOCUMENT: '文档',
   TOOL: '工具',
 }
+
+/** 字节大小 → B/KB/MB/GB，与项目详情 formatSize 口径一致 */
+const formatSize = (len?: number) => {
+  if (len == null) return '--'
+  if (len < 1024) return `${len} B`
+  if (len < 1024 * 1024) return `${(len / 1024).toFixed(1)} KB`
+  if (len < 1024 * 1024 * 1024) return `${(len / 1024 / 1024).toFixed(1)} MB`
+  return `${(len / 1024 / 1024 / 1024).toFixed(2)} GB`
+}
 </script>
 
 <template>
-  <KhCard clickable padding="none" class="res-card">
+  <KhCard clickable padding="none" class="res-card" @click="goDetail">
     <div class="res-card__cover" :style="{ background: resource.cover }">
-      <KhIcon :name="resource.icon" :size="28" class="res-card__cover-icon" />
+      <KhIcon :name="resource.linkIcon" :size="28" class="res-card__cover-icon" />
       <KhTag size="sm" type="neutral" class="res-card__cat">{{ categoryLabel[resource.category] }}</KhTag>
     </div>
 
@@ -33,9 +59,9 @@ const categoryLabel: Record<string, string> = {
       <p class="res-card__desc kh-line-clamp-2">{{ resource.description }}</p>
 
       <div class="res-card__info">
-        <span class="res-card__author">{{ resource.author }}</span>
-        <span v-if="resource.size" class="res-card__size">
-          <KhIcon name="file" :size="12" /> {{ resource.size }}
+        <span class="res-card__author">{{ resource.authorNickname }}</span>
+        <span v-if="resource.contentLength" class="res-card__size">
+          <KhIcon name="file" :size="12" /> {{ formatSize(resource.contentLength) }}
         </span>
       </div>
 
@@ -44,7 +70,7 @@ const categoryLabel: Record<string, string> = {
           <KhStatPill v-if="resource.category === 'WEBSITE' || resource.category === 'TOOL'" icon="eye" :value="resource.views" label="访问" />
           <KhStatPill v-else icon="download" :value="resource.downloadCount" label="下载" />
         </div>
-        <button class="res-card__action" type="button">
+        <button class="res-card__action" type="button" @click.stop="handleAction">
           <template v-if="resource.category === 'WEBSITE' || resource.category === 'TOOL'">
             <KhIcon name="arrow-up-right" :size="14" /> 访问
           </template>

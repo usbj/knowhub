@@ -19,7 +19,7 @@ const keyword = ref('')
 /** 分类选项（含"全部"）—— 唯一筛选入口 */
 const categoryOptions = computed(() => [
   { key: 'ALL', label: '全部', icon: 'sparkles', color: 'var(--kh-primary)' },
-  ...resourceCategories.map((c) => ({ key: c.key, label: c.label, icon: c.icon, color: c.color })),
+  ...resourceCategories.map((c) => ({ key: c.key, label: c.label, icon: c.linkIcon, color: c.color })),
 ])
 
 const filteredResources = computed(() => {
@@ -39,7 +39,16 @@ const hotDownload = [...resources]
   .slice(0, 6)
 
 /** 最近上传 */
-const recentUpload = [...resources].sort((a, b) => b.uploadTime.localeCompare(a.uploadTime)).slice(0, 5)
+const recentUpload = [...resources].sort((a, b) => b.createTime.localeCompare(a.createTime)).slice(0, 5)
+
+/** 字节大小 → B/KB/MB/GB，与资源卡 / 项目详情 formatSize 口径一致 */
+const formatSize = (len?: number) => {
+  if (len == null) return '--'
+  if (len < 1024) return `${len} B`
+  if (len < 1024 * 1024) return `${(len / 1024).toFixed(1)} KB`
+  if (len < 1024 * 1024 * 1024) return `${(len / 1024 / 1024).toFixed(1)} MB`
+  return `${(len / 1024 / 1024 / 1024).toFixed(2)} GB`
+}
 </script>
 
 <template>
@@ -80,7 +89,7 @@ const recentUpload = [...resources].sort((a, b) => b.uploadTime.localeCompare(a.
         </div>
 
         <div v-if="filteredResources.length" class="res__grid">
-          <ResourceCard v-for="r in filteredResources" :key="r.id" :resource="r" />
+          <ResourceCard v-for="r in filteredResources" :key="r.resourceId" :resource="r" />
         </div>
         <KhCard v-else padding="lg" class="res__empty">
           <KhIcon name="search" :size="40" :stroke="1.4" />
@@ -97,14 +106,14 @@ const recentUpload = [...resources].sort((a, b) => b.uploadTime.localeCompare(a.
         <KhCard padding="md" class="res__panel">
           <KhSectionTitle title="热门下载榜" />
           <ol class="res__hot">
-            <li v-for="(r, i) in hotDownload" :key="r.id" class="res__hot-item">
+            <li v-for="(r, i) in hotDownload" :key="r.resourceId" class="res__hot-item">
               <span class="res__hot-no" :class="{ 'is-top': i < 3 }">{{ i + 1 }}</span>
               <div class="res__hot-icon" :style="{ background: r.cover }">
-                <KhIcon :name="r.icon" :size="14" />
+                <KhIcon :name="r.linkIcon" :size="14" />
               </div>
               <div class="res__hot-text">
                 <div class="res__hot-title kh-line-clamp-1">{{ r.title }}</div>
-                <div class="res__hot-meta">{{ r.downloadCount }} 下载 · {{ r.size }}</div>
+                <div class="res__hot-meta">{{ r.downloadCount }} 下载 · {{ formatSize(r.contentLength) }}</div>
               </div>
             </li>
           </ol>
@@ -113,11 +122,11 @@ const recentUpload = [...resources].sort((a, b) => b.uploadTime.localeCompare(a.
         <KhCard padding="md" class="res__panel">
           <KhSectionTitle title="最近上传" />
           <ul class="res__recent">
-            <li v-for="r in recentUpload" :key="r.id" class="res__recent-item">
+            <li v-for="r in recentUpload" :key="r.resourceId" class="res__recent-item">
               <div class="res__recent-dot" :style="{ background: r.cover }" />
               <div class="res__recent-text">
                 <div class="res__recent-title kh-line-clamp-1">{{ r.title }}</div>
-                <div class="res__recent-time">{{ r.uploadTime }} · {{ r.author }}</div>
+                <div class="res__recent-time">{{ r.createTime }} · {{ r.authorNickname }}</div>
               </div>
             </li>
           </ul>

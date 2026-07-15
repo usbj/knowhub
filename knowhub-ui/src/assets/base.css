@@ -148,3 +148,34 @@ body::-webkit-scrollbar-thumb,
     scroll-behavior: auto !important;
   }
 }
+
+/* 自定义轻量 toast（utils/toast.ts）：固定时长、鼠标悬浮不暂停计时 */
+.kh-toast-portal {
+  position: fixed;
+  top: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 3000;
+  pointer-events: none; /* 不拦截鼠标 → 悬浮不会干扰，且从不暂停计时 */
+}
+.kh-toast {
+  padding: 10px 20px;
+  border-radius: var(--kh-radius-pill);
+  background: var(--kh-surface);
+  border: 1px solid var(--kh-border);
+  box-shadow: var(--kh-shadow-md);
+  color: var(--kh-text);
+  font-size: var(--kh-font-size-sm);
+  line-height: 1.5;
+  opacity: 0;
+  transform: translateY(-8px);
+  transition: opacity 0.2s ease, transform 0.2s ease;
+  white-space: nowrap;
+}
+.kh-toast-portal.is-show .kh-toast {
+  opacity: 1;
+  transform: translateY(0);
+}
+.kh-toast__text {
+  font-weight: 500;
+}

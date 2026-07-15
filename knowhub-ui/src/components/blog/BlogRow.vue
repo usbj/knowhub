@@ -16,7 +16,7 @@ import type { MockBlog } from '@/mock/blog'
 
 const props = defineProps<{ blog: MockBlog }>()
 const router = useRouter()
-const goDetail = () => router.push(`/blog/${props.blog.id}`)
+const goDetail = () => router.push(`/blog/${props.blog.blogId}`)
 </script>
 
 <template>
@@ -31,16 +31,16 @@ const goDetail = () => router.push(`/blog/${props.blog.id}`)
 
       <div class="blog-row__meta">
         <div class="blog-row__author">
-          <KhAvatar :item="{ label: blog.author }" :size="20" />
-          <span>{{ blog.author }}</span>
+          <KhAvatar :item="{ label: blog.authorNickname }" :size="20" />
+          <span>{{ blog.authorNickname }}</span>
         </div>
         <span class="blog-row__sep" />
         <KhRating :value="blog.rating" :size="11" show-value />
         <span class="blog-row__sep" />
         <div class="blog-row__stats">
-          <KhStatPill icon="eye" :value="blog.views" />
-          <KhStatPill icon="heart" :value="blog.likes" />
-          <KhStatPill icon="bookmark" :value="blog.collects" />
+          <KhStatPill icon="eye" :value="blog.viewCount" />
+          <KhStatPill icon="heart" :value="blog.likeCount" />
+          <KhStatPill icon="bookmark" :value="blog.collectCount" />
         </div>
         <span class="blog-row__time">
           <KhIcon name="clock" :size="12" />
@@ -50,7 +50,7 @@ const goDetail = () => router.push(`/blog/${props.blog.id}`)
     </div>
 
     <!-- 封面缩略图：右侧。有则显示，无则不占位（左侧内容自动占满） -->
-    <div v-if="blog.cover" class="blog-row__cover" :style="{ background: blog.cover }">
+    <div v-if="blog.coverUrl" class="blog-row__cover" :style="{ background: blog.coverUrl }">
       <KhIcon name="blog" :size="22" class="blog-row__cover-icon" />
     </div>
   </KhCard>

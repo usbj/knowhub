@@ -26,6 +26,7 @@ import { blogs } from '@/mock/blog'
 import { projects } from '@/mock/project'
 import { resources } from '@/mock/resource'
 import { notices } from '@/mock/notice'
+import { viewLevelTagType, getViewLevelLabel } from '@/utils/viewLevel'
 
 const userStore = useUserStore()
 
@@ -48,28 +49,35 @@ const displayRole = computed(() => {
 
 /** 当前用户的博客（mock 取部分） */
 const myBlogs = blogs.slice(0, 5).map((b) => ({
-  id: b.id,
+  id: b.blogId,
   title: b.title,
   status: b.status,
-  views: b.views,
-  likes: b.likes,
+  views: b.viewCount,
+  likes: b.likeCount,
   updateTime: b.publishTime,
 }))
-const myProjects = projects.filter((p) => p.leader === currentUser.name || p.members.some((m) => m.name === currentUser.name)).slice(0, 4).map((p) => ({
-  id: p.id,
-  title: p.title,
-  type: p.type,
-  status: p.status,
-  level: p.level,
-  updateTime: p.updateTime,
-}))
+const myProjects = projects
+  .filter(
+    (p) =>
+      p.authorNickname === currentUser.name ||
+      p.members.some((m) => m.nickname === currentUser.name),
+  )
+  .slice(0, 4)
+  .map((p) => ({
+    id: p.projectId,
+    title: p.title,
+    type: p.type,
+    status: p.status,
+    level: p.level,
+    updateTime: p.updateTime,
+  }))
 const myResources = resources.slice(0, 4).map((r) => ({
-  id: r.id,
+  id: r.resourceId,
   title: r.title,
   category: r.category,
   status: r.status,
   downloadCount: r.downloadCount,
-  updateTime: r.uploadTime,
+  updateTime: r.createTime,
 }))
 const myCollects = [...blogs].slice(2, 5)
 const myMessages = notices.slice(0, 3)
@@ -230,7 +238,7 @@ const activeTabLabel = computed(() => tabs.find((t) => t.key === activeTab.value
                   <div class="profile__row-meta">
                     <KhTag size="sm" type="primary">{{ typeLabel[p.type] }}</KhTag>
                     <KhTag size="sm" :type="statusMeta[p.status]?.type ?? 'neutral'">{{ statusMeta[p.status]?.text ?? '未知' }}</KhTag>
-                    <KhTag size="sm" type="neutral">L{{ p.level }}</KhTag>
+                    <KhTag size="sm" :type="viewLevelTagType[p.level] ?? 'neutral'">{{ getViewLevelLabel(p.level) }}</KhTag>
                     <span>·</span>
                     <span>{{ p.updateTime }}</span>
                   </div>
@@ -265,14 +273,14 @@ const activeTabLabel = computed(() => tabs.find((t) => t.key === activeTab.value
 
             <!-- 我的收藏 -->
             <div v-else-if="activeTab === 'collect'" class="profile__list">
-              <div v-for="c in myCollects" :key="c.id" class="profile__row">
+              <div v-for="c in myCollects" :key="c.blogId" class="profile__row">
                 <div class="profile__row-main">
                   <div class="profile__row-title">{{ c.title }}</div>
                   <div class="profile__row-meta">
                     <KhTag size="sm" type="info"><el-icon><Collection /></el-icon> 博客</KhTag>
-                    <span>{{ c.author }}</span>
+                    <span>{{ c.authorNickname }}</span>
                     <span>·</span>
-                    <span>{{ c.views }} 阅读</span>
+                    <span>{{ c.viewCount }} 阅读</span>
                   </div>
                 </div>
                 <div class="profile__row-actions">

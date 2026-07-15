@@ -33,7 +33,7 @@ const router = useRouter()
 const latestBlogs = blogs.filter((b) => b.status === 'PUBLISHED').slice(0, 5)
 const hotProjects = projects
   .filter((p) => p.status === 'PUBLISHED')
-  .sort((a, b) => b.activity - a.activity)
+  .sort((a, b) => b.downloadCount - a.downloadCount)
   .slice(0, 4)
 const featuredResources = resources.filter((r) => r.status === 'PUBLISHED').slice(0, 8)
 const pinnedNotices = notices
@@ -46,6 +46,15 @@ const hotResourceRank = [...resources]
 
 /** 热门标签（侧栏紧凑榜，非大标签云） */
 const hotTags = [...tags].sort((a, b) => b.count - a.count).slice(0, 10)
+
+/** 字节大小 → B/KB/MB/GB，与资源卡 / 项目详情 formatSize 口径一致 */
+const formatSize = (len?: number) => {
+  if (len == null) return '--'
+  if (len < 1024) return `${len} B`
+  if (len < 1024 * 1024) return `${(len / 1024).toFixed(1)} KB`
+  if (len < 1024 * 1024 * 1024) return `${(len / 1024 / 1024).toFixed(1)} MB`
+  return `${(len / 1024 / 1024 / 1024).toFixed(2)} GB`
+}
 
 /** 分区定义（带序号与图标点缀，增强层次） */
 const sections = [
@@ -151,7 +160,7 @@ const goNotes = () => router.push('/notes')
             </RouterLink>
           </header>
           <div class="home__blog-list">
-            <BlogRow v-for="b in latestBlogs" :key="b.id" :blog="b" />
+            <BlogRow v-for="b in latestBlogs" :key="b.blogId" :blog="b" />
           </div>
         </section>
 
@@ -168,7 +177,7 @@ const goNotes = () => router.push('/notes')
             </RouterLink>
           </header>
           <div class="home__project-grid">
-            <ProjectCard v-for="p in hotProjects" :key="p.id" :project="p" />
+            <ProjectCard v-for="p in hotProjects" :key="p.projectId" :project="p" />
           </div>
         </section>
 
@@ -185,7 +194,7 @@ const goNotes = () => router.push('/notes')
             </RouterLink>
           </header>
           <div class="home__res-grid">
-            <ResourceCard v-for="r in featuredResources" :key="r.id" :resource="r" />
+            <ResourceCard v-for="r in featuredResources" :key="r.resourceId" :resource="r" />
           </div>
         </section>
       </div>
@@ -217,17 +226,17 @@ const goNotes = () => router.push('/notes')
           <ol class="home__rank-list">
             <li
               v-for="(r, i) in hotResourceRank"
-              :key="r.id"
+              :key="r.resourceId"
               class="home__rank-item"
-              @click="router.push(`/resource/${r.id}`)"
+              @click="router.push(`/resource/${r.resourceId}`)"
             >
               <span class="home__rank-no" :class="{ 'is-top': i < 3 }">{{ i + 1 }}</span>
               <div class="home__rank-icon" :style="{ background: r.cover }">
-                <KhIcon :name="r.icon" :size="14" />
+                <KhIcon :name="r.linkIcon" :size="14" />
               </div>
               <div class="home__rank-text">
                 <div class="home__rank-title kh-line-clamp-1">{{ r.title }}</div>
-                <div class="home__rank-meta">{{ r.downloadCount }} 下载 · {{ r.size }}</div>
+                <div class="home__rank-meta">{{ r.downloadCount }} 下载 · {{ formatSize(r.contentLength) }}</div>
               </div>
             </li>
           </ol>

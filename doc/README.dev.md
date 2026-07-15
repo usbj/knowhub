@@ -58,6 +58,41 @@ knowhub 阶段"管理员可在后台改、全站生效"的配置分两类落地�
 
 > 历史背景：2026-07-03 之前系统设置模块未落地时，全局开关曾走字典（`blog_review_enabled` 等）。系统设置模块落地后已迁移，旧约定"不新建系统配置表、统一走字典"作废，以本节为准。迁移脚本见 `sql/knowhub-sys-config-migration.sql`。
 
+## SQL 文件字符与导入约定
+
+**所有含中文的 SQL 文件必须以 UTF-8（无 BOM）编码保存，并在导入时显式指定 utf8mb4 字符集，否则中文会变成乱码。**
+
+### 现象与根因
+
+历史上多次出现过：SQL 源文件里的中文是正确的（hex dump 验证字节正确，如『公』= `e5 85 ac`），但入库后 `sys_dict` / `sys_dict_data` 等表的中文列变成乱码。根因不在文件本身，而在**导入时 mysql 客户端连接字符集不是 utf8mb4**（典型是默认 `latin1` 或执行时未 `SET NAMES`）：UTF-8 字节被按 latin1 解读后重新存库 → 乱码。部分历史字典（如 `blog_level`、`article_level`）曾因此乱码，靠手动重写中文修复。
+
+### 写 SQL 时的要求
+
+- 文件统一 **UTF-8 无 BOM** 编码；中文直接写明文（`'博客等级'`、`'公开'`），不要转 `\u` / `CONVERT(... USING utf8mb4)` 之类绕路。
+- 含中文写入的 SQL 文件**首行加 `SET NAMES utf8mb4;`**，保证无论客户端默认字符集如何，本次连接都按 utf8mb4 读写（示例见 `sql/knowhub-blog-level-dict-charset-fix.sql`）。这一行兜底，比依赖执行者记得带 `--default-character-set` 更稳。
+- 修已乱码的数据用 `UPDATE` 覆盖正确中文（行已存在只是乱码，不是缺数据）；新增数据才用 `INSERT`。改完附 `SELECT` 验证语句供人工核对。
+
+### 导入时的要求
+
+执行含中文 SQL 时务必带字符集，二选一即可（文件首行已 `SET NAMES utf8mb4` 时，后者直接 source 也行）：
+
+```bash
+mysql --default-character-set=utf8mb4 -u<user> -p<db> < sql/xxx.sql
+# 或进客户端后
+mysql> source sql/xxx.sql;   # 依赖文件首行 SET NAMES utf8mb4 生效
+```
+
+切勿用默认字符集直接 `< sql/xxx.sql` 导入，否则再正确的文件也会乱码。
+
+### 易错：sys_dict 与 sys_dict_data 的「备注」列名不一致
+
+rookie 框架里两张字典表的备注列**拼写不同**，写 SQL 时别想当然：
+
+- `sys_dict` 的备注列是 **`remake`**（框架历史拼写错误，不是 remark）
+- `sys_dict_data` 的备注列才是 **`remark`**（正确拼写）
+
+写 UPDATE/INSERT 时务必按目标表用对列名，错用会报 `Unknown column 'remark'/'remake' in 'field list'`。验证列名可 `SHOW COLUMNS FROM sys_dict LIKE 'rem%';`。已在 `sql/knowhub-blog-level-dict-charset-fix.sql` 踩过此坑并修正。
+
 ## rookie 框架代码修改禁令
 
 **未经用户明确许可，不得修改 `rookie-*` 模块的任何代码与配置**（`rookie-admin`、`rookie-framework`、`rookie-system`、`rookie-common`，包括其中的 `application.yml`、`ApplicationConfig` 等框架级文件）。新模块（如 `knowhub-blog`）的全部产物应在属于自己的模块目录内，避免触碰上游框架层。若某项能力确实需要改框架才能实现，必须先向用户说明并取得同意后再动手。

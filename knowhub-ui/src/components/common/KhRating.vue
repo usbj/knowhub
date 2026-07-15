@@ -57,13 +57,24 @@ const stars = computed(() => {
   position: relative;
   display: inline-block;
   color: var(--kh-border-strong);
+  line-height: 0;
+}
+/* 灰底星与黄覆盖星都绝对定位贴边，避免 inline-block 的 line-box leading
+   造成两者竖向 1~2px 错位（所有用到本组件的卡片统一修复） */
+.kh-rating__empty {
+  position: absolute;
+  inset: 0;
+  display: block;
 }
 .kh-rating__fill {
   position: absolute;
   inset: 0;
   overflow: hidden;
-  display: inline-flex;
+  display: block;
   color: var(--kh-warm);
+}
+.kh-rating__fill .kh-icon {
+  display: block;
 }
 .kh-rating__value {
   font-size: 12px;

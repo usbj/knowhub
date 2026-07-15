@@ -1,21 +1,28 @@
 <!--
   ProjectCard —— 项目卡片
   ------------------------------------------------------------------
-  封面图标 + 类型/状态/等级徽标 + 标题 + 简介 + 负责人 + 参与者头像组 + 评分 + 活跃度。
+  类型/状态/等级徽标 + 标题 + 简介 + 负责人 + 参与者头像组 + 评分 + 下载量。
+  项目无封面："最活跃"徽标已去掉，卡片头部行只留等级标记。
 -->
 <script setup lang="ts">
+import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 import KhCard from '@/components/common/KhCard.vue'
 import KhTag from '@/components/common/KhTag.vue'
 import KhAvatar from '@/components/common/KhAvatar.vue'
 import KhRating from '@/components/common/KhRating.vue'
 import KhStatPill from '@/components/common/KhStatPill.vue'
-import KhIcon from '@/components/common/KhIcon.vue'
 import type { MockProject } from '@/mock/project'
+import { viewLevelTagType, getViewLevelLabel } from '@/utils/viewLevel'
 
 const props = defineProps<{ project: MockProject }>()
 const router = useRouter()
-const goDetail = () => router.push(`/project/${props.project.id}`)
+const goDetail = () => router.push(`/project/${props.project.projectId}`)
+
+/** 负责人：取成员表 LEADER 角色的 nickname（与项目模块负责人语义一致） */
+const leader = computed(
+  () => props.project.members.find((m) => m.role === 'LEADER')?.nickname ?? props.project.authorNickname,
+)
 
 /** 类型/状态文案映射 */
 const typeLabel: Record<string, string> = { COMPETITION: '比赛项目', PRACTICE: '练习项目', OPS: '运维项目' }
@@ -30,47 +37,41 @@ const statusLabel: Record<string, { text: string; type: 'success' | 'warning' | 
 </script>
 
 <template>
-  <KhCard clickable padding="none" class="proj-card" @click="goDetail">
-    <div class="proj-card__cover" :style="{ background: project.cover }">
-      <KhIcon :name="project.icon" :size="32" class="proj-card__cover-icon" />
-      <div class="proj-card__badges">
-        <span v-if="project.hot" class="proj-card__hot">
-          <KhIcon name="fire" :size="12" /> 最活跃
-        </span>
-      </div>
-      <div class="proj-card__level">L{{ project.level }}</div>
-    </div>
-
-    <div class="proj-card__body">
+  <KhCard clickable padding="md" class="proj-card" @click="goDetail">
+    <!-- 头部行：类型/状态标签 + 等级 -->
+    <div class="proj-card__header">
       <div class="proj-card__tags">
         <KhTag size="sm" type="primary">{{ typeLabel[project.type] }}</KhTag>
         <KhTag size="sm" :type="statusLabel[project.status]?.type ?? 'neutral'" dot>{{ statusLabel[project.status]?.text ?? '未知' }}</KhTag>
       </div>
+      <div class="proj-card__header-tail">
+        <KhTag size="sm" :type="viewLevelTagType[project.level] ?? 'neutral'">{{ getViewLevelLabel(project.level) }}</KhTag>
+      </div>
+    </div>
 
-      <h3 class="proj-card__title kh-line-clamp-2">{{ project.title }}</h3>
-      <p class="proj-card__summary kh-line-clamp-2">{{ project.summary }}</p>
+    <h3 class="proj-card__title kh-line-clamp-2">{{ project.title }}</h3>
+    <p class="proj-card__summary kh-line-clamp-2">{{ project.summary }}</p>
 
-      <div class="proj-card__people">
-        <div class="proj-card__leader">
-          <KhAvatar :item="{ label: project.leader }" :size="28" />
-          <div class="proj-card__leader-info">
-            <span class="proj-card__leader-name">{{ project.leader }}</span>
-            <span class="proj-card__leader-role">负责人</span>
-          </div>
+    <div class="proj-card__people">
+      <div class="proj-card__leader">
+        <KhAvatar :item="{ label: leader }" :size="28" />
+        <div class="proj-card__leader-info">
+          <span class="proj-card__leader-name">{{ leader }}</span>
+          <span class="proj-card__leader-role">负责人</span>
         </div>
-        <KhAvatar
-          :items="project.members.map((m) => ({ label: m.name }))"
-          :size="26"
-          :max="3"
-          :overlap="6"
-        />
       </div>
+      <KhAvatar
+        :items="project.members.map((m) => ({ label: m.nickname }))"
+        :size="26"
+        :max="3"
+        :overlap="6"
+      />
+    </div>
 
-      <div class="proj-card__stats">
-        <KhRating :value="project.rating" :size="12" show-value />
-        <span class="proj-card__spacer" />
-        <KhStatPill icon="download" :value="project.downloadCount" />
-      </div>
+    <div class="proj-card__stats">
+      <KhRating :value="project.rating" :size="12" show-value />
+      <span class="proj-card__spacer" />
+      <KhStatPill icon="download" :value="project.downloadCount" />
     </div>
   </KhCard>
 </template>
@@ -79,59 +80,24 @@ const statusLabel: Record<string, { text: string; type: 'success' | 'warning' | 
 .proj-card {
   display: flex;
   flex-direction: column;
+  gap: var(--kh-space-3);
   height: 100%;
 }
-.proj-card__cover {
-  position: relative;
-  height: 110px;
-  display: grid;
-  place-items: center;
-}
-.proj-card__cover-icon {
-  color: rgba(255, 255, 255, 0.92);
-}
-.proj-card__badges {
-  position: absolute;
-  top: var(--kh-space-3);
-  left: var(--kh-space-3);
-}
-.proj-card__hot {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  padding: 3px 10px;
-  border-radius: var(--kh-radius-pill);
-  background: var(--kh-warm);
-  color: #fff;
-  font-size: 11px;
-  font-weight: 600;
-  box-shadow: var(--kh-shadow-xs);
-}
-.proj-card__level {
-  position: absolute;
-  top: var(--kh-space-3);
-  right: var(--kh-space-3);
-  width: 28px;
-  height: 28px;
-  border-radius: var(--kh-radius-sm);
-  background: rgba(255, 255, 255, 0.92);
-  color: var(--kh-text);
-  font-family: var(--kh-font-mono);
-  font-size: 12px;
-  font-weight: 700;
-  display: grid;
-  place-items: center;
-}
-.proj-card__body {
+.proj-card__header {
   display: flex;
-  flex-direction: column;
-  gap: var(--kh-space-3);
-  padding: var(--kh-space-5);
-  flex: 1;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--kh-space-2);
 }
 .proj-card__tags {
   display: flex;
   gap: 6px;
+}
+.proj-card__header-tail {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
 }
 .proj-card__title {
   font-size: var(--kh-font-size-lg);

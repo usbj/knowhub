@@ -98,7 +98,32 @@
 - 协作约定（范围控制/尊重已有改动/修改前沟通）见根 `README.dev.md` §11，同样适用于本目录。
 - 后端接口契约、`Token` 头、`Result` 结构见根 `README.dev.md` §5；前后端时间字段类型约定见 §5 末尾的"VO/实体时间类"说明。
 
-## 11. 当前已接后端清单
+## 11. 与后端 VO 对齐约定（重要）
+
+**所有要展示数据内容的地方以后端的 VO 为准，不要在 mock/类型里新加后端 VO 没有的数据属性。** 就算从逻辑上认为"加这个字段展示更完善"，也**不要静默混进数据契约**——若确需补充，必须在该字段定义处用注释明确标记"`【前端私加】`：后端 VO 无此字段，mock 占位，接口接入前需推动后端补 VO 或在前端自算"，并在 `doc/目前已识别的缺口…md` 补一条缺口，不能让它看起来像后端已有的字段。
+
+判定"是否私加"以最新版 `doc/knowhub-api.md` 各接口响应示例 / VO 字段表为准：
+- 接入某模块前先翻 `knowhub-api.md` 对应章节，把 mock 字段逐个核对到 VO 字段；对不上的标 `【前端私加】`。
+- 一种常见的私加陷阱：**展示字段名与后端 VO 名相近但语义不同**（如 mock `author` vs 后端 `createBy`(username) / `authorNickname`），接入时要按语义映射、不要只看名字。
+- 另一种常见陷阱：**mock 字段是计数，后端 VO 没有这个计数**（如项目卡展示下载量/活跃度，BlogVo 展示评分），接入时要在缺口文档登记，由后端决定补字段 or 前端用既有字段推算。
+- 前台 mock 现存私加字段见下节清单，接入对应模块时逐项处理。
+
+### 11.1 当前 mock 私加字段清单（接入后端前对照处理）
+
+> 以下字段是 mock 阶段为前端展示自行添加的，后端对应模块 VO 当前**没有**这些字段，逐项在 `doc/目前已识别的缺口…md` 登记为缺口：
+
+| Mock 字段 | 位置 | 后端 VO 现状（截至 2026-07-13） | 处理方向 |
+|---|---|---|---|
+| `MockProject.cover` / `icon` | [mock/project.ts](src/mock/project.ts) | `ProjectVo` 无封面/图标字段 | 项目无封面是既定事实；`cover`/`icon` 不应进 VO，后续接入列表展示用类型/等级徽标 + 标题为主（已与 ProjectCard 去封面改动一致）|
+| `MockProject.rating` / `downloadCount` | 同上 | `ProjectVo` 无评分/下载量字段（counts 也无 downloadCount） | 缺口已登记（项目活跃度/下载量排序接口 + 评分接口），接入时由后端决定是否补计数字段。原 `activity` 已从 mock 移除——前端"最活跃/按活跃度排序"改用 `downloadCount` 排序替代，活跃度综合分不进 VO |
+| `MockProjectFile.uploadTime` | 同上 | `ProjectFileTreeVo` 仅 contentLength/contentType/businessType，**无时间字段** | 文件页"上传时间"列缺后端支撑，已登记为缺口；前端要么等后端补 `createTime` 到 VO，要么暂用 project_file/file_object 的 create_time（需后端 join） |
+| `MockBlog.rating` | [mock/blog.ts](src/mock/blog.ts) | `BlogVo` 无 rating 字段（counts 只有 viewCount/likeCount/collectCount） | 评分缺后端接口，已登记为缺口 |
+| `MockBlog.authorNickname` | 同上 | `BlogVo` 仅有 `createBy`(username)，无 join 出的昵称 | mock 已按目标 VO 字段名 `authorNickname` 占位（**前端私加**，后端未补），接入时推动后端 join sys_user 回填 authorNickname；项目/文章 VO 都已 join，博客未 join 是缺口 |
+| 各 view 的内联映射（如 AppHeader noticeTypeMap） | 多处 | 后端有对应字典（`sys_notice_type` 等） | 不是私加数据；待字典预加载稳定后切到 `getDictLabel`，见 §5 |
+
+新增 mock 字段时务必同步补这表 + 缺口登记，避免"看起来是后端字段"的静默私加污染数据契约。
+
+## 12. 当前已接后端清单
 
 - `POST /login` — 登录（返回 token）
 - `GET /person` — 当前登录用户资料
