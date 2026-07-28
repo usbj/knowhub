@@ -2,9 +2,9 @@
 <!DOCTYPE mapper
         PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
-<mapper namespace="com.knowhub.mapper.BlogMapper">
+<mapper namespace="com.knowhub.mapper.blog.BlogMapper">
 
-    <resultMap id="BlogResultMap" type="com.knowhub.pojo.entity.Blog">
+    <resultMap id="BlogResultMap" type="com.knowhub.pojo.blog.entity.Blog">
         <id property="blogId" column="blog_id"/>
         <result property="authorId" column="author_id"/>
         <result property="level" column="level"/>
@@ -34,7 +34,7 @@
         （GROUP BY blog_id HAVING COUNT(DISTINCT tag_id) = tagIds.size）。
       - tagIds 为空时不 join，避免影响 fulltext 与其它过滤。
     -->
-    <select id="quarryBlog" parameterType="com.knowhub.pojo.quarry.BlogQuarry" resultMap="BlogResultMap">
+    <select id="quarryBlog" parameterType="com.knowhub.pojo.blog.quarry.BlogQuarry" resultMap="BlogResultMap">
         select b.* from blog b
         <if test="tagIds != null and tagIds.size() > 0">
             inner join blog_tag bt on bt.blog_id = b.blog_id
@@ -70,7 +70,7 @@
         select * from blog where blog_id = #{blogId} and deleted = 0
     </select>
 
-    <insert id="addBlog" parameterType="com.knowhub.pojo.entity.Blog" useGeneratedKeys="true" keyProperty="blogId">
+    <insert id="addBlog" parameterType="com.knowhub.pojo.blog.entity.Blog" useGeneratedKeys="true" keyProperty="blogId">
         insert into blog
         <trim prefix="(" suffix=")" suffixOverrides=",">
             <if test="authorId != null">author_id,</if>
@@ -111,7 +111,7 @@
         </trim>
     </insert>
 
-    <update id="editBlogInfo" parameterType="com.knowhub.pojo.entity.Blog">
+    <update id="editBlogInfo" parameterType="com.knowhub.pojo.blog.entity.Blog">
         update blog
         <set>
             <if test="level != null">level = #{level},</if>

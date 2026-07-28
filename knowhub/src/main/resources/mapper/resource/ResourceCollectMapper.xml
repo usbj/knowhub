@@ -2,24 +2,24 @@
 <!DOCTYPE mapper
         PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
-<mapper namespace="com.knowhub.mapper.ResourceCollectMapper">
+<mapper namespace="com.knowhub.mapper.resource.ResourceCollectMapper">
 
-    <resultMap id="ResourceCollectResultMap" type="com.knowhub.pojo.entity.ResourceCollect">
+    <resultMap id="ResourceCollectResultMap" type="com.knowhub.pojo.resource.entity.ResourceCollect">
         <id property="collectId" column="collect_id"/>
         <result property="resourceId" column="resource_id"/>
         <result property="userId" column="user_id"/>
         <result property="createTime" column="create_time"/>
     </resultMap>
 
-    <insert id="addResourceCollect" parameterType="com.knowhub.pojo.entity.ResourceCollect">
+    <insert id="addResourceCollect" parameterType="com.knowhub.pojo.resource.entity.ResourceCollect">
         insert ignore into resource_collect(resource_id, user_id) values (#{resourceId}, #{userId})
     </insert>
 
-    <delete id="deleteResourceCollect" parameterType="com.knowhub.pojo.entity.ResourceCollect">
+    <delete id="deleteResourceCollect" parameterType="com.knowhub.pojo.resource.entity.ResourceCollect">
         delete from resource_collect where resource_id = #{resourceId} and user_id = #{userId}
     </delete>
 
-    <select id="getResourceCollect" parameterType="com.knowhub.pojo.entity.ResourceCollect" resultMap="ResourceCollectResultMap">
+    <select id="getResourceCollect" parameterType="com.knowhub.pojo.resource.entity.ResourceCollect" resultMap="ResourceCollectResultMap">
         select * from resource_collect where resource_id = #{resourceId} and user_id = #{userId}
     </select>
 

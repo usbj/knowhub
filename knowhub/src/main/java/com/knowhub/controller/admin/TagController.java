@@ -1,7 +1,7 @@
-package com.knowhub.controller;
+package com.knowhub.controller.admin;
 
-import com.knowhub.pojo.vo.TagVo;
-import com.knowhub.service.TagService;
+import com.knowhub.pojo.tag.vo.TagVo;
+import com.knowhub.service.tag.impl.TagService;
 import com.rookie.common.annotation.Log;
 import com.rookie.common.enums.BusinessType;
 import com.rookie.common.pojo.Result;

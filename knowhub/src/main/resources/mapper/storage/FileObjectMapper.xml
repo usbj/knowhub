@@ -2,9 +2,9 @@
 <!DOCTYPE mapper
         PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
-<mapper namespace="com.knowhub.mapper.FileObjectMapper">
+<mapper namespace="com.knowhub.mapper.storage.FileObjectMapper">
 
-    <resultMap id="FileObjectResultMap" type="com.knowhub.pojo.entity.FileObject">
+    <resultMap id="FileObjectResultMap" type="com.knowhub.pojo.storage.entity.FileObject">
         <id property="objectId" column="object_id"/>
         <result property="bucket" column="bucket"/>
         <result property="objectKey" column="object_key"/>
@@ -24,7 +24,7 @@
     </resultMap>
 
     <!-- 列表查询：按业务类型/状态/访问语义/上传人/时间区间过滤 -->
-    <select id="quarryFile" parameterType="com.knowhub.pojo.quarry.FileQuarry" resultMap="FileObjectResultMap">
+    <select id="quarryFile" parameterType="com.knowhub.pojo.storage.quarry.FileQuarry" resultMap="FileObjectResultMap">
         select * from file_object
         where deleted = 0
         <if test="businessType != null and businessType != ''">and business_type = #{businessType}</if>
@@ -40,7 +40,7 @@
         select * from file_object where object_id = #{objectId} and deleted = 0
     </select>
 
-    <insert id="addFileObject" parameterType="com.knowhub.pojo.entity.FileObject" useGeneratedKeys="true" keyProperty="objectId">
+    <insert id="addFileObject" parameterType="com.knowhub.pojo.storage.entity.FileObject" useGeneratedKeys="true" keyProperty="objectId">
         insert into file_object
         <trim prefix="(" suffix=")" suffixOverrides=",">
             <if test="bucket != null">bucket,</if>
@@ -71,7 +71,7 @@
         </trim>
     </insert>
 
-    <update id="editFileObject" parameterType="com.knowhub.pojo.entity.FileObject">
+    <update id="editFileObject" parameterType="com.knowhub.pojo.storage.entity.FileObject">
         update file_object
         <set>
             <if test="bucket != null">bucket = #{bucket},</if>

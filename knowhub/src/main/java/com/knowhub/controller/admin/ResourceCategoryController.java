@@ -1,8 +1,8 @@
-package com.knowhub.controller;
+package com.knowhub.controller.admin;
 
-import com.knowhub.pojo.vo.ResourceCategoryTreeVo;
-import com.knowhub.pojo.vo.ResourceCategoryVo;
-import com.knowhub.service.ResourceCategoryService;
+import com.knowhub.pojo.resource.vo.ResourceCategoryTreeVo;
+import com.knowhub.pojo.resource.vo.ResourceCategoryVo;
+import com.knowhub.service.resource.impl.ResourceCategoryService;
 import com.rookie.common.annotation.Log;
 import com.rookie.common.enums.BusinessType;
 import com.rookie.common.pojo.Result;

@@ -2,7 +2,7 @@
 <!DOCTYPE mapper
         PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
-<mapper namespace="com.knowhub.mapper.ProjectMapper">
+<mapper namespace="com.knowhub.mapper.project.ProjectMapper">
 
     <!--
       项目主表结果映射。
@@ -10,7 +10,7 @@
       - authorNickname：join sys_user on user_id=author_id，LEFT JOIN 防止用户被删时丢行
       - canView/canDownload/canEdit/myMemberRole：详情接口在 service 层回填，不由 SQL 带（列表不回填）
     -->
-    <resultMap id="ProjectResultMap" type="com.knowhub.pojo.entity.Project">
+    <resultMap id="ProjectResultMap" type="com.knowhub.pojo.project.entity.Project">
         <id property="projectId" column="project_id"/>
         <result property="title" column="title"/>
         <result property="type" column="type"/>
@@ -40,7 +40,7 @@
       支持按 title 模糊、type、level、status、reviewStatus、createBy、时间区间过滤。
       按 publish_time desc, project_id desc 排序（与资源列表一致）。
     -->
-    <select id="quarryProject" parameterType="com.knowhub.pojo.quarry.ProjectQuarry" resultMap="ProjectResultMap">
+    <select id="quarryProject" parameterType="com.knowhub.pojo.project.quarry.ProjectQuarry" resultMap="ProjectResultMap">
         select p.project_id, p.title, p.type, p.level, p.summary,
                p.article_id, p.author_id, p.status, p.review_status, p.publish_time,
                p.create_by, p.create_time, p.update_by, p.update_time, p.deleted,
@@ -87,7 +87,7 @@
     </select>
 
     <!-- 新增项目，动态列（对齐 README.dev「Mapper XML insert 均改为动态列」约定） -->
-    <insert id="addProject" parameterType="com.knowhub.pojo.entity.Project" useGeneratedKeys="true" keyProperty="projectId">
+    <insert id="addProject" parameterType="com.knowhub.pojo.project.entity.Project" useGeneratedKeys="true" keyProperty="projectId">
         insert into project
         <trim prefix="(" suffix=")" suffixOverrides=",">
             <if test="title != null">title,</if>
@@ -119,7 +119,7 @@
     </insert>
 
     <!-- 编辑项目（动态列） -->
-    <update id="editProjectInfo" parameterType="com.knowhub.pojo.entity.Project">
+    <update id="editProjectInfo" parameterType="com.knowhub.pojo.project.entity.Project">
         update project
         <set>
             <if test="title != null and title != ''">title = #{title},</if>

@@ -2,9 +2,9 @@
 <!DOCTYPE mapper
         PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
-<mapper namespace="com.knowhub.mapper.ArticleReviewLogMapper">
+<mapper namespace="com.knowhub.mapper.article.ArticleReviewLogMapper">
 
-    <resultMap id="ArticleReviewLogResultMap" type="com.knowhub.pojo.entity.ArticleReviewLog">
+    <resultMap id="ArticleReviewLogResultMap" type="com.knowhub.pojo.article.entity.ArticleReviewLog">
         <id property="reviewLogId" column="review_log_id"/>
         <result property="articleId" column="article_id"/>
         <result property="action" column="action"/>
@@ -21,7 +21,7 @@
       create_time 由 DB 默认 CURRENT_TIMESTAMP 填充，故 insert 不含该列。
       advice 为可空字段（通过时可选填），用 if 动态拼接。
     -->
-    <insert id="insertReviewLog" parameterType="com.knowhub.pojo.entity.ArticleReviewLog" useGeneratedKeys="true" keyProperty="reviewLogId">
+    <insert id="insertReviewLog" parameterType="com.knowhub.pojo.article.entity.ArticleReviewLog" useGeneratedKeys="true" keyProperty="reviewLogId">
         insert into article_review_log (article_id, action, operator_id, operator, role
         <if test="advice != null">, advice</if>)
         values (#{articleId}, #{action}, #{operatorId}, #{operator}, #{role}

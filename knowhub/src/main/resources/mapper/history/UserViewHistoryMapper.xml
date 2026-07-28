@@ -2,10 +2,10 @@
 <!DOCTYPE mapper
         PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
-<mapper namespace="com.knowhub.mapper.UserViewHistoryMapper">
+<mapper namespace="com.knowhub.mapper.history.UserViewHistoryMapper">
 
     <!-- getByUserBiz 专用：映射到 UserViewHistory 实体（声明返回类型与实际一致，避免 ViewHistoryVo→UserViewHistory 强转 CCE） -->
-    <resultMap id="UserViewHistoryMap" type="com.knowhub.pojo.entity.UserViewHistory">
+    <resultMap id="UserViewHistoryMap" type="com.knowhub.pojo.history.entity.UserViewHistory">
         <id property="viewId" column="view_id"/>
         <result property="userId" column="user_id"/>
         <result property="bizType" column="biz_type"/>
@@ -15,7 +15,7 @@
         <result property="viewCount" column="view_count"/>
     </resultMap>
 
-    <resultMap id="ViewHistoryVoMap" type="com.knowhub.pojo.vo.ViewHistoryVo">
+    <resultMap id="ViewHistoryVoMap" type="com.knowhub.pojo.history.vo.ViewHistoryVo">
         <id property="viewId" column="view_id"/>
         <result property="bizType" column="biz_type"/>
         <result property="bizId" column="biz_id"/>
@@ -34,7 +34,7 @@
         where user_id = #{userId} and biz_type = #{bizType} and biz_id = #{bizId}
     </select>
 
-    <insert id="insertViewHistory" parameterType="com.knowhub.pojo.entity.UserViewHistory"
+    <insert id="insertViewHistory" parameterType="com.knowhub.pojo.history.entity.UserViewHistory"
             useGeneratedKeys="true" keyProperty="viewId">
         insert into user_view_history(user_id, biz_type, biz_id, view_time, last_view_time, view_count)
         values (#{userId}, #{bizType}, #{bizId}, now(), now(), 1)
@@ -53,7 +53,7 @@
         join sys_user on user_id=author_id 取 nick_name（缺失则回落 create_by/author_id）。
         PageHelper 对外层 union 做 count+分页，orderby 用 last_view_time desc。
     -->
-    <select id="listViewHistory" parameterType="com.knowhub.pojo.quarry.ViewHistoryQuarry"
+    <select id="listViewHistory" parameterType="com.knowhub.pojo.history.quarry.ViewHistoryQuarry"
             resultMap="ViewHistoryVoMap">
         select * from (
             <!-- 博客 -->

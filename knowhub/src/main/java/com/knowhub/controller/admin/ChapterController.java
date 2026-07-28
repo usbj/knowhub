@@ -1,11 +1,11 @@
-package com.knowhub.controller;
+package com.knowhub.controller.admin;
 
 import com.github.pagehelper.PageInfo;
-import com.knowhub.pojo.quarry.ChapterQuarry;
-import com.knowhub.pojo.vo.ChapterReviewLogVo;
-import com.knowhub.pojo.vo.ChapterReviewVo;
-import com.knowhub.pojo.vo.ChapterVo;
-import com.knowhub.service.ChapterService;
+import com.knowhub.pojo.article.quarry.ChapterQuarry;
+import com.knowhub.pojo.article.vo.ChapterReviewLogVo;
+import com.knowhub.pojo.article.vo.ChapterReviewVo;
+import com.knowhub.pojo.article.vo.ChapterVo;
+import com.knowhub.service.article.impl.ChapterService;
 import com.rookie.common.annotation.Log;
 import com.rookie.common.enums.BusinessType;
 import com.rookie.common.pojo.Result;

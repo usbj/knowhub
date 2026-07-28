@@ -2,9 +2,9 @@
 <!DOCTYPE mapper
         PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
-<mapper namespace="com.knowhub.mapper.ProjectCompetitionMapper">
+<mapper namespace="com.knowhub.mapper.project.ProjectCompetitionMapper">
 
-    <resultMap id="ProjectCompetitionResultMap" type="com.knowhub.pojo.entity.ProjectCompetition">
+    <resultMap id="ProjectCompetitionResultMap" type="com.knowhub.pojo.project.entity.ProjectCompetition">
         <id property="projectId" column="project_id"/>
         <result property="competitionName" column="competition_name"/>
         <result property="competitionLevel" column="competition_level"/>
@@ -22,7 +22,7 @@
       新增比赛子表行（projectId 为主键兼外键）。
       动态列：award_time/competition_time 可空（项目可能未获奖/未开赛）。
     -->
-    <insert id="addProjectCompetition" parameterType="com.knowhub.pojo.entity.ProjectCompetition">
+    <insert id="addProjectCompetition" parameterType="com.knowhub.pojo.project.entity.ProjectCompetition">
         insert into project_competition
         <trim prefix="(" suffix=")" suffixOverrides=",">
             project_id,
@@ -44,7 +44,7 @@
     </insert>
 
     <!-- 编辑比赛子表行（按 projectId 主键，动态列） -->
-    <update id="editProjectCompetition" parameterType="com.knowhub.pojo.entity.ProjectCompetition">
+    <update id="editProjectCompetition" parameterType="com.knowhub.pojo.project.entity.ProjectCompetition">
         update project_competition
         <set>
             <if test="competitionName != null">competition_name = #{competitionName},</if>

@@ -2,10 +2,10 @@
 <!DOCTYPE mapper
         PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
-<mapper namespace="com.knowhub.mapper.BlogPortalMapper">
+<mapper namespace="com.knowhub.mapper.blog.BlogPortalMapper">
 
     <!-- 前台博客列表 VO 结果映射（含 authorNickname join 带出） -->
-    <resultMap id="BlogPortalVoMap" type="com.knowhub.pojo.vo.BlogPortalVo">
+    <resultMap id="BlogPortalVoMap" type="com.knowhub.pojo.blog.vo.BlogPortalVo">
         <id property="blogId" column="blog_id"/>
         <result property="authorId" column="author_id"/>
         <result property="authorNickname" column="author_nickname"/>
@@ -19,7 +19,7 @@
     </resultMap>
 
     <!-- 详情 VO 结果映射（继承列表字段 + content） -->
-    <resultMap id="BlogPortalDetailVoMap" type="com.knowhub.pojo.vo.BlogPortalDetailVo">
+    <resultMap id="BlogPortalDetailVoMap" type="com.knowhub.pojo.blog.vo.BlogPortalDetailVo">
         <id property="blogId" column="blog_id"/>
         <result property="authorId" column="author_id"/>
         <result property="authorNickname" column="author_nickname"/>
@@ -48,7 +48,7 @@
       排序：HOT=热度, LATEST=最新, 其它/RELEVANCE=全文相关度（有 keyword 走 fulltext，无则 publish_time）。
       列表不 select content。
     -->
-    <select id="searchBlogs" parameterType="com.knowhub.pojo.quarry.BlogPortalSearchQuarry" resultMap="BlogPortalVoMap">
+    <select id="searchBlogs" parameterType="com.knowhub.pojo.blog.quarry.BlogPortalSearchQuarry" resultMap="BlogPortalVoMap">
         select b.blog_id, b.author_id, u.nick_name as author_nickname,
                b.title, b.summary, b.cover_url, b.publish_time,
                b.view_count, b.like_count, b.collect_count
@@ -181,7 +181,7 @@
       hotScore = 关联内容的 (like*2+collect*3+view) 之和；contentCount = 关联内容数。
       union 两类后按 tag 聚合，按 hotScore desc。
     -->
-    <select id="hotTags" resultType="com.knowhub.pojo.vo.HotTagVo">
+    <select id="hotTags" resultType="com.knowhub.pojo.tag.vo.HotTagVo">
         select t.tag_id as tagId, t.tag_name as tagName,
                sum(cnt) as contentCount, sum(score) as hotScore
         from (

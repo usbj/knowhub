@@ -2,9 +2,9 @@
 <!DOCTYPE mapper
         PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
-<mapper namespace="com.knowhub.mapper.ResourceRatingMapper">
+<mapper namespace="com.knowhub.mapper.resource.ResourceRatingMapper">
 
-    <resultMap id="ResourceRatingResultMap" type="com.knowhub.pojo.entity.ResourceRating">
+    <resultMap id="ResourceRatingResultMap" type="com.knowhub.pojo.resource.entity.ResourceRating">
         <id property="ratingId" column="rating_id"/>
         <result property="resourceId" column="resource_id"/>
         <result property="userId" column="user_id"/>
@@ -14,18 +14,18 @@
     </resultMap>
 
     <!-- 新增评分（create_time/update_time 由 DB 默认填充） -->
-    <insert id="addResourceRating" parameterType="com.knowhub.pojo.entity.ResourceRating" useGeneratedKeys="true" keyProperty="ratingId">
+    <insert id="addResourceRating" parameterType="com.knowhub.pojo.resource.entity.ResourceRating" useGeneratedKeys="true" keyProperty="ratingId">
         insert into resource_rating (resource_id, user_id, score)
         values (#{resourceId}, #{userId}, #{score})
     </insert>
 
     <!-- 更新评分（改分） -->
-    <update id="updateResourceRating" parameterType="com.knowhub.pojo.entity.ResourceRating">
+    <update id="updateResourceRating" parameterType="com.knowhub.pojo.resource.entity.ResourceRating">
         update resource_rating set score = #{score}, update_time = now()
         where resource_id = #{resourceId} and user_id = #{userId}
     </update>
 
-    <select id="getResourceRating" parameterType="com.knowhub.pojo.entity.ResourceRating" resultMap="ResourceRatingResultMap">
+    <select id="getResourceRating" parameterType="com.knowhub.pojo.resource.entity.ResourceRating" resultMap="ResourceRatingResultMap">
         select * from resource_rating where resource_id = #{resourceId} and user_id = #{userId}
     </select>
 

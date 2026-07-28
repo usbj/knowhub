@@ -1,14 +1,14 @@
-package com.knowhub.controller;
+package com.knowhub.controller.admin;
 
 import com.github.pagehelper.PageInfo;
-import com.knowhub.pojo.quarry.ProjectQuarry;
-import com.knowhub.pojo.vo.ProjectFileTreeVo;
-import com.knowhub.pojo.vo.ProjectFileVo;
-import com.knowhub.pojo.vo.ProjectMemberVo;
-import com.knowhub.pojo.vo.ProjectReviewLogVo;
-import com.knowhub.pojo.vo.ProjectReviewVo;
-import com.knowhub.pojo.vo.ProjectVo;
-import com.knowhub.service.ProjectService;
+import com.knowhub.pojo.project.quarry.ProjectQuarry;
+import com.knowhub.pojo.project.vo.ProjectFileTreeVo;
+import com.knowhub.pojo.project.vo.ProjectFileVo;
+import com.knowhub.pojo.project.vo.ProjectMemberVo;
+import com.knowhub.pojo.project.vo.ProjectReviewLogVo;
+import com.knowhub.pojo.project.vo.ProjectReviewVo;
+import com.knowhub.pojo.project.vo.ProjectVo;
+import com.knowhub.service.project.impl.ProjectService;
 import com.rookie.common.annotation.Log;
 import com.rookie.common.enums.BusinessType;
 import com.rookie.common.pojo.Result;

@@ -1,9 +1,9 @@
-package com.knowhub.controller;
+package com.knowhub.controller.portal;
 
 import com.github.pagehelper.PageInfo;
-import com.knowhub.pojo.quarry.BlogQuarry;
-import com.knowhub.pojo.vo.BlogVo;
-import com.knowhub.service.BlogService;
+import com.knowhub.pojo.blog.quarry.BlogQuarry;
+import com.knowhub.pojo.blog.vo.BlogVo;
+import com.knowhub.service.blog.impl.BlogService;
 import com.knowhub.support.BlogPermissionResolver;
 import com.rookie.common.annotation.Log;
 import com.rookie.common.enums.BusinessType;

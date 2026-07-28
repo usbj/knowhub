@@ -1,7 +1,7 @@
 package com.knowhub.task;
 
 import com.knowhub.config.ArticleConfigReader;
-import com.knowhub.service.ArticleService;
+import com.knowhub.service.article.impl.ArticleService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;

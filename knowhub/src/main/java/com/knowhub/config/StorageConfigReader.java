@@ -1,7 +1,7 @@
 package com.knowhub.config;
 
-import com.knowhub.enums.FileAccessMode;
-import com.knowhub.enums.FileBusinessType;
+import com.knowhub.enums.storage.FileAccessMode;
+import com.knowhub.enums.storage.FileBusinessType;
 import com.rookie.common.util.SysConfigUtil;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;

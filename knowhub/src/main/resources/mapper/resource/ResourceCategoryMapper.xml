@@ -2,9 +2,9 @@
 <!DOCTYPE mapper
         PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
-<mapper namespace="com.knowhub.mapper.ResourceCategoryMapper">
+<mapper namespace="com.knowhub.mapper.resource.ResourceCategoryMapper">
 
-    <resultMap id="ResourceCategoryResultMap" type="com.knowhub.pojo.entity.ResourceCategory">
+    <resultMap id="ResourceCategoryResultMap" type="com.knowhub.pojo.resource.entity.ResourceCategory">
         <id property="categoryId" column="category_id"/>
         <result property="parentId" column="parent_id"/>
         <result property="categoryName" column="category_name"/>
@@ -33,7 +33,7 @@
     </select>
 
     <!-- 新增分类，动态列 -->
-    <insert id="addCategory" parameterType="com.knowhub.pojo.entity.ResourceCategory" useGeneratedKeys="true" keyProperty="categoryId">
+    <insert id="addCategory" parameterType="com.knowhub.pojo.resource.entity.ResourceCategory" useGeneratedKeys="true" keyProperty="categoryId">
         insert into resource_category
         <trim prefix="(" suffix=")" suffixOverrides=",">
             <if test="parentId != null">parent_id,</if>
@@ -53,7 +53,7 @@
     </insert>
 
     <!-- 编辑分类（动态列） -->
-    <update id="editCategoryInfo" parameterType="com.knowhub.pojo.entity.ResourceCategory">
+    <update id="editCategoryInfo" parameterType="com.knowhub.pojo.resource.entity.ResourceCategory">
         update resource_category
         <set>
             <if test="parentId != null">parent_id = #{parentId},</if>

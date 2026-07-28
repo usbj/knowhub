@@ -2,9 +2,9 @@
 <!DOCTYPE mapper
         PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
-<mapper namespace="com.knowhub.mapper.ChapterReviewLogMapper">
+<mapper namespace="com.knowhub.mapper.article.ChapterReviewLogMapper">
 
-    <resultMap id="ChapterReviewLogResultMap" type="com.knowhub.pojo.entity.ChapterReviewLog">
+    <resultMap id="ChapterReviewLogResultMap" type="com.knowhub.pojo.article.entity.ChapterReviewLog">
         <id property="reviewLogId" column="review_log_id"/>
         <result property="chapterId" column="chapter_id"/>
         <result property="action" column="action"/>
@@ -21,7 +21,7 @@
       create_time 由 DB 默认 CURRENT_TIMESTAMP 填充，故 insert 不含该列。
       action 仅 SUBMIT/APPROVE/REJECT 三值；advice 为可空字段（通过时可选填）。
     -->
-    <insert id="insertReviewLog" parameterType="com.knowhub.pojo.entity.ChapterReviewLog" useGeneratedKeys="true" keyProperty="reviewLogId">
+    <insert id="insertReviewLog" parameterType="com.knowhub.pojo.article.entity.ChapterReviewLog" useGeneratedKeys="true" keyProperty="reviewLogId">
         insert into chapter_review_log (chapter_id, action, operator_id, operator, role
         <if test="advice != null">, advice</if>)
         values (#{chapterId}, #{action}, #{operatorId}, #{operator}, #{role}

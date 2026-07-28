@@ -1,8 +1,8 @@
-package com.knowhub.controller;
+package com.knowhub.controller.portal;
 
 import com.github.pagehelper.PageInfo;
-import com.knowhub.pojo.vo.ViewHistoryVo;
-import com.knowhub.service.ViewHistoryService;
+import com.knowhub.pojo.history.vo.ViewHistoryVo;
+import com.knowhub.service.history.impl.ViewHistoryService;
 import com.rookie.common.pojo.Result;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;

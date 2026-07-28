@@ -2,7 +2,7 @@
 <!DOCTYPE mapper
         PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
-<mapper namespace="com.knowhub.mapper.ResourceMapper">
+<mapper namespace="com.knowhub.mapper.resource.ResourceMapper">
 
     <!--
       资源主表结果映射。
@@ -13,7 +13,7 @@
       - originalName/contentLength/contentType：join file_object on file_object_id=object_id，
         FILE 类型才有意义，LINK 类型 file_object_id 为 null，LEFT JOIN 不影响
     -->
-    <resultMap id="ResourceResultMap" type="com.knowhub.pojo.entity.Resource">
+    <resultMap id="ResourceResultMap" type="com.knowhub.pojo.resource.entity.Resource">
         <id property="resourceId" column="resource_id"/>
         <result property="authorId" column="author_id"/>
         <result property="resourceType" column="resource_type"/>
@@ -47,7 +47,7 @@
       支持按 title 模糊、resourceType、resourceCategoryId、status、reviewStatus、createBy、时间区间过滤。
       按 publish_time desc, resource_id desc 排序（与博客列表一致）。
     -->
-    <select id="quarryResource" parameterType="com.knowhub.pojo.quarry.ResourceQuarry" resultMap="ResourceResultMap">
+    <select id="quarryResource" parameterType="com.knowhub.pojo.resource.quarry.ResourceQuarry" resultMap="ResourceResultMap">
         select r.resource_id, r.author_id, r.resource_type, r.resource_category_id,
                r.title, r.summary, r.file_object_id, r.link_url, r.link_icon,
                r.status, r.review_status, r.publish_time, r.download_count,
@@ -86,7 +86,7 @@
     </select>
 
     <!-- 新增资源，动态列（对齐 README.dev「Mapper XML insert 均改为动态列」约定） -->
-    <insert id="addResource" parameterType="com.knowhub.pojo.entity.Resource" useGeneratedKeys="true" keyProperty="resourceId">
+    <insert id="addResource" parameterType="com.knowhub.pojo.resource.entity.Resource" useGeneratedKeys="true" keyProperty="resourceId">
         insert into resource
         <trim prefix="(" suffix=")" suffixOverrides=",">
             <if test="authorId != null">author_id,</if>
@@ -124,7 +124,7 @@
     </insert>
 
     <!-- 编辑资源（动态列） -->
-    <update id="editResourceInfo" parameterType="com.knowhub.pojo.entity.Resource">
+    <update id="editResourceInfo" parameterType="com.knowhub.pojo.resource.entity.Resource">
         update resource
         <set>
             <if test="authorId != null">author_id = #{authorId},</if>

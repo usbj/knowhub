@@ -2,7 +2,7 @@
 <!DOCTYPE mapper
         PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
-<mapper namespace="com.knowhub.mapper.ArticleMapper">
+<mapper namespace="com.knowhub.mapper.article.ArticleMapper">
 
     <!--
       文章主表结果映射。
@@ -10,7 +10,7 @@
       - authorNickname：join sys_user on user_id=author_id，LEFT JOIN 防止用户被删时丢行
       - canView/canEdit/isAuthor：详情接口在 service 层回填，不由 SQL 带（列表不回填）
     -->
-    <resultMap id="ArticleResultMap" type="com.knowhub.pojo.entity.Article">
+    <resultMap id="ArticleResultMap" type="com.knowhub.pojo.article.entity.Article">
         <id property="articleId" column="article_id"/>
         <result property="title" column="title"/>
         <result property="summary" column="summary"/>
@@ -39,7 +39,7 @@
       支持按 title 模糊、level、visibility、status、reviewStatus、createBy、authorId、时间区间过滤。
       按 publish_time desc, article_id desc 排序（与项目/资源列表一致）。
     -->
-    <select id="quarryArticle" parameterType="com.knowhub.pojo.quarry.ArticleQuarry" resultMap="ArticleResultMap">
+    <select id="quarryArticle" parameterType="com.knowhub.pojo.article.quarry.ArticleQuarry" resultMap="ArticleResultMap">
         select a.article_id, a.title, a.summary, a.level, a.visibility,
                a.author_id, a.cover_object_key, a.status, a.review_status, a.publish_time,
                a.create_by, a.create_time, a.update_by, a.update_time, a.deleted,
@@ -85,7 +85,7 @@
     </select>
 
     <!-- 新增文章，动态列（对齐 README.dev「Mapper XML insert 均改为动态列」约定） -->
-    <insert id="addArticle" parameterType="com.knowhub.pojo.entity.Article" useGeneratedKeys="true" keyProperty="articleId">
+    <insert id="addArticle" parameterType="com.knowhub.pojo.article.entity.Article" useGeneratedKeys="true" keyProperty="articleId">
         insert into article
         <trim prefix="(" suffix=")" suffixOverrides=",">
             <if test="title != null">title,</if>
@@ -115,7 +115,7 @@
     </insert>
 
     <!-- 编辑文章（动态列） -->
-    <update id="editArticleInfo" parameterType="com.knowhub.pojo.entity.Article">
+    <update id="editArticleInfo" parameterType="com.knowhub.pojo.article.entity.Article">
         update article
         <set>
             <if test="title != null and title != ''">title = #{title},</if>

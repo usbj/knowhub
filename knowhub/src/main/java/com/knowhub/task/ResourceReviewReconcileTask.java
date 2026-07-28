@@ -1,7 +1,7 @@
 package com.knowhub.task;
 
 import com.knowhub.config.ResourceConfigReader;
-import com.knowhub.service.ResourceService;
+import com.knowhub.service.resource.impl.ResourceService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;

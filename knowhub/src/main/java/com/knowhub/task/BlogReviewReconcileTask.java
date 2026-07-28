@@ -1,7 +1,7 @@
 package com.knowhub.task;
 
 import com.knowhub.config.BlogConfigReader;
-import com.knowhub.service.BlogService;
+import com.knowhub.service.blog.impl.BlogService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;

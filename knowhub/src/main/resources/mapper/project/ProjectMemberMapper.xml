@@ -2,13 +2,13 @@
 <!DOCTYPE mapper
         PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
-<mapper namespace="com.knowhub.mapper.ProjectMemberMapper">
+<mapper namespace="com.knowhub.mapper.project.ProjectMemberMapper">
 
     <!--
       项目成员结果映射。
       含 join 带出的展示字段（非表字段）：nickname/username 由 join sys_user on user_id 带出。
     -->
-    <resultMap id="ProjectMemberResultMap" type="com.knowhub.pojo.entity.ProjectMember">
+    <resultMap id="ProjectMemberResultMap" type="com.knowhub.pojo.project.entity.ProjectMember">
         <id property="memberId" column="member_id"/>
         <result property="projectId" column="project_id"/>
         <result property="userId" column="user_id"/>
@@ -66,7 +66,7 @@
     </select>
 
     <!-- 新增成员，回填主键 -->
-    <insert id="addMember" parameterType="com.knowhub.pojo.entity.ProjectMember" useGeneratedKeys="true" keyProperty="memberId">
+    <insert id="addMember" parameterType="com.knowhub.pojo.project.entity.ProjectMember" useGeneratedKeys="true" keyProperty="memberId">
         insert into project_member
         <trim prefix="(" suffix=")" suffixOverrides=",">
             <if test="projectId != null">project_id,</if>
@@ -90,7 +90,7 @@
     </insert>
 
     <!-- 编辑成员（动态列，调整角色/标志位） -->
-    <update id="editMember" parameterType="com.knowhub.pojo.entity.ProjectMember">
+    <update id="editMember" parameterType="com.knowhub.pojo.project.entity.ProjectMember">
         update project_member
         <set>
             <if test="memberRole != null and memberRole != ''">member_role = #{memberRole},</if>

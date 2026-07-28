@@ -2,9 +2,9 @@
 <!DOCTYPE mapper
         PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
-<mapper namespace="com.knowhub.mapper.ResourceLikeMapper">
+<mapper namespace="com.knowhub.mapper.resource.ResourceLikeMapper">
 
-    <resultMap id="ResourceLikeResultMap" type="com.knowhub.pojo.entity.ResourceLike">
+    <resultMap id="ResourceLikeResultMap" type="com.knowhub.pojo.resource.entity.ResourceLike">
         <id property="likeId" column="like_id"/>
         <result property="resourceId" column="resource_id"/>
         <result property="userId" column="user_id"/>
@@ -12,15 +12,15 @@
     </resultMap>
 
     <!-- insert ignore：主键冲突(已点赞)视为成功，Service 层据 getResourceLike 判态决定是否计 +1 -->
-    <insert id="addResourceLike" parameterType="com.knowhub.pojo.entity.ResourceLike">
+    <insert id="addResourceLike" parameterType="com.knowhub.pojo.resource.entity.ResourceLike">
         insert ignore into resource_like(resource_id, user_id) values (#{resourceId}, #{userId})
     </insert>
 
-    <delete id="deleteResourceLike" parameterType="com.knowhub.pojo.entity.ResourceLike">
+    <delete id="deleteResourceLike" parameterType="com.knowhub.pojo.resource.entity.ResourceLike">
         delete from resource_like where resource_id = #{resourceId} and user_id = #{userId}
     </delete>
 
-    <select id="getResourceLike" parameterType="com.knowhub.pojo.entity.ResourceLike" resultMap="ResourceLikeResultMap">
+    <select id="getResourceLike" parameterType="com.knowhub.pojo.resource.entity.ResourceLike" resultMap="ResourceLikeResultMap">
         select * from resource_like where resource_id = #{resourceId} and user_id = #{userId}
     </select>
 
