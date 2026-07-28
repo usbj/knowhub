@@ -62,6 +62,9 @@ public class ResourceVo {
     /** 下载次数（仅 FILE 下载 +1，主表冗余） */
     private Long downloadCount;
 
+    /** 浏览量（独立访客数，读主表 view_count 冗余列；与 download_count 正交） */
+    private Long viewCount;
+
     // ---- 互动计数（事实表聚合回填，不冗余主表） ----
     private Long likeCount;
 
@@ -239,6 +242,14 @@ public class ResourceVo {
 
     public void setDownloadCount(Long downloadCount) {
         this.downloadCount = downloadCount;
+    }
+
+    public Long getViewCount() {
+        return viewCount;
+    }
+
+    public void setViewCount(Long viewCount) {
+        this.viewCount = viewCount;
     }
 
     public Long getLikeCount() {

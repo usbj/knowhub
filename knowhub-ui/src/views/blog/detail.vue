@@ -4,52 +4,114 @@
   标题 + 作者/时间/标签/观看数/评分 + 点赞/收藏/分享 + 左侧目录锚点 + 正文（静态预渲染）+ 相关推荐 + 评论区占位。
 -->
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { ElMessage } from 'element-plus'
 import {
   ArrowLeft,
   ChatDotRound,
   Share,
   Collection,
+  EditPen,
 } from '@element-plus/icons-vue'
 import KhCard from '@/components/common/KhCard.vue'
 import KhTag from '@/components/common/KhTag.vue'
 import KhAvatar from '@/components/common/KhAvatar.vue'
-import KhRating from '@/components/common/KhRating.vue'
 import KhStatPill from '@/components/common/KhStatPill.vue'
 import KhSectionTitle from '@/components/common/KhSectionTitle.vue'
 import KhContentToc from '@/components/common/KhContentToc.vue'
 import KhIcon from '@/components/common/KhIcon.vue'
-import BlogCard from '@/components/blog/BlogCard.vue'
-import { getBlogById, blogs } from '@/mock/blog'
+import { getBlogDetailApi, relatedBlogsApi } from '@/api/knowhub/blog'
+import type { BlogPortalDetailRecord, BlogPortalRecord } from '@/types/api/knowhub/blog'
+import { formatDateTime } from '@/utils/format'
+import { useUserStore } from '@/stores/user'
 
 const route = useRoute()
 const router = useRouter()
+const userStore = useUserStore()
 
 const blogId = computed(() => Number(route.params.id))
-const blog = computed(() => getBlogById(blogId.value) ?? blogs[0]!)
+const blog = ref<BlogPortalDetailRecord | null>(null)
+const related = ref<BlogPortalRecord[]>([])
 
-/** 从正文提取标题作为目录锚点 */
+/** 是否认当前作者本人（详情页编辑按钮显示条件：前台公开 VO 无 isAuthor，靠 userId===authorId 比对） */
+const isMyBlog = computed(
+  () => Boolean(blog.value?.authorId) && blog.value!.authorId === userStore.userInfo?.userId,
+)
+
+/** 跳创作页编辑模式 */
+const goEdit = () => {
+  router.push(`/blog/create?id=${blogId.value}`)
+}
+
+/** 拉取详情 + 相关推荐 */
+const fetchDetail = async () => {
+  const res = await getBlogDetailApi(blogId.value)
+  const b = res.data
+  if (!b) {
+    ElMessage.error('博客不存在或已下架')
+    return
+  }
+  if (b.publishTime) b.publishTime = formatDateTime(b.publishTime) as string
+  blog.value = b
+  // 锁态提示：越级访问只给元数据，正文不下发
+  if (b.locked) {
+    ElMessage.warning(b.lockReason ?? '当前内容需更高权限查看完整正文')
+  }
+}
+
+const fetchRelated = async () => {
+  const res = await relatedBlogsApi(blogId.value, 3)
+  related.value = (res.data ?? []).map((r) => ({
+    ...r,
+    publishTime: r.publishTime ? (formatDateTime(r.publishTime) as string) : r.publishTime,
+  }))
+}
+
+/** 从正文提取标题作为目录锚点（锁态时 content 为 null，目录为空） */
 const toc = computed(() => {
-  const lines = (blog.value.content ?? '').split('\n')
+  const lines = (blog.value?.content ?? '').split('\n')
   return lines
     .filter((l) => l.startsWith('## '))
     .map((l) => l.replace(/^##\s+/, '').trim())
     .slice(0, 8)
 })
 
-/** 相关推荐：同标签的其它博客 */
-const related = computed(() =>
-  blogs
-    .filter((b) => b.blogId !== blog.value.blogId && b.status === 'PUBLISHED' && b.tags.some((t) => blog.value.tags.includes(t)))
-    .slice(0, 3),
-)
+/** 正文容器 DOM 引用：v-md-preview 在其内渲染，目录跳转靠 querySel 取第 idx 个 h2 */
+const contentRef = ref<HTMLElement | null>(null)
+
+/**
+ * 点击目录项 i：在正文容器内取第 i 个 h2（v-md-preview github 主题不给 heading 加 id，
+ * 故靠 .github-markdown-body 下 querySelectorAll('h2') 按 DOM 顺序取第 i 个）。
+ * toc 提取末 slice(0,8)；同一份 source 的 h2 渲染顺序与 toc 序号一一对应，索引一致。
+ * nextTick 等首屏渲染完成（博客正文 v-md-preview 异步解析），避免取不到 h2。
+ */
+const handleTocSelect = (idx: number) => {
+  const root = contentRef.value
+  if (!root) return
+  nextTick(() => {
+    const hs = root.querySelectorAll<HTMLElement>(':scope .github-markdown-body h2')
+    hs[idx]?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  })
+}
+
+/** 展示用标签名：tagNames 优先（后端当前置空），无则留空数组 */
+const displayTags = computed<string[]>(() => blog.value?.tagNames ?? [])
 
 const goBack = () => router.back()
 
-/** 点赞/收藏状态（demo 交互占位） */
+/** 点赞/收藏状态（demo 交互占位，复用既有 PUT /blog/like|collect 接口接入留后续） */
 const liked = computed(() => ({ value: false }))
 const collected = computed(() => ({ value: false }))
+
+onMounted(() => {
+  void fetchDetail()
+  void fetchRelated()
+})
+watch(blogId, () => {
+  void fetchDetail()
+  void fetchRelated()
+})
 </script>
 
 <template>
@@ -63,54 +125,57 @@ const collected = computed(() => ({ value: false }))
       <el-icon class="bd__crumb-sep"><KhIcon name="chevron-right" :size="12" /></el-icon>
       <RouterLink to="/notes">笔记导航</RouterLink>
       <el-icon class="bd__crumb-sep"><KhIcon name="chevron-right" :size="12" /></el-icon>
-      <span class="bd__crumb-current">{{ blog.title }}</span>
+      <span class="bd__crumb-current">{{ blog?.title }}</span>
     </div>
 
-    <div class="kh-container kh-container--wide bd__layout">
+    <div v-if="blog" class="kh-container kh-container--wide bd__layout">
       <!-- 主体 -->
       <article class="bd__main">
         <!-- 头部信息 -->
         <header class="bd__head">
           <h1 class="bd__title">{{ blog.title }}</h1>
           <div class="bd__tags">
-            <KhTag v-for="t in blog.tags" :key="t" type="primary">{{ t }}</KhTag>
+            <KhTag v-for="t in displayTags" :key="t" type="primary">{{ t }}</KhTag>
           </div>
           <div class="bd__meta">
             <div class="bd__author">
-              <KhAvatar :item="{ label: blog.authorNickname }" :size="36" />
+              <KhAvatar :item="{ label: blog.authorNickname ?? '' }" :size="36" />
               <div>
                 <div class="bd__author-name">{{ blog.authorNickname }}</div>
                 <div class="bd__author-time">发布于 {{ blog.publishTime }}</div>
               </div>
             </div>
             <div class="bd__meta-stats">
-              <KhRating :value="blog.rating" :size="14" show-value />
-              <KhStatPill icon="eye" :value="blog.viewCount" label="阅读" />
-              <KhStatPill icon="heart" :value="blog.likeCount" label="赞" />
-              <KhStatPill icon="bookmark" :value="blog.collectCount" label="收藏" />
+              <button v-if="isMyBlog" class="bd__edit-btn" type="button" @click="goEdit">
+                <el-icon><EditPen /></el-icon> 编辑
+              </button>
+              <KhStatPill icon="eye" :value="blog.viewCount ?? 0" label="阅读" />
+              <KhStatPill icon="heart" :value="blog.likeCount ?? 0" label="赞" />
+              <KhStatPill icon="bookmark" :value="blog.collectCount ?? 0" label="收藏" />
             </div>
           </div>
         </header>
 
-        <!-- 正文：用 v-md-preview 真正渲染 markdown（v-md-editor 全局组件，见 utils/markdown.ts）
-     注意 v-md-preview 的 prop 名是 text（不是 modelValue），绑错正文不渲染 —— 见后台 rookie-ui MarkdownPreview.vue 顶部约定 -->
-        <div class="bd__content">
-          <v-md-preview :text="blog.content" />
+        <!-- 正文：越级锁态时 content 为 null，显示锁态提示而非正文 -->
+        <div v-if="blog.locked" class="bd__locked">
+          <KhIcon name="lock" :size="40" :stroke="1.4" />
+          <p class="bd__locked-title">{{ blog.lockReason ?? '需更高权限查看完整正文' }}</p>
+          <p class="bd__locked-hint">登录并拥有对应等级权限后可查看完整内容</p>
+        </div>
+        <div v-else ref="contentRef" class="bd__content">
+          <v-md-preview :text="blog.content ?? ''" />
         </div>
 
         <!-- 底部操作 -->
         <div class="bd__actions">
           <button class="bd__action" :class="{ 'is-active': liked.value }" type="button">
-            <KhIcon name="heart" :size="14" /> {{ blog.likeCount }}
+            <KhIcon name="heart" :size="14" /> {{ blog.likeCount ?? 0 }}
           </button>
           <button class="bd__action" :class="{ 'is-active': collected.value }" type="button">
             <el-icon><Collection /></el-icon> 收藏
           </button>
           <button class="bd__action" type="button">
             <el-icon><Share /></el-icon> 分享
-          </button>
-          <button class="bd__action" type="button">
-            <KhIcon name="star" :size="14" /> 评分
           </button>
         </div>
 
@@ -131,7 +196,7 @@ const collected = computed(() => ({ value: false }))
 
       <!-- 侧栏：目录（复用 KhContentToc，与文档阅读页同款）+ 相关推荐（作者卡已移除：目前无作者主页等可跳链的承载页） -->
       <aside class="bd__aside">
-        <KhContentToc :items="toc" />
+        <KhContentToc :items="toc" @select="handleTocSelect" />
 
         <KhCard padding="md" class="bd__related">
           <KhSectionTitle title="相关推荐" />
@@ -142,7 +207,7 @@ const collected = computed(() => ({ value: false }))
               </div>
               <div class="bd__related-text">
                 <div class="bd__related-title kh-line-clamp-2">{{ r.title }}</div>
-                <div class="bd__related-meta">{{ r.viewCount }} 阅读 · {{ r.rating.toFixed(1) }} 评分</div>
+                <div class="bd__related-meta">{{ r.viewCount ?? 0 }} 阅读</div>
               </div>
             </li>
             <li v-if="!related.length" class="bd__related-empty">暂无相关推荐</li>
@@ -250,6 +315,25 @@ const collected = computed(() => ({ value: false }))
   align-items: center;
   gap: var(--kh-space-4);
 }
+.bd__edit-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 34px;
+  padding: 0 var(--kh-space-4);
+  border: 1px solid var(--kh-primary-border);
+  border-radius: var(--kh-radius-pill);
+  background: var(--kh-primary-soft);
+  color: var(--kh-primary-strong);
+  font-size: var(--kh-font-size-sm);
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--kh-transition-fast);
+}
+.bd__edit-btn:hover {
+  background: var(--kh-primary);
+  color: #fff;
+}
 
 /* 正文 —— v-md-preview 渲染区
    v-md-preview 的 prop 名是 text（不是 modelValue），见上方模板注释；
@@ -270,6 +354,33 @@ const collected = computed(() => ({ value: false }))
 .bd__content :deep(.github-markdown-body h1),
 .bd__content :deep(.github-markdown-body h2) {
   border-bottom: none; /* 去掉 github 主题给一二级标题自带的下横线 */
+}
+/* 目录 scrollIntoView 落点留出头导航高度，否则 sticky 顶栏会遮住滚到顶的标题 */
+.bd__content :deep(.github-markdown-body h2),
+.bd__content :deep(.github-markdown-body h3) {
+  scroll-margin-top: calc(var(--kh-header-height) + var(--kh-space-4));
+}
+
+/* 锁态：越级访问只给元数据，正文不下发，展示锁态提示 */
+.bd__locked {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--kh-space-3);
+  padding: var(--kh-space-12) var(--kh-space-6);
+  margin: var(--kh-space-8) 0;
+  border: 1px dashed var(--kh-border);
+  border-radius: var(--kh-radius-lg);
+  color: var(--kh-text-tertiary);
+  text-align: center;
+}
+.bd__locked-title {
+  font-size: var(--kh-font-size-lg);
+  font-weight: 600;
+  color: var(--kh-text-secondary);
+}
+.bd__locked-hint {
+  font-size: var(--kh-font-size-sm);
 }
 
 .bd__actions {

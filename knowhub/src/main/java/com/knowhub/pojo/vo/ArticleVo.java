@@ -46,6 +46,15 @@ public class ArticleVo {
 
     private Date publishTime;
 
+    /** 浏览量（独立访客数，读主表 view_count 冗余列） */
+    private Long viewCount;
+
+    /** 标签ID列表（详情/编辑回填，照博客 BlogVo.tagIds 范式） */
+    private java.util.List<Long> tagIds;
+
+    /** 标签名列表（详情回填，按 tagIds 取启用标签名） */
+    private java.util.List<String> tagNames;
+
     // ---- 当前用户对该文章的权限态（详情接口回填，列表不回填） ----
     private Boolean canView;
 
@@ -151,6 +160,30 @@ public class ArticleVo {
 
     public void setPublishTime(Date publishTime) {
         this.publishTime = publishTime;
+    }
+
+    public Long getViewCount() {
+        return viewCount;
+    }
+
+    public void setViewCount(Long viewCount) {
+        this.viewCount = viewCount;
+    }
+
+    public java.util.List<Long> getTagIds() {
+        return tagIds;
+    }
+
+    public void setTagIds(java.util.List<Long> tagIds) {
+        this.tagIds = tagIds;
+    }
+
+    public java.util.List<String> getTagNames() {
+        return tagNames;
+    }
+
+    public void setTagNames(java.util.List<String> tagNames) {
+        this.tagNames = tagNames;
     }
 
     public Boolean getCanView() {

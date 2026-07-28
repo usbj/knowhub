@@ -17,6 +17,15 @@ withDefaults(
     title: '目录',
   },
 )
+
+/**
+ * 点击目录项：向父发出该项序号（i）。父按序号取正文内第 i 个 h2（v-md-preview 渲染的
+ * github-markdown-body 下的 h2）scrollIntoView。序号对齐靠"toc 从 ## 提取、h2 也由 ## 渲染"
+ * 的一一对应，不依赖 slug/锚点插件（v-md-editor github 主题默认不给 heading 加 id）。
+ */
+const emit = defineEmits<{ (e: 'select', index: number): void }>()
+
+const onSelect = (i: number) => emit('select', i)
 </script>
 
 <template>
@@ -25,7 +34,15 @@ withDefaults(
       <KhIcon name="doc" :size="16" /> {{ title }}
     </div>
     <ul v-if="items.length" class="kh-toc__list">
-      <li v-for="(t, i) in items" :key="i" class="kh-toc__item">
+      <li
+        v-for="(t, i) in items"
+        :key="i"
+        class="kh-toc__item"
+        role="button"
+        tabindex="0"
+        @click="onSelect(i)"
+        @keydown.enter.prevent="onSelect(i)"
+      >
         <span class="kh-toc__no">{{ String(i + 1).padStart(2, '0') }}</span>
         <span class="kh-toc__text kh-line-clamp-2">{{ t }}</span>
       </li>
@@ -57,11 +74,18 @@ withDefaults(
   gap: 8px;
   padding: 8px 10px;
   border-radius: var(--kh-radius-sm);
-  cursor: default;
+  cursor: pointer;
   transition: background var(--kh-transition-fast);
 }
 .kh-toc__item:hover {
   background: var(--kh-surface-muted);
+}
+.kh-toc__item:hover .kh-toc__text {
+  color: var(--kh-primary);
+}
+.kh-toc__item:focus-visible {
+  outline: 2px solid var(--kh-primary-border);
+  outline-offset: -2px;
 }
 .kh-toc__no {
   font-family: var(--kh-font-mono);

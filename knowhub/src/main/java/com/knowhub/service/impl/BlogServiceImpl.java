@@ -22,6 +22,8 @@ import com.knowhub.pojo.vo.BlogVo;
 import com.knowhub.pojo.vo.ReviewLogVo;
 import com.knowhub.pojo.vo.ReviewVo;
 import com.knowhub.service.BlogService;
+import com.knowhub.service.ViewHistoryService;
+import com.knowhub.enums.ViewBizType;
 import com.rookie.common.exception.ServiceException;
 import com.knowhub.pojo.entity.Blog;
 import com.knowhub.pojo.entity.BlogCollect;
@@ -86,6 +88,9 @@ public class BlogServiceImpl implements BlogService {
     BlogConfigReader blogConfigReader;
 
     @Autowired
+    ViewHistoryService viewHistoryService;
+
+    @Autowired
     StringRedisTemplate redisTemplate;
 
     @Value("${redis.base-key}")
@@ -93,8 +98,6 @@ public class BlogServiceImpl implements BlogService {
 
     /** 博客详情缓存 key：blog:detail:{id}（经 baseKey 前缀） */
     private static final String CACHE_DETAIL_PREFIX = "blog:detail:";
-    /** 浏览计数 key：blog:view:{id}（经 baseKey 前缀，原子 incr） */
-    private static final String CACHE_VIEW_PREFIX = "blog:view:";
     /** 待审核存在标记 key：blog:review:pending-flag（经 baseKey 前缀）。
      *  作者提交进 PENDING_REVIEW 时 SET（不计数仅标记存在性，无过期）；
      *  对账定时任务消费后 DEL。flag 假阳（稿已被审核员手动批但 flag 未清）仅导致定时任务多扫一次空表，可接受。 */
@@ -127,7 +130,7 @@ public class BlogServiceImpl implements BlogService {
             fillCurrentUserInteract(cached);
             // 权限态随当前登录用户变，不信任缓存里的 canView/canEdit/isAuthor，实时按当前用户重算
             fillPermissionState(cached, blogId);
-            incrView(blogId);
+            viewHistoryService.recordView(currentUser().getUserId(), ViewBizType.BLOG.getCode(), blogId);
             return cached;
         }
 
@@ -154,7 +157,7 @@ public class BlogServiceImpl implements BlogService {
         // 3. 回写缓存（带默认过期）
         redisTemplate.opsForValue().set(key, JSONUtil.toJsonStr(vo));
         redisTemplate.expire(key, java.time.Duration.ofMinutes(30));
-        incrView(blogId);
+        viewHistoryService.recordView(currentUser().getUserId(), ViewBizType.BLOG.getCode(), blogId);
         return vo;
     }
 
@@ -182,6 +185,9 @@ public class BlogServiceImpl implements BlogService {
         if (blog.getLevel() == null) {
             blog.setLevel(BlogLevel.L1.getCode());
         }
+        // 分级创作闸（决策#11）：能创作的内容等级上限 <= 自身 view 等级；非 L2 级成员不能建 L2 博客。
+        // admin 走 resolver 自然得 3（登录时全 perm_key 已塞入）；未授权者得 0 只能建 L1。
+        assertCanCreateLevel(BlogPermissionResolver.resolve().view(), blog.getLevel());
         try {
             blogMapper.addBlog(blog);
         } catch (Exception e) {
@@ -508,6 +514,20 @@ public class BlogServiceImpl implements BlogService {
         }
     }
 
+    /**
+     * 分级创作闸（决策#11，前后台创作共用）：能创作的内容等级上限 <= 自身 view 等级。
+     * 非 L2 级成员不能创建 L2 级博客（文章同理）。userViewLevel 由 BlogPermissionResolver.resolve().view() 给出
+     * （admin 自然 3，未授权 0）。targetLevel<=1 恒放行（L1 公开人人可建）。
+     */
+    private void assertCanCreateLevel(int userViewLevel, Integer targetLevel) {
+        if (targetLevel == null || targetLevel <= 1) {
+            return;
+        }
+        if (userViewLevel < targetLevel) {
+            throw new ServiceException(500, "无权创建 L" + targetLevel + " 级内容（自身查看等级不足）");
+        }
+    }
+
     private void saveBlogTags(Long blogId, List<Long> tagIds) {
         if (tagIds == null || tagIds.isEmpty()) {
             return;
@@ -662,14 +682,6 @@ public class BlogServiceImpl implements BlogService {
             vo.setHasCollected(blogCollectMapper.getBlogCollect(new BlogCollect(vo.getBlogId(), userId)) != null);
         } catch (Exception ignored) {
             // 未登录等场景不回填状态
-        }
-    }
-
-    /** 浏览量 Redis 原子 +1（不直接 update 主表，防热点；后续可批量回写） */
-    private void incrView(Long blogId) {
-        try {
-            redisTemplate.opsForValue().increment(baseKey + CACHE_VIEW_PREFIX + blogId);
-        } catch (Exception ignored) {
         }
     }
 

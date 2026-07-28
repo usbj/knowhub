@@ -20,6 +20,25 @@
 
 > 前端依赖要求 Node `^22.18.0 || >=24.12.0`（见 `package.json` engines）。
 
+## 2.5 本地启动与验证约定
+
+**启动命令**（在 `knowhub-ui/` 目录下）：
+
+| 用途 | 命令 | 说明 |
+|---|---|---|
+| 开发服务器 | `npm run dev` | Vite dev，端口固定 **5174**（见 `vite.config.ts`，避开后台 `rookie-ui` 的 5173） |
+| 类型检查 | `npm run type-check` | `vue-tsc --build`，无副作用，改完 TS 必跑 |
+| 生产构建 | `npm run build` | 出 `dist/` |
+
+- **dev 代理**：`/api` → `localhost:8080`（后端，去前缀），见 `vite.config.ts`。前台单独跑只验证页面结构/路由/样式时后端可不起；验证真实接口需后端 + MySQL + Redis 就绪。
+- **鉴权**：公开页（首页/博客/笔记/资源/文档/公告）不拦截；受保护页（`/profile`、`/history` 等带 `meta.requiresAuth`）无 token 跳 `/login?redirect=`。
+
+**验证约定（重要，照根 `README.dev.md` §11 口径）**：
+
+- **不要自己拉 dev server 进预览面板**做页面验证。需要看真实表现时，**把改了什么、去哪个路由看、预期表现是什么告诉用户，由用户本地启动并确认结果**。
+- 静态校验（`npm run type-check` / `npm run build`、编译、类型检查这类本地无副作用检查）**可以自行运行**作为自查，不属于"启 preview 跑页面"范畴。
+- 改完后自查清单：①`npm run type-check` 通过；②涉及新接口的页面，对照后端 VO 字段核对 mock 私加字段是否已清理（见 §11.1）；③teleported 浮层/深色模式按根 `README.dev.md` §12 检查。
+
 ## 3. 鉴权与 HTTP 链路
 
 参考后台 `rookie-ui` 的写法，前台从简（不引字典/系统配置/动态菜单）。

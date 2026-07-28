@@ -1,0 +1,49 @@
+/**
+ * 文件作用：
+ * 博客创作接口（/authoring/blog/**，走 /authoring/** authenticated 兜底，需登录态）。
+ * 复用后台 BlogService（addBlogInfo/publishBlog/editBlogInfo/revokeBlog），后端含分级创作闸。
+ * 不含点赞/收藏——复用既有 PUT /blog/like|collect/{id}（见 BlogController）。
+ * - draft/edit：BlogVo 体提交（编辑带 blogId）。
+ * - publish/revoke：仅 blogId 路径变量，后端状态机校验（DRAFT/REJECTED/REVOKED 可编辑发布，PUBLISHED 须先撤回）。
+ * - getForEdit：编辑回填，复用后台 getBlogInfo（canOp 防越权，含全态+标签+canEdit/isAuthor）。
+ * - myLevel：当前用户博客 view 等级（0/1/2/3），创作页等级选择器据此禁用不可选等级。
+ */
+import { get, getPage, post, put } from '@/utils/http'
+import type { ApiResult, NormalizedPageResult } from '@/types/api/common'
+import type { BlogAuthoringPayload, BlogAuthoringDetail, BlogRecord, MyBlogListQuery } from '@/types/api/knowhub/authoring'
+
+/** 前台新建博客草稿（复用 addBlogInfo，含分级创作闸）。返回后端 boolean。 */
+export const draftBlogApi = (data: BlogAuthoringPayload) =>
+  post<ApiResult<boolean>, BlogAuthoringPayload>('/authoring/blog/draft', data)
+
+/** 前台编辑博客（复用 editBlogInfo，校验归属+状态机+先删后插标签）。编辑体需带 blogId。 */
+export const editBlogApi = (data: BlogAuthoringPayload) =>
+  put<ApiResult<boolean>, BlogAuthoringPayload>('/authoring/blog', data)
+
+/** 前台发布博客（复用 publishBlog，按审核开关决定 PUBLISHED 或 PENDING_REVIEW）。 */
+export const publishBlogApi = (blogId: number) =>
+  put<ApiResult<boolean>>(`/authoring/blog/${blogId}/publish`)
+
+/** 前台撤回博客（复用 revokeBlog → REVOKED，撤回后可再编辑/再发布）。仅 PUBLISHED 可撤回。 */
+export const revokeBlogApi = (blogId: number) =>
+  put<ApiResult<boolean>>(`/authoring/blog/${blogId}/revoke`)
+
+/** 编辑回填：复用后台 getBlogInfo（canOp 防越权，返回含全态+标签+canEdit/isAuthor 的 BlogVo）。 */
+export const getBlogForEditApi = (blogId: number) =>
+  get<ApiResult<BlogAuthoringDetail>>(`/authoring/blog/${blogId}`)
+
+/** 当前用户博客 view 等级（0/1/2/3），创作页等级选择器据此禁用不可选等级。 */
+export const getMyBlogLevelApi = () =>
+  get<ApiResult<number>>('/authoring/blog/level')
+
+/**
+ * 前台我的博客列表（薄封装 quarryBlog，service 内回填 userId 走 author_id 分支，
+ * 天然只返回"自己写的 + 有权看的"）。可选 status 过滤草稿/已发布等。
+ * 返回后端 PageInfo 归一化为 NormalizedPageResult。
+ */
+export const getMyBlogsApi = (query: MyBlogListQuery) =>
+  getPage<BlogRecord>('/authoring/blog/list', { params: query })
+
+/** 类型再导出，供页面直接用 */
+export type { BlogAuthoringPayload, BlogAuthoringDetail, BlogRecord, MyBlogListQuery }
+export type { NormalizedPageResult }

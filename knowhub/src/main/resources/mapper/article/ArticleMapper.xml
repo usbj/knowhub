@@ -46,6 +46,9 @@
                u.nick_name as author_nickname
         from article a
                 left join sys_user u on a.author_id = u.user_id
+        <if test="tagIds != null and tagIds.size() > 0">
+            inner join article_tag art on art.article_id = a.article_id
+        </if>
         where a.deleted = 0
         <if test="title != null and title != ''">and a.title like concat('%', #{title}, '%')</if>
         <if test="level != null">and a.level = #{level}</if>
@@ -56,6 +59,12 @@
         <if test="authorId != null">and a.author_id = #{authorId}</if>
         <if test="beginTime != null">and a.create_time &gt;= #{beginTime}</if>
         <if test="endTime != null">and a.create_time &lt;= #{endTime}</if>
+        <if test="tagIds != null and tagIds.size() > 0">
+            and art.tag_id in
+            <foreach collection="tagIds" item="tid" open="(" separator="," close=")">#{tid}</foreach>
+            group by a.article_id
+            having count(distinct art.tag_id) = #{tagIds.size()}
+        </if>
         and (
             a.level &lt;= #{userViewLevel}
             or a.author_id = #{userId}

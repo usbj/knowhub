@@ -69,6 +69,12 @@ const router = createRouter({
       meta: { title: '注册', bare: true },
     },
     {
+      path: '/blog/create',
+      name: 'blog-create',
+      component: () => import('@/views/blog/create.vue'),
+      meta: { title: '写博客', requiresAuth: true },
+    },
+    {
       path: '/blog/:id',
       name: 'blog-detail',
       component: () => import('@/views/blog/detail.vue'),
@@ -97,6 +103,12 @@ const router = createRouter({
       name: 'resource-detail',
       component: () => import('@/views/resource/detail.vue'),
       meta: { title: '资源详情' },
+    },
+    {
+      path: '/history',
+      name: 'history',
+      component: () => import('@/views/history/index.vue'),
+      meta: { title: '浏览历史', requiresAuth: true },
     },
   ],
   scrollBehavior(_to, _from, saved) {

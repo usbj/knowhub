@@ -6,7 +6,7 @@
   返回按钮回上一级（文章介绍页 /docs/:id），非历史页。
 -->
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ArrowLeft, ArrowUp, ArrowDown } from '@element-plus/icons-vue'
 import KhIcon from '@/components/common/KhIcon.vue'
@@ -58,6 +58,23 @@ const chapterToc = computed<string[]>(() => {
     .map((l) => l.replace(/^##\s+/, '').trim())
     .slice(0, 10)
 })
+
+/** 正文容器 DOM 引用：目录跳转靠 querySel 取第 idx 个 h2 */
+const contentRef = ref<HTMLElement | null>(null)
+
+/**
+ * 点击目录项 i：取正文容器内第 i 个 h2 平滑滚动定位。
+ * 同博客详情页：v-md-preview github 主题不给 heading 加 id，靠 .github-markdown-body 下
+ * querySelectorAll('h2') 按 DOM 顺序取第 i 个，序号与 chapterToc 提取顺序一一对齐。
+ */
+const handleTocSelect = (idx: number) => {
+  const root = contentRef.value
+  if (!root) return
+  nextTick(() => {
+    const hs = root.querySelectorAll<HTMLElement>(':scope .github-markdown-body h2')
+    hs[idx]?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  })
+}
 </script>
 
 <template>
@@ -99,7 +116,7 @@ const chapterToc = computed<string[]>(() => {
         <h1 class="dr__chapter-title">{{ activeChapter?.title }}</h1>
 
         <!-- 正文：v-md-preview 渲染 markdown；空正文回退占位 -->
-        <div v-if="activeChapter?.content" class="dr__content">
+        <div v-if="activeChapter?.content" ref="contentRef" class="dr__content">
           <v-md-preview :text="activeChapter.content" />
         </div>
         <div v-else class="dr__placeholder">
@@ -129,7 +146,7 @@ const chapterToc = computed<string[]>(() => {
 
       <!-- 右：本章目录卡（复用 KhContentToc，与博客详情目录同款；无小标题则不显示） -->
       <aside v-if="chapterToc.length" class="dr__subtoc">
-        <KhContentToc :items="chapterToc" title="目录" />
+        <KhContentToc :items="chapterToc" title="目录" @select="handleTocSelect" />
       </aside>
     </div>
   </div>
@@ -279,6 +296,11 @@ const chapterToc = computed<string[]>(() => {
 .dr__content :deep(.github-markdown-body h1),
 .dr__content :deep(.github-markdown-body h2) {
   border-bottom: none;
+}
+/* 目录 scrollIntoView 落点留出头导航高度，否则 sticky 顶栏会遮住滚到顶的标题 */
+.dr__content :deep(.github-markdown-body h2),
+.dr__content :deep(.github-markdown-body h3) {
+  scroll-margin-top: calc(var(--kh-header-height) + var(--kh-space-4));
 }
 
 .dr__placeholder {

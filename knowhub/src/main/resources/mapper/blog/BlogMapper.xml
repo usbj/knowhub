@@ -139,10 +139,6 @@
         update blog set deleted = 1, update_time = now() where blog_id = #{blogId}
     </update>
 
-    <update id="incrViewCount">
-        update blog set view_count = view_count + #{delta} where blog_id = #{blogId}
-    </update>
-
     <update id="incrLikeCount">
         update blog set like_count = like_count + #{delta} where blog_id = #{blogId}
     </update>

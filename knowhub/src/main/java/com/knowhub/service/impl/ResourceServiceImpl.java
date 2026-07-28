@@ -25,6 +25,8 @@ import com.knowhub.pojo.vo.ResourceReviewVo;
 import com.knowhub.pojo.vo.ResourceVo;
 import com.knowhub.service.FileService;
 import com.knowhub.service.ResourceService;
+import com.knowhub.service.ViewHistoryService;
+import com.knowhub.enums.ViewBizType;
 import com.rookie.common.exception.ServiceException;
 import com.rookie.common.util.PageUtil;
 import com.rookie.framework.security.pojo.UserInfo;
@@ -90,6 +92,9 @@ public class ResourceServiceImpl implements ResourceService {
     @Autowired
     StringRedisTemplate redisTemplate;
 
+    @Autowired
+    private ViewHistoryService viewHistoryService;
+
     @Value("${redis.base-key}")
     private String baseKey;
 
@@ -121,6 +126,8 @@ public class ResourceServiceImpl implements ResourceService {
         fillListExtra(new ArrayList<>(List.of(vo)));
         fillCurrentUserInteract(vo);
         fillDownloadUrl(vo, resource);
+        // 记录浏览（登录态，防刷去重，主表 view_count 仅首次 +1；与 download_count 正交）
+        viewHistoryService.recordView(currentUser().getUserId(), ViewBizType.RESOURCE.getCode(), resourceId);
         return vo;
     }
 

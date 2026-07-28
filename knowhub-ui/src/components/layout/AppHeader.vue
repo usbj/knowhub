@@ -206,7 +206,7 @@ const handleLogout = () => {
             <template #dropdown>
               <el-dropdown-menu>
                 <el-dropdown-item :icon="User" @click="$router.push('/profile')">个人中心</el-dropdown-item>
-                <el-dropdown-item :icon="Plus">创作中心</el-dropdown-item>
+                <el-dropdown-item :icon="Plus" @click="$router.push('/blog/create')">创作中心</el-dropdown-item>
                 <el-dropdown-item divided @click="handleLogout">退出登录</el-dropdown-item>
               </el-dropdown-menu>
             </template>

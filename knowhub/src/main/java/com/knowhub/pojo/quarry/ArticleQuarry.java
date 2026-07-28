@@ -38,6 +38,9 @@ public class ArticleQuarry {
     /** 作者userId过滤（"我的文章"场景，前端按当前用户传） */
     private Long authorId;
 
+    /** 标签 id 列表，走 article_tag join + IN 精确过滤（照博客 BlogQuarry.tagIds 范式） */
+    private java.util.List<Long> tagIds;
+
     /** 创建时间区间起（含）；前端 daterange 传 yyyy-MM-dd，ISO.DATE 显式声明避免依赖 Spring 默认转换器 */
     @DateTimeFormat(iso = DateTimeFormat.ISO.DATE)
     private Date beginTime;
@@ -110,6 +113,14 @@ public class ArticleQuarry {
 
     public void setAuthorId(Long authorId) {
         this.authorId = authorId;
+    }
+
+    public java.util.List<Long> getTagIds() {
+        return tagIds;
+    }
+
+    public void setTagIds(java.util.List<Long> tagIds) {
+        this.tagIds = tagIds;
     }
 
     public Date getBeginTime() {

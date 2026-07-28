@@ -31,9 +31,32 @@ export const setupVmdEditor = (app: App) => {
     return
   }
 
+  // 覆盖自带 preview 工具条项的 title 为"对比"：原 tooltip"开启预览/关闭预览"语义不准，
+  // 该按钮实际行为是 toggle edit↔editable（编辑↔左右对比），属创作页"对比"功能。
+  // 其余 icon(v-md-icon-preview)/active/action(切 currentMode) 照库原样保留，零行为改动。
+  // 库的默认导出类型未暴露 toolbar()，用最小结构类型强型调用（运行时存在）。
+  type VmdEditorLike = {
+    lang: { use: (lang: string, config: unknown) => void }
+    use: (plugin: unknown, config?: unknown) => void
+    toolbar: (name: string, config: Record<string, unknown>) => void
+  }
+  const Editor = VueMarkdownEditor as unknown as VmdEditorLike
+
   // 编辑器：语言 + 主题（主题内含 highlight.js 代码高亮）
-  VueMarkdownEditor.lang.use('zh-CN', zhCN)
-  VueMarkdownEditor.use(githubTheme, { Hljs: hljs })
+  Editor.lang.use('zh-CN', zhCN)
+  Editor.use(githubTheme, { Hljs: hljs })
+
+  Editor.toolbar('preview', {
+    name: 'preview',
+    icon: 'v-md-icon-preview',
+    title: '对比',
+    active: function active(editor: { currentMode: string }) {
+      return editor.currentMode === 'editable'
+    },
+    action: function action(editor: { currentMode: string }) {
+      editor.currentMode = editor.currentMode === 'editable' ? 'edit' : 'editable'
+    },
+  })
 
   // 预览：与编辑器是独立 parser 实例，必须单独 use 同一主题，
   // 否则预览组件 created 读 themeConfig.markdownParser 为 undefined 报错

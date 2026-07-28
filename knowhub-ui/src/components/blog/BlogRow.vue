@@ -6,17 +6,31 @@
 -->
 <script setup lang="ts">
 import { useRouter } from 'vue-router'
+import { computed } from 'vue'
 import KhCard from '@/components/common/KhCard.vue'
 import KhTag from '@/components/common/KhTag.vue'
 import KhAvatar from '@/components/common/KhAvatar.vue'
-import KhRating from '@/components/common/KhRating.vue'
 import KhStatPill from '@/components/common/KhStatPill.vue'
 import KhIcon from '@/components/common/KhIcon.vue'
 import type { MockBlog } from '@/mock/blog'
+import type { BlogPortalRecord } from '@/types/api/knowhub/blog'
 
-const props = defineProps<{ blog: MockBlog }>()
+/** 兼容 mock(MockBlog) 与真实接口(BlogPortalRecord)两种数据源：
+ *  mock 有 tags:string[] + rating；真实接口有 tagIds/tagNames(可能空) + 无 rating。
+ *  首页仍用 mock，notes/搜索用真实接口，统一在此归一化展示字段。 */
+const props = defineProps<{ blog: MockBlog | BlogPortalRecord }>()
 const router = useRouter()
 const goDetail = () => router.push(`/blog/${props.blog.blogId}`)
+
+/** 展示用标签名列表：优先 tagNames，其次 mock 的 tags，空则 [] */
+const displayTags = computed<string[]>(() => {
+  const b = props.blog as MockBlog & BlogPortalRecord
+  if (b.tagNames && b.tagNames.length) return b.tagNames
+  if (b.tags && b.tags.length) return b.tags
+  return []
+})
+/** 作者昵称：真实接口已 join 带 authorNickname，mock 也有；兜底空串 */
+const authorNickname = computed(() => (props.blog as MockBlog).authorNickname ?? '')
 </script>
 
 <template>
@@ -26,21 +40,22 @@ const goDetail = () => router.push(`/blog/${props.blog.blogId}`)
       <p class="blog-row__summary kh-line-clamp-2">{{ blog.summary }}</p>
 
       <div class="blog-row__tags">
-        <KhTag v-for="t in blog.tags.slice(0, 4)" :key="t" size="sm" type="primary">{{ t }}</KhTag>
+        <KhTag v-for="t in displayTags.slice(0, 4)" :key="t" size="sm" type="primary">{{ t }}</KhTag>
       </div>
 
       <div class="blog-row__meta">
         <div class="blog-row__author">
-          <KhAvatar :item="{ label: blog.authorNickname }" :size="20" />
-          <span>{{ blog.authorNickname }}</span>
+          <KhAvatar :item="{ label: authorNickname }" :size="20" />
+          <span>{{ authorNickname }}</span>
         </div>
         <span class="blog-row__sep" />
-        <KhRating :value="blog.rating" :size="11" show-value />
-        <span class="blog-row__sep" />
+        <!-- rating 仅 mock 有（后端缺口#12），真实接口无则不渲染评分条 -->
+        <KhRating v-if="(blog as MockBlog).rating" :value="(blog as MockBlog).rating" :size="11" show-value />
+        <span v-if="(blog as MockBlog).rating" class="blog-row__sep" />
         <div class="blog-row__stats">
-          <KhStatPill icon="eye" :value="blog.viewCount" />
-          <KhStatPill icon="heart" :value="blog.likeCount" />
-          <KhStatPill icon="bookmark" :value="blog.collectCount" />
+          <KhStatPill icon="eye" :value="blog.viewCount ?? 0" />
+          <KhStatPill icon="heart" :value="blog.likeCount ?? 0" />
+          <KhStatPill icon="bookmark" :value="blog.collectCount ?? 0" />
         </div>
         <span class="blog-row__time">
           <KhIcon name="clock" :size="12" />

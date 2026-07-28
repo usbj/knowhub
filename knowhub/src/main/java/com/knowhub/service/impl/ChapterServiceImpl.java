@@ -19,6 +19,8 @@ import com.knowhub.pojo.vo.ChapterReviewLogVo;
 import com.knowhub.pojo.vo.ChapterReviewVo;
 import com.knowhub.pojo.vo.ChapterVo;
 import com.knowhub.service.ChapterService;
+import com.knowhub.service.ViewHistoryService;
+import com.knowhub.enums.ViewBizType;
 import com.rookie.common.exception.ServiceException;
 import com.rookie.common.util.PageUtil;
 import com.rookie.framework.security.pojo.Permission;
@@ -57,6 +59,9 @@ public class ChapterServiceImpl implements ChapterService {
 
     @Autowired
     private ArticleMapper articleMapper;
+
+    @Autowired
+    private ViewHistoryService viewHistoryService;
 
     @Override
     public PageInfo<ChapterVo> quarryChapter(ChapterQuarry quarry) {
@@ -112,6 +117,8 @@ public class ChapterServiceImpl implements ChapterService {
         ChapterVo vo = BeanUtil.toBean(chapter, ChapterVo.class);
         // 回填当前用户对该章节的权限态（供前端控制编辑/审核按钮显隐）
         fillChapterPermissionState(vo, chapter, article, user, lvl);
+        // 记录浏览（登录态，防刷去重，主表 view_count 仅首次 +1）
+        viewHistoryService.recordView(user.getUserId(), ViewBizType.CHAPTER.getCode(), chapterId);
         return vo;
     }
 

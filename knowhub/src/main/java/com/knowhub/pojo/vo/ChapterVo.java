@@ -42,6 +42,9 @@ public class ChapterVo {
 
     private Date publishTime;
 
+    /** 浏览量（独立访客数，读主表 view_count 冗余列） */
+    private Long viewCount;
+
     // ---- join article 带出的所属文章信息（非章节表字段，供前端展示+权限判定） ----
     /** 所属文章标题（join article 带出） */
     private String articleTitle;
@@ -146,6 +149,14 @@ public class ChapterVo {
 
     public void setPublishTime(Date publishTime) {
         this.publishTime = publishTime;
+    }
+
+    public Long getViewCount() {
+        return viewCount;
+    }
+
+    public void setViewCount(Long viewCount) {
+        this.viewCount = viewCount;
     }
 
     public String getArticleTitle() {

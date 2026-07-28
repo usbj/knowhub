@@ -60,6 +60,9 @@ public class SecurityConfig {
                 .authorizeHttpRequests(authorization -> authorization
                         .requestMatchers("/hello").authenticated()
                         .requestMatchers("/login").permitAll()
+                        // 前台门户公开读接口（knowhub 博客搜索/推荐/详情/相关/标签榜，无 @PreAuthorize）
+                        // L2/L3 永不下发前台由 SQL 等级闸保证；写走 /authoring/** 不在此放行（走 authenticated 兜底）。
+                        .requestMatchers("/portal/**").permitAll()
                         // PUBLIC 文件回显：后端中转字节流，供 <img> 等无 Token 请求直接拉图（knowhub 文件模块）
                         .requestMatchers("/file/public/**").permitAll()
                         .requestMatchers("/file/resolve/**").permitAll()

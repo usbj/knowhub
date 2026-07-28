@@ -29,9 +29,6 @@ public interface BlogMapper {
     /** 软删文章 */
     Boolean softDeleteBlog(Long blogId);
 
-    /** 浏览量 +n（Redis 累加后批量回写时调用） */
-    Boolean incrViewCount(@Param("blogId") Long blogId, @Param("delta") long delta);
-
     /** 点赞量 +1/-1 */
     Boolean incrLikeCount(@Param("blogId") Long blogId, @Param("delta") long delta);
 

@@ -6,7 +6,8 @@
   优化布局密度与层次，不新增功能。
 -->
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import {
   Plus,
   Edit,
@@ -27,11 +28,17 @@ import { projects } from '@/mock/project'
 import { resources } from '@/mock/resource'
 import { notices } from '@/mock/notice'
 import { viewLevelTagType, getViewLevelLabel } from '@/utils/viewLevel'
+import { getMyBlogsApi } from '@/api/knowhub/authoring'
+import type { BlogRecord } from '@/types/api/knowhub/authoring'
+import { formatDateTime } from '@/utils/format'
 
 const userStore = useUserStore()
+const route = useRoute()
 
 type TabKey = 'blog' | 'article' | 'project' | 'resource' | 'collect' | 'message'
 const activeTab = ref<TabKey>('blog')
+// 允许通过路由 query 切 tab（创作页存草稿后跳回 ?tab=blog&t=<ts>）
+const ROUTE_TABS: TabKey[] = ['blog', 'article', 'project', 'resource', 'collect', 'message']
 
 /**
  * 当前登录用户展示信息。
@@ -47,15 +54,39 @@ const displayRole = computed(() => {
   return roles.length > 0 ? roles[0]!.roleName : currentUser.role
 })
 
-/** 当前用户的博客（mock 取部分） */
-const myBlogs = blogs.slice(0, 5).map((b) => ({
-  id: b.blogId,
-  title: b.title,
-  status: b.status,
-  views: b.viewCount,
-  likes: b.likeCount,
-  updateTime: b.publishTime,
-}))
+/** 当前用户的博客（真实接口拉取，/authoring/blog/list 薄封装 quarryBlog 走作者分支），mock 兜底防无网 */
+const myBlogs = ref<{ id: number; title: string; status: string; views: number; likes: number; updateTime: string }[]>([])
+const myBlogsLoading = ref(false)
+const fetchMyBlogs = async () => {
+  myBlogsLoading.value = true
+  try {
+    const res = await getMyBlogsApi({ pageNum: 1, pageSize: 20 })
+    myBlogs.value = (res.records ?? []).map((b) => ({
+      id: b.blogId,
+      title: b.title,
+      status: b.status ?? 'DRAFT',
+      views: b.viewCount ?? 0,
+      likes: b.likeCount ?? 0,
+      updateTime: b.updateTime
+        ? (formatDateTime(b.updateTime) as string)
+        : b.publishTime
+          ? (formatDateTime(b.publishTime) as string)
+          : '',
+    }))
+  } catch {
+    // 接口失败兜底：mock 取部分，避免空页
+    myBlogs.value = blogs.slice(0, 5).map((b) => ({
+      id: b.blogId,
+      title: b.title,
+      status: b.status,
+      views: b.viewCount,
+      likes: b.likeCount,
+      updateTime: b.publishTime,
+    }))
+  } finally {
+    myBlogsLoading.value = false
+  }
+}
 const myProjects = projects
   .filter(
     (p) =>
@@ -92,12 +123,12 @@ const tabs: { key: TabKey; label: string; count: number }[] = [
 ]
 
 /** 创作下拉 */
-const createItems = [
-  { icon: 'blog', label: '创作博客', tone: 'var(--kh-primary)' },
+const createItems: { icon: string; label: string; tone: string; to?: string }[] = [
+  { icon: 'blog', label: '创作博客', tone: 'var(--kh-primary)', to: '/blog/create' },
   { icon: 'doc', label: '创作文章', tone: 'var(--kh-accent)' },
   { icon: 'project', label: '创建项目', tone: 'var(--kh-warm)' },
   { icon: 'resource', label: '上传资源', tone: 'var(--kh-success)' },
-] as const
+]
 
 const statusMeta: Record<string, { text: string; type: 'success' | 'warning' | 'danger' | 'neutral' | 'info' }> = {
   PUBLISHED: { text: '已发布', type: 'success' },
@@ -122,6 +153,29 @@ const userStats = computed(() => [
 
 /** 当前 Tab 标题 */
 const activeTabLabel = computed(() => tabs.find((t) => t.key === activeTab.value)?.label ?? '')
+
+/**
+ * 路由 query 驱动 tab + 触发"我的博客"重拉：
+ * - ?tab=xxx：从外部跳进来切到指定 tab（创作页存草稿后跳 ?tab=blog）。
+ * - ?t=<ts>：时间戳变化触发 fetchMyBlogs 重拉，确保新建草稿立即出现在列表。
+ */
+onMounted(async () => {
+  const tab = route.query.tab
+  if (typeof tab === 'string' && ROUTE_TABS.includes(tab as TabKey)) {
+    activeTab.value = tab as TabKey
+  }
+  await fetchMyBlogs()
+})
+
+// tab 切到 blog 或 route query t 变化（带时间戳跳转）：重拉我的博客，保证新建草稿立即可见
+watch(
+  () => [activeTab.value, route.query.t],
+  ([tab]) => {
+    if (tab === 'blog') {
+      void fetchMyBlogs()
+    }
+  },
+)
 </script>
 
 <template>
@@ -150,7 +204,11 @@ const activeTabLabel = computed(() => tabs.find((t) => t.key === activeTab.value
               </button>
               <template #dropdown>
                 <el-dropdown-menu>
-                  <el-dropdown-item v-for="c in createItems" :key="c.label">
+                  <el-dropdown-item
+                    v-for="c in createItems"
+                    :key="c.label"
+                    @click="c.to ? $router.push(c.to) : undefined"
+                  >
                     <KhIcon :name="c.icon" :size="14" :style="{ color: c.tone }" /> {{ c.label }}
                   </el-dropdown-item>
                 </el-dropdown-menu>
@@ -196,15 +254,22 @@ const activeTabLabel = computed(() => tabs.find((t) => t.key === activeTab.value
             <div class="profile__tab-head">
               <h2 class="profile__tab-title">{{ activeTabLabel }}</h2>
               <div class="profile__tab-tools">
-                <button class="profile__tab-tool" type="button"><el-icon><Plus /></el-icon> 新建</button>
+                <button v-if="activeTab === 'blog'" class="profile__tab-tool" type="button" @click="$router.push('/blog/create')"><el-icon><Plus /></el-icon> 新建</button>
               </div>
             </div>
 
             <!-- 我的博客 -->
             <div v-if="activeTab === 'blog'" class="profile__list">
+              <div v-if="myBlogsLoading" class="profile__placeholder">
+                <p>加载中…</p>
+              </div>
+              <div v-else-if="!myBlogs.length" class="profile__placeholder">
+                <KhIcon name="blog" :size="40" :stroke="1.4" />
+                <p>还没有博客，点上方「新建」开始创作</p>
+              </div>
               <div v-for="b in myBlogs" :key="b.id" class="profile__row">
                 <div class="profile__row-main">
-                  <div class="profile__row-title">{{ b.title }}</div>
+                  <div class="profile__row-title" @click="$router.push(`/blog/create?id=${b.id}`)">{{ b.title }}</div>
                   <div class="profile__row-meta">
                     <KhTag size="sm" :type="statusMeta[b.status]?.type ?? 'neutral'">{{ statusMeta[b.status]?.text ?? '未知' }}</KhTag>
                     <span>{{ b.views }} 阅读</span>
@@ -215,7 +280,7 @@ const activeTabLabel = computed(() => tabs.find((t) => t.key === activeTab.value
                   </div>
                 </div>
                 <div class="profile__row-actions">
-                  <button class="profile__row-btn" type="button" title="编辑"><el-icon><Edit /></el-icon></button>
+                  <button class="profile__row-btn" type="button" title="编辑" @click="$router.push(`/blog/create?id=${b.id}`)"><el-icon><Edit /></el-icon></button>
                   <button class="profile__row-btn" type="button" title="撤回"><el-icon><RefreshLeft /></el-icon></button>
                   <button class="profile__row-btn profile__row-btn--danger" type="button" title="删除"><el-icon><Delete /></el-icon></button>
                 </div>

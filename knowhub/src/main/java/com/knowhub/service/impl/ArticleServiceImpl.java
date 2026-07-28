@@ -12,16 +12,22 @@ import com.knowhub.enums.FileBusinessType;
 import com.knowhub.enums.ReviewAction;
 import com.knowhub.enums.ReviewStatus;
 import com.knowhub.mapper.ArticleMapper;
+import com.knowhub.mapper.ArticleTagMapper;
+import com.knowhub.mapper.TagMapper;
 import com.knowhub.mapper.ArticleReviewLogMapper;
 import com.knowhub.mapper.ChapterMapper;
 import com.knowhub.mapper.FileObjectMapper;
 import com.knowhub.pojo.entity.Article;
+import com.knowhub.pojo.entity.ArticleTag;
+import com.knowhub.pojo.entity.Tag;
 import com.knowhub.pojo.entity.ArticleReviewLog;
 import com.knowhub.pojo.quarry.ArticleQuarry;
 import com.knowhub.pojo.vo.ArticleReviewLogVo;
 import com.knowhub.pojo.vo.ArticleReviewVo;
 import com.knowhub.pojo.vo.ArticleVo;
 import com.knowhub.service.ArticleService;
+import com.knowhub.service.ViewHistoryService;
+import com.knowhub.enums.ViewBizType;
 import com.rookie.common.exception.ServiceException;
 import com.rookie.common.util.PageUtil;
 import com.rookie.framework.security.pojo.Permission;
@@ -64,6 +70,12 @@ public class ArticleServiceImpl implements ArticleService {
     private ArticleMapper articleMapper;
 
     @Autowired
+    private ArticleTagMapper articleTagMapper;
+
+    @Autowired
+    private TagMapper tagMapper;
+
+    @Autowired
     private ArticleReviewLogMapper articleReviewLogMapper;
 
     @Autowired
@@ -74,6 +86,9 @@ public class ArticleServiceImpl implements ArticleService {
 
     @Autowired
     private ArticleConfigReader articleConfigReader;
+
+    @Autowired
+    private ViewHistoryService viewHistoryService;
 
     @Autowired
     private StringRedisTemplate redisTemplate;
@@ -110,8 +125,18 @@ public class ArticleServiceImpl implements ArticleService {
             throw new ServiceException(500, "无权查看该文章");
         }
         ArticleVo vo = BeanUtil.toBean(article, ArticleVo.class);
+        // 回填标签（照博客 getBlogInfo tag 回填范式：tagIds + tagNames）
+        List<Long> tagIds = articleTagMapper.getTagIdsByArticleId(articleId);
+        vo.setTagIds(tagIds);
+        if (tagIds != null && !tagIds.isEmpty()) {
+            List<Tag> tags = tagMapper.getEnabledTagsByIds(tagIds);
+            List<String> names = tags.stream().map(Tag::getTagName).collect(Collectors.toList());
+            vo.setTagNames(names);
+        }
         // 回填当前用户对该文章的权限态（供前端控制编辑/发布按钮显隐）
         fillPermissionState(vo, article);
+        // 记录浏览（登录态，防刷去重，主表 view_count 仅首次 +1）
+        viewHistoryService.recordView(currentUser().getUserId(), ViewBizType.ARTICLE.getCode(), articleId);
         return vo;
     }
 
@@ -119,6 +144,7 @@ public class ArticleServiceImpl implements ArticleService {
     @Transactional
     public Boolean addArticleInfo(ArticleVo vo) {
         validateArticlePayload(vo);
+        validateArticleTagIds(vo.getTagIds());
         Article article = BeanUtil.toBean(vo, Article.class);
         UserInfo userInfo = currentUser();
         article.setAuthorId(userInfo.getUserId());
@@ -140,6 +166,8 @@ public class ArticleServiceImpl implements ArticleService {
         } catch (Exception e) {
             throw new ServiceException(500, "文章添加失败", e.getMessage());
         }
+        // 新建文章标签（仅插，无需先删）
+        saveArticleTags(article.getArticleId(), vo.getTagIds());
         return true;
     }
 
@@ -166,6 +194,7 @@ public class ArticleServiceImpl implements ArticleService {
             throw new ServiceException(500, "无权编辑该文章");
         }
         validateArticlePayload(vo);
+        validateArticleTagIds(vo.getTagIds());
 
         Article article = BeanUtil.toBean(vo, Article.class);
         UserInfo userInfo = currentUser();
@@ -183,6 +212,9 @@ public class ArticleServiceImpl implements ArticleService {
         } catch (Exception e) {
             throw new ServiceException(500, "文章修改失败", e.getMessage());
         }
+        // 标签先删后插（照博客 editBlogInfo 范式）
+        articleTagMapper.deleteArticleTagByArticleId(vo.getArticleId());
+        saveArticleTags(vo.getArticleId(), vo.getTagIds());
         return true;
     }
 
@@ -436,6 +468,29 @@ public class ArticleServiceImpl implements ArticleService {
         if (!validVisibility) {
             throw new ServiceException(500, "文章可见性非法");
         }
+    }
+
+    /** 标签合法性校验（照博客 validateTagIds：比对启用标签数量一致，防非法/已禁用标签） */
+    private void validateArticleTagIds(List<Long> tagIds) {
+        if (tagIds == null || tagIds.isEmpty()) {
+            return; // 标签非必填
+        }
+        List<Tag> enabled = tagMapper.getEnabledTagsByIds(tagIds);
+        if (enabled.size() != tagIds.size()) {
+            throw new ServiceException(500, "存在非法或已禁用的标签");
+        }
+    }
+
+    /** 保存文章-标签关联（仅插，删除由调用方 deleteArticleTagByArticleId 完成，先删后插范式） */
+    private void saveArticleTags(Long articleId, List<Long> tagIds) {
+        if (tagIds == null || tagIds.isEmpty()) {
+            return;
+        }
+        List<ArticleTag> rels = new ArrayList<>();
+        for (Long tagId : tagIds) {
+            rels.add(new ArticleTag(articleId, tagId));
+        }
+        articleTagMapper.insertArticleTags(rels);
     }
 
     /**

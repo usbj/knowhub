@@ -4,63 +4,112 @@
   标签云（最多标签展示地）+ 内容搜索 + 博客卡片网格 + 侧栏标签排行/热门笔记 + 排序栏。
 -->
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { Search } from '@element-plus/icons-vue'
 import KhCard from '@/components/common/KhCard.vue'
 import KhTag from '@/components/common/KhTag.vue'
 import KhSectionTitle from '@/components/common/KhSectionTitle.vue'
 import KhIcon from '@/components/common/KhIcon.vue'
 import BlogRow from '@/components/blog/BlogRow.vue'
-import { blogs, type MockBlog } from '@/mock/blog'
-import { tags } from '@/mock/tag'
+import { searchBlogsApi, recommendBlogsApi, hotTagsApi } from '@/api/knowhub/blog'
+import type { BlogPortalRecord, BlogPortalSearchQuery } from '@/types/api/knowhub/blog'
+import type { HotTagRecord } from '@/types/api/knowhub/tag'
+import type { NormalizedPageResult } from '@/types/api/common'
+import { formatDateTime } from '@/utils/format'
 
-/** 排序选项 */
-type SortKey = 'latest' | 'hot' | 'rating'
+/** 排序选项（rating 项已废弃：后端无评分字段，改为最新/最热/相关度） */
+type SortKey = 'latest' | 'hot' | 'relevance'
 const sortKey = ref<SortKey>('latest')
-const sortOptions: { key: SortKey; label: string }[] = [
-  { key: 'latest', label: '最新' },
-  { key: 'hot', label: '最热' },
-  { key: 'rating', label: '评分优先' },
+const sortOptions: { key: SortKey; label: string; toApi: BlogPortalSearchQuery['sort'] }[] = [
+  { key: 'latest', label: '最新', toApi: 'LATEST' },
+  { key: 'hot', label: '最热', toApi: 'HOT' },
+  { key: 'relevance', label: '相关度', toApi: 'RELEVANCE' },
 ]
 
-/** 选中的标签（多选） */
-const selectedTags = ref<string[]>([])
+/** 选中的标签 id 列表（多选，后端按 tagIds 精确过滤） */
+const selectedTagIds = ref<number[]>([])
 const keyword = ref('')
 
-/** 切换标签选中 */
-const toggleTag = (name: string) => {
-  const idx = selectedTags.value.indexOf(name)
-  if (idx >= 0) selectedTags.value.splice(idx, 1)
-  else selectedTags.value.push(name)
+/** 标签云 + 标签排行（公开 /portal/tag/hot，统计 blog_tag+article_tag） */
+const hotTags = ref<HotTagRecord[]>([])
+const tagRanking = computed(() => hotTags.value.slice(0, 10))
+
+/** 切换标签选中（按 tagId） */
+const toggleTag = (tagId: number) => {
+  const idx = selectedTagIds.value.indexOf(tagId)
+  if (idx >= 0) selectedTagIds.value.splice(idx, 1)
+  else selectedTagIds.value.push(tagId)
 }
 
-/** 过滤 + 排序后的博客列表 */
-const filteredBlogs = computed<MockBlog[]>(() => {
-  let list = blogs.filter((b) => b.status === 'PUBLISHED')
-  if (selectedTags.value.length) {
-    list = list.filter((b) => b.tags.some((t) => selectedTags.value.includes(t)))
+/** 博客列表（真实接口分页） */
+const blogList = ref<BlogPortalRecord[]>([])
+const total = ref(0)
+const pageNum = ref(1)
+const pageSize = 9
+const loading = ref(false)
+
+/** 侧栏热门笔记（推荐 feed 兜底全局热门，取 5 条） */
+const hotNotes = ref<BlogPortalRecord[]>([])
+
+/** 概览卡数据（从真实标签榜+列表 total 派生） */
+const publishedBlogCount = computed(() => total.value)
+const tagCount = computed(() => hotTags.value.length)
+const totalReads = computed(() =>
+  blogList.value.reduce((s, b) => s + (b.viewCount ?? 0), 0).toLocaleString(),
+)
+
+/** 拉取博客列表（搜索/标签/排序/分页变化时触发） */
+const fetchBlogs = async () => {
+  loading.value = true
+  try {
+    const sortApi = sortOptions.find((o) => o.key === sortKey.value)?.toApi ?? 'RELEVANCE'
+    const query: BlogPortalSearchQuery = {
+      keyword: keyword.value.trim() || undefined,
+      tagIds: selectedTagIds.value.length ? selectedTagIds.value : undefined,
+      sort: sortApi,
+    }
+    const res: NormalizedPageResult<BlogPortalRecord> = await searchBlogsApi(query)
+    // getPage 已归一化，但 params 里 pageNum/pageSize 由 PageUtil 从请求读——前台分页需显式带
+    // 此处首版只取第一页（pageSize=9），翻页由分页组件回调触发 fetchBlogs(pageNum)
+    blogList.value = (res.records ?? []).map((b) => ({
+      ...b,
+      publishTime: b.publishTime ? formatDateTime(b.publishTime) : b.publishTime,
+    }))
+    total.value = res.total ?? 0
+  } finally {
+    loading.value = false
   }
-  if (keyword.value.trim()) {
-    const k = keyword.value.trim().toLowerCase()
-    list = list.filter(
-      (b) => b.title.toLowerCase().includes(k) || b.summary.toLowerCase().includes(k),
-    )
-  }
-  if (sortKey.value === 'latest') list = [...list].sort((a, b) => b.publishTime.localeCompare(a.publishTime))
-  else if (sortKey.value === 'hot') list = [...list].sort((a, b) => b.viewCount - a.viewCount)
-  else list = [...list].sort((a, b) => b.rating - a.rating)
-  return list
+}
+
+/** 翻页 */
+const onPageChange = (p: number) => {
+  pageNum.value = p
+  void fetchBlogs()
+}
+
+/** 拉取标签云 + 侧栏热门 */
+const fetchTagsAndHot = async () => {
+  const [tagRes, hotRes] = await Promise.all([
+    hotTagsApi(50),
+    recommendBlogsApi(5),
+  ])
+  hotTags.value = tagRes.data ?? []
+  hotNotes.value = (hotRes.data ?? []).map((b) => ({
+    ...b,
+    publishTime: b.publishTime ? formatDateTime(b.publishTime) : b.publishTime,
+  }))
+}
+
+/** 搜索/标签/排序变化时回到第一页重新拉取 */
+watch([keyword, selectedTagIds, sortKey], () => {
+  pageNum.value = 1
+  void fetchBlogs()
 })
 
-/** 标签排行（按博客数） */
-const tagRanking = [...tags].sort((a, b) => b.count - a.count).slice(0, 10)
-
-/** 热门笔记（侧栏） */
-const hotNotes = [...blogs].filter((b) => b.status === 'PUBLISHED').sort((a, b) => b.viewCount - a.viewCount).slice(0, 5)
-
-/** Hero 右侧概览卡数据 */
-const publishedBlogCount = blogs.filter((b) => b.status === 'PUBLISHED').length
-const totalReads = blogs.reduce((s, b) => s + b.viewCount, 0).toLocaleString()
+onMounted(() => {
+  void fetchTagsAndHot()
+  void fetchBlogs()
+})
 </script>
 
 <template>
@@ -79,22 +128,23 @@ const totalReads = blogs.reduce((s, b) => s + b.viewCount, 0).toLocaleString()
             <button class="notes__search-btn" type="button">搜索</button>
           </div>
 
-          <!-- 标签云（最全） -->
+          <!-- 标签云（最全，公开 /portal/tag/hot） -->
           <div class="notes__tagcloud">
             <span class="notes__tagcloud-label">
               <KhIcon name="tag" :size="14" /> 全部标签
             </span>
             <button
-              v-for="t in tags"
-              :key="t.id"
+              v-for="t in hotTags"
+              :key="t.tagId"
               class="notes__tagchip"
-              :class="[`notes__tagchip--${t.tone}`, { 'is-active': selectedTags.includes(t.name) }]"
+              :class="{ 'is-active': selectedTagIds.includes(t.tagId) }"
               type="button"
-              @click="toggleTag(t.name)"
+              @click="toggleTag(t.tagId)"
             >
-              {{ t.name }}
-              <span class="notes__tagchip-count">{{ t.count }}</span>
+              {{ t.tagName }}
+              <span class="notes__tagchip-count">{{ t.contentCount ?? 0 }}</span>
             </button>
+            <span v-if="!hotTags.length" class="notes__tagcloud-empty">暂无标签，待博客发文后收录</span>
           </div>
         </div>
 
@@ -110,7 +160,7 @@ const totalReads = blogs.reduce((s, b) => s + b.viewCount, 0).toLocaleString()
               <div class="notes__overview-label">已发布博客</div>
             </div>
             <div class="notes__overview-stat">
-              <div class="notes__overview-value">{{ tags.length }}</div>
+              <div class="notes__overview-value">{{ tagCount }}</div>
               <div class="notes__overview-label">收录标签</div>
             </div>
             <div class="notes__overview-stat">
@@ -130,7 +180,7 @@ const totalReads = blogs.reduce((s, b) => s + b.viewCount, 0).toLocaleString()
     <section class="kh-container kh-container--wide notes__body">
       <div class="notes__main">
         <div class="notes__toolbar">
-          <div class="notes__count">共 <b>{{ filteredBlogs.length }}</b> 篇笔记</div>
+          <div class="notes__count">共 <b>{{ total }}</b> 篇笔记</div>
           <div class="notes__sort">
             <button
               v-for="o in sortOptions"
@@ -145,16 +195,23 @@ const totalReads = blogs.reduce((s, b) => s + b.viewCount, 0).toLocaleString()
           </div>
         </div>
 
-        <div v-if="filteredBlogs.length" class="notes__list">
-          <BlogRow v-for="b in filteredBlogs" :key="b.blogId" :blog="b" />
+        <div v-if="blogList.length" class="notes__list">
+          <BlogRow v-for="b in blogList" :key="b.blogId" :blog="b" />
         </div>
-        <KhCard v-else padding="lg" class="notes__empty">
+        <KhCard v-else-if="!loading" padding="lg" class="notes__empty">
           <KhIcon name="search" :size="40" :stroke="1.4" />
           <p>没有匹配的笔记，换个标签或关键词试试</p>
         </KhCard>
 
-        <div class="notes__pager">
-          <el-pagination layout="prev, pager, next" :total="filteredBlogs.length" :page-size="9" background />
+        <div v-if="blogList.length && total > pageSize" class="notes__pager">
+          <el-pagination
+            layout="prev, pager, next"
+            :total="total"
+            :page-size="pageSize"
+            :current-page="pageNum"
+            background
+            @current-change="onPageChange"
+          />
         </div>
       </div>
 
@@ -162,29 +219,37 @@ const totalReads = blogs.reduce((s, b) => s + b.viewCount, 0).toLocaleString()
       <aside class="notes__aside">
         <KhCard padding="md" class="notes__panel">
           <KhSectionTitle title="标签排行" />
-          <ol class="notes__rank">
-            <li v-for="(t, i) in tagRanking" :key="t.id" class="notes__rank-item" @click="toggleTag(t.name)">
+          <ol v-if="tagRanking.length" class="notes__rank">
+            <li v-for="(t, i) in tagRanking" :key="t.tagId" class="notes__rank-item" @click="toggleTag(t.tagId)">
               <span class="notes__rank-no">{{ i + 1 }}</span>
-              <span class="notes__rank-name">{{ t.name }}</span>
+              <span class="notes__rank-name">{{ t.tagName }}</span>
               <span class="notes__rank-bar">
-                <span class="notes__rank-bar-fill" :style="{ width: `${(t.count / (tagRanking[0]?.count ?? 1)) * 100}%` }" />
+                <span class="notes__rank-bar-fill" :style="{ width: `${((t.contentCount ?? 0) / (tagRanking[0]?.contentCount ?? 1)) * 100}%` }" />
               </span>
-              <span class="notes__rank-count">{{ t.count }}</span>
+              <span class="notes__rank-count">{{ t.contentCount ?? 0 }}</span>
             </li>
           </ol>
+          <div v-else class="notes__panel-empty">
+            <KhIcon name="tag" :size="28" :stroke="1.4" />
+            <p>暂无标签数据</p>
+          </div>
         </KhCard>
 
         <KhCard padding="md" class="notes__panel">
           <KhSectionTitle title="近期热门" />
-          <ul class="notes__hot">
+          <ul v-if="hotNotes.length" class="notes__hot">
             <li v-for="(b, i) in hotNotes" :key="b.blogId" class="notes__hot-item" @click="$router.push(`/blog/${b.blogId}`)">
               <span class="notes__hot-no" :class="{ 'is-top': i < 3 }">{{ i + 1 }}</span>
               <div class="notes__hot-text">
                 <div class="notes__hot-title kh-line-clamp-2">{{ b.title }}</div>
-                <div class="notes__hot-meta">{{ b.viewCount }} 阅读 · {{ b.authorNickname }}</div>
+                <div class="notes__hot-meta">{{ b.viewCount ?? 0 }} 阅读<span v-if="b.authorNickname"> · {{ b.authorNickname }}</span></div>
               </div>
             </li>
           </ul>
+          <div v-else class="notes__panel-empty">
+            <KhIcon name="blog" :size="28" :stroke="1.4" />
+            <p>暂无热门笔记</p>
+          </div>
         </KhCard>
       </aside>
     </section>
@@ -371,13 +436,23 @@ const totalReads = blogs.reduce((s, b) => s + b.viewCount, 0).toLocaleString()
   font-size: 10px;
   color: var(--kh-text-tertiary);
 }
+.notes__tagcloud-empty {
+  font-size: 12px;
+  color: var(--kh-text-tertiary);
+  padding: 4px 0;
+}
 
 .notes__body {
   display: grid;
   grid-template-columns: 1fr 300px;
   gap: var(--kh-space-6);
   margin-top: var(--kh-space-10);
-  align-items: start;
+  align-items: stretch;
+}
+.notes__main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
 }
 .notes__toolbar {
   display: flex;
@@ -428,7 +503,11 @@ const totalReads = blogs.reduce((s, b) => s + b.viewCount, 0).toLocaleString()
   display: flex;
   flex-direction: column;
   align-items: center;
+  justify-content: center;
   gap: var(--kh-space-3);
+  /* 空态撑满左侧主体到与右侧侧栏齐高（grid align-items:stretch + main flex 列） */
+  flex: 1;
+  min-height: 320px;
 }
 .notes__pager {
   display: flex;
@@ -529,6 +608,20 @@ const totalReads = blogs.reduce((s, b) => s + b.viewCount, 0).toLocaleString()
   margin-top: 4px;
   font-size: 11px;
   color: var(--kh-text-tertiary);
+}
+
+/* 侧栏空态：标签排行/近期热门无数据时占位 */
+.notes__panel-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--kh-space-2);
+  padding: var(--kh-space-6) 0;
+  color: var(--kh-text-tertiary);
+  text-align: center;
+}
+.notes__panel-empty p {
+  font-size: 12px;
 }
 
 @media (max-width: 1024px) {

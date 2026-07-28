@@ -47,6 +47,9 @@ public class Article extends BaseEntity {
 
     private Date publishTime;
 
+    /** 浏览量（独立访客数，user_view_history 首次 INSERT +1，冗余列读快） */
+    private Long viewCount;
+
     private Integer deleted;
 
     // ---- 非表字段（列表/详情查询 join 带出的展示字段，resultMap 映射，不入库） ----
@@ -161,6 +164,14 @@ public class Article extends BaseEntity {
 
     public void setPublishTime(Date publishTime) {
         this.publishTime = publishTime;
+    }
+
+    public Long getViewCount() {
+        return viewCount;
+    }
+
+    public void setViewCount(Long viewCount) {
+        this.viewCount = viewCount;
     }
 
     public Integer getDeleted() {

@@ -55,6 +55,9 @@ public class Resource extends BaseEntity {
     /** 下载次数（仅 FILE 下载 +1，LINK 点击不计） */
     private Long downloadCount;
 
+    /** 浏览量（独立访客数，user_view_history 首次 INSERT +1，冗余列读快；与 download_count 正交） */
+    private Long viewCount;
+
     private Integer deleted;
 
     // ---- 非表字段（列表/详情查询 join 带出的展示字段，resultMap 映射，不入库） ----
@@ -209,6 +212,14 @@ public class Resource extends BaseEntity {
 
     public void setDownloadCount(Long downloadCount) {
         this.downloadCount = downloadCount;
+    }
+
+    public Long getViewCount() {
+        return viewCount;
+    }
+
+    public void setViewCount(Long viewCount) {
+        this.viewCount = viewCount;
     }
 
     public Integer getDeleted() {
