@@ -176,10 +176,10 @@
 
     <!--
       标签热度榜：统计 blog_tag + article_tag 关联的 PUBLISHED+公开内容。
-      - blog 侧：blog status=PUBLISHED + level<=1（公开门户，标签榜只数公开内容）
-      - article 侧：article status=PUBLISHED + visibility=PUBLIC（公开文章）
-      hotScore = 关联内容的 (like*2+collect*3+view) 之和；contentCount = 关联内容数。
-      union 两类后按 tag 聚合，按 hotScore desc。
+      - blog 侧：blog status=PUBLISHED + level=1（公开门户，标签榜只数公开内容），score = like*2+collect*3+view
+      - article 侧（2026-07-29 升级维度，与 blog 同维度）：article status=PUBLISHED + visibility=PUBLIC，
+        score = like*2+collect*3+view（文章新增 article_like/article_collect 后维度对齐博客，跨内容可比）
+      hotScore = 关联内容的 score 之和；contentCount = 关联内容数。union 两类后按 tag 聚合，按 hotScore desc。
     -->
     <select id="hotTags" resultType="com.knowhub.pojo.tag.vo.HotTagVo">
         select t.tag_id as tagId, t.tag_name as tagName,
@@ -193,7 +193,7 @@
             group by bt.tag_id
             union all
             select at2.tag_id, count(distinct a.article_id) as cnt,
-                   coalesce(sum(a.view_count), 0) as score
+                   sum(a.like_count * 2 + a.collect_count * 3 + a.view_count) as score
             from article_tag at2
                      inner join article a on a.article_id = at2.article_id
             where a.deleted = 0 and a.status = 'PUBLISHED' and a.visibility = 'PUBLIC'

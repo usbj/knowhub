@@ -29,6 +29,7 @@ import { resources } from '@/mock/resource'
 import { notices } from '@/mock/notice'
 import { viewLevelTagType, getViewLevelLabel } from '@/utils/viewLevel'
 import { getMyBlogsApi } from '@/api/knowhub/authoring'
+import { getMyArticlesApi } from '@/api/knowhub/article-authoring'
 import type { BlogRecord } from '@/types/api/knowhub/authoring'
 import { formatDateTime } from '@/utils/format'
 
@@ -87,6 +88,44 @@ const fetchMyBlogs = async () => {
     myBlogsLoading.value = false
   }
 }
+
+/** 当前用户的文章（真实接口拉取，/authoring/article/list 薄封装 quarryArticle 走作者分支），文章=章节集合 */
+const myArticles = ref<{
+  id: number
+  title: string
+  status: string
+  visibility: string
+  chapters: number | string
+  views: number
+  updateTime: string
+  coverObjectKey?: string
+}[]>([])
+const myArticlesLoading = ref(false)
+const fetchMyArticles = async () => {
+  myArticlesLoading.value = true
+  try {
+    const res = await getMyArticlesApi({ pageNum: 1, pageSize: 20 })
+    myArticles.value = (res.records ?? []).map((a) => ({
+      id: a.articleId,
+      title: a.title,
+      status: a.status ?? 'DRAFT',
+      visibility: a.visibility ?? 'PRIVATE',
+      chapters: '—',
+      views: a.viewCount ?? 0,
+      updateTime: a.updateTime
+        ? (formatDateTime(a.updateTime) as string)
+        : a.publishTime
+          ? (formatDateTime(a.publishTime) as string)
+          : '',
+      coverObjectKey: a.coverObjectKey,
+    }))
+  } catch {
+    myArticles.value = []
+  } finally {
+    myArticlesLoading.value = false
+  }
+}
+
 const myProjects = projects
   .filter(
     (p) =>
@@ -115,7 +154,7 @@ const myMessages = notices.slice(0, 3)
 
 const tabs: { key: TabKey; label: string; count: number }[] = [
   { key: 'blog', label: '我的博客', count: currentUser.stats.blogs },
-  { key: 'article', label: '我的文章', count: 8 },
+  { key: 'article', label: '我的文章', count: myArticles.value.length },
   { key: 'project', label: '我的项目', count: currentUser.stats.projects },
   { key: 'resource', label: '我的资源', count: currentUser.stats.resources },
   { key: 'collect', label: '我的收藏', count: currentUser.stats.collections },
@@ -125,7 +164,7 @@ const tabs: { key: TabKey; label: string; count: number }[] = [
 /** 创作下拉 */
 const createItems: { icon: string; label: string; tone: string; to?: string }[] = [
   { icon: 'blog', label: '创作博客', tone: 'var(--kh-primary)', to: '/blog/create' },
-  { icon: 'doc', label: '创作文章', tone: 'var(--kh-accent)' },
+  { icon: 'doc', label: '创作文章', tone: 'var(--kh-accent)', to: '/article/create' },
   { icon: 'project', label: '创建项目', tone: 'var(--kh-warm)' },
   { icon: 'resource', label: '上传资源', tone: 'var(--kh-success)' },
 ]
@@ -133,6 +172,7 @@ const createItems: { icon: string; label: string; tone: string; to?: string }[] 
 const statusMeta: Record<string, { text: string; type: 'success' | 'warning' | 'danger' | 'neutral' | 'info' }> = {
   PUBLISHED: { text: '已发布', type: 'success' },
   PENDING_REVIEW: { text: '待审核', type: 'warning' },
+  PENDING_AUTHOR_REVIEW: { text: '待作者审', type: 'warning' },
   REJECTED: { text: '已驳回', type: 'danger' },
   DRAFT: { text: '草稿', type: 'neutral' },
   REVOKED: { text: '已撤回', type: 'neutral' },
@@ -141,6 +181,13 @@ const statusMeta: Record<string, { text: string; type: 'success' | 'warning' | '
 
 const typeLabel: Record<string, string> = { COMPETITION: '比赛', PRACTICE: '练习', OPS: '运维' }
 const catLabel: Record<string, string> = { WEBSITE: '网站', SOFTWARE: '软件', SCRIPT: '脚本', DOCUMENT: '文档', TOOL: '工具' }
+
+/** 文章内部可见性三档 label（决定章节提交审不审，与等级正交） */
+const visibilityLabel: Record<string, string> = {
+  PRIVATE: '未公开',
+  SEMIPUBLIC: '半公开',
+  PUBLIC: '全公开',
+}
 
 /** 统计卡 */
 const userStats = computed(() => [
@@ -165,14 +212,20 @@ onMounted(async () => {
     activeTab.value = tab as TabKey
   }
   await fetchMyBlogs()
+  // 从文章创作页跳回 ?tab=article 时也预拉文章列表
+  if (activeTab.value === 'article') {
+    void fetchMyArticles()
+  }
 })
 
-// tab 切到 blog 或 route query t 变化（带时间戳跳转）：重拉我的博客，保证新建草稿立即可见
+// tab 切到 blog/article 或 route query t 变化（带时间戳跳转）：重拉对应列表，保证新建草稿立即可见
 watch(
   () => [activeTab.value, route.query.t],
   ([tab]) => {
     if (tab === 'blog') {
       void fetchMyBlogs()
+    } else if (tab === 'article') {
+      void fetchMyArticles()
     }
   },
 )
@@ -255,6 +308,7 @@ watch(
               <h2 class="profile__tab-title">{{ activeTabLabel }}</h2>
               <div class="profile__tab-tools">
                 <button v-if="activeTab === 'blog'" class="profile__tab-tool" type="button" @click="$router.push('/blog/create')"><el-icon><Plus /></el-icon> 新建</button>
+                <button v-if="activeTab === 'article'" class="profile__tab-tool" type="button" @click="$router.push('/article/create')"><el-icon><Plus /></el-icon> 新建</button>
               </div>
             </div>
 
@@ -287,11 +341,32 @@ watch(
               </div>
             </div>
 
-            <!-- 我的文章（占位同结构） -->
+            <!-- 我的文章（真实接口 /authoring/article/list，文章=章节集合） -->
             <div v-else-if="activeTab === 'article'" class="profile__list">
-              <div class="profile__placeholder">
+              <div v-if="myArticlesLoading" class="profile__placeholder">
+                <p>加载中…</p>
+              </div>
+              <div v-else-if="!myArticles.length" class="profile__placeholder">
                 <KhIcon name="doc" :size="40" :stroke="1.4" />
-                <p>文章管理（章节集合型）—— 内容同博客列表结构，正式制作时接入文章模块接口</p>
+                <p>还没有文章，点上方「新建」开始创作（文章 = 章节集合，正文写在各章节里）</p>
+              </div>
+              <div v-for="a in myArticles" :key="a.id" class="profile__row">
+                <div class="profile__row-main">
+                  <div class="profile__row-title" @click="$router.push(`/article/${a.id}/chapters`)">{{ a.title }}</div>
+                  <div class="profile__row-meta">
+                    <KhTag size="sm" :type="statusMeta[a.status]?.type ?? 'neutral'">{{ statusMeta[a.status]?.text ?? '未知' }}</KhTag>
+                    <KhTag size="sm" type="info">{{ visibilityLabel[a.visibility] ?? a.visibility }}</KhTag>
+                    <span>{{ a.views }} 阅读</span>
+                    <span>·</span>
+                    <span>{{ a.updateTime }}</span>
+                  </div>
+                </div>
+                <div class="profile__row-actions">
+                  <!-- 章节管理：文章的核心操作是管理章节（新增/编辑/发布/撤回章节） -->
+                  <button class="profile__row-btn" type="button" title="章节管理" @click="$router.push(`/article/${a.id}/chapters`)"><el-icon><Plus /></el-icon></button>
+                  <!-- 编辑文章元信息（标题/前言/等级/可见性/封面/标签） -->
+                  <button class="profile__row-btn" type="button" title="编辑文章信息" @click="$router.push(`/article/create?id=${a.id}`)"><el-icon><Edit /></el-icon></button>
+                </div>
               </div>
             </div>
 

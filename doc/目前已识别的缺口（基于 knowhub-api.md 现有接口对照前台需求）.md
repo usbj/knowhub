@@ -2,9 +2,9 @@
 
 1. **首页聚合接口**：现有接口都是单模块 list，缺一个首页聚合推荐接口（综合返回推荐博客/项目/资源/公告 + 统计），否则前台首页要并发调 4-5 个 list 拼装。
 2. **公告展示接口**：rookie 有通知模块（`SysNotice`/`SysNoticeGroup`），但前台需要的"全站公告轮播"需要 `GET /notice/public/list` 之类的公开公告接口（当前通知是后台管理 + "我的通知"，无面向访客的公开公告接口）。
-3. **标签热门度接口**：笔记导航要展示"标签最多/标签排行"，需要 `GET /tag/hot`（按博客数排序的标签列表 + count），当前 `GET /tag/list` 不带使用计数排序。
-4. **博客搜索接口**：§11.2 笔记导航要"内容模糊搜索"，当前 `GET /blog/list` 走 quarry 参数，能否全文搜正文待确认；可能需要独立搜索接口或 Elasticsearch（§8.1 提及）。
-5. **文档搜索接口**：文档学习页"专门文档搜索"，章节集合型文章的搜索接口当前未见（文章模块接口待查 knowhub-api.md）。
+3. **标签热门度接口**：~~笔记导航要展示"标签最多/标签排行"，需要 `GET /tag/hot`（按博客数排序的标签列表 + count），当前 `GET /tag/list` 不带使用计数排序。~~ ✅ 已解决：`GET /portal/tag/hot`（2026-07-15 博客前台门户落地，统计 blog_tag+article_tag 关联的 PUBLISHED+公开内容 score 之和，2026-07-29 文章分支维度升级为 like×2+collect×3+view 与博客对齐）。前台/notes、前台/docs 共用同一榜单。
+4. **博客搜索接口**：~~§11.2 笔记导航要"内容模糊搜索"，当前 `GET /blog/list` 走 quarry 参数，能否全文搜正文待确认；可能需要独立搜索接口或 Elasticsearch（§8.1 提及）。~~ ✅ 已解决：`GET /portal/blog/search`（2026-07-15，FULLTEXT ngram 标题+正文，RELEVANCE/HOT/LATEST 排序，分页）。
+5. **文档搜索接口**：~~文档学习页"专门文档搜索"，章节集合型文章的搜索接口当前未见（文章模块接口待查 knowhub-api.md）。~~ ✅ 已解决：`GET /portal/article/search`（2026-07-29 文章前台门户落地，FULLTEXT ngram 覆盖文章标题/简介 + 章节正文，命中章节由 matchedChapters 标出便于跳章节阅读页）。
 6. **项目活跃度接口**：项目展示要"最活跃项目"，需按活跃度（下载量/更新时间/成员数）排序的 `GET /project/active`，当前 `GET /project/list` 排序能力待确认。
 7. **资源分类聚合/热门下载榜接口**：资源推荐页要"热门下载榜 + 分类聚合"，需 `GET /resource/hot` + 分类维度聚合。
 8. **个人中心聚合接口**：用户全部创作内容（博客/文章/项目/资源）+ 收藏 + 统计，缺一个 `/profile/overview` 聚合接口。

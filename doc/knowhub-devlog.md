@@ -824,3 +824,78 @@ knowhub 项目管理模块开发，详见 `doc/knowhub-project-design.md`。项�
 **校验**：mvn -pl knowhub -am compile BUILD SUCCESS；rookie-ui npm run type-check 通过。
 
 **待用户人工验证**：① 跑 sql/knowhub-blog-edit-level-cleanup.sql 后 sys_menu knowhub:blog:* 应 12 行(无 edit:l1-3)；② 非作者非 admin 用户(即便勾了 knowhub:blog:edit)编辑别人博客→后端拒「无权编辑该博客（仅作者或超级管理员）」，前端列表别人博客不显编辑/发布/撤回按钮；③ 作者改自己博客(含 level L1→L3)通过；④ admin 改任意博客通过；⑤ 查看等级仍生效(非 L3 作者用户列表只见 L1/L2，自己写的 L3 仍可见)。
+
+### 2026-07-29 文章前台门户模块落地 + 文章新增收藏/点赞 + 章节内容搜索 + 标签热度榜文章维度升级
+
+**背景**：文章模块后台 CRUD/双重审核已完整（2026-07-09），但前台 portal 接口完全为零（knowhub-ui 文档学习三页 docs/index.vue、doc/detail.vue、doc/read.vue 100% 消费 @/mock/doc）。博客前台门户已于 2026-07-15 落地（doc/blog-portal-and-view-history-plan.md），是本次文章前台对接的现成样板。用户要求：文档学习接后端含推荐（标签热度/浏览量/收藏多维，参考笔记导航=博客 portal）、搜索覆盖标题/简介/章节内容（命中章节标出，可接受就加）、标签热度与笔记导航共用且热度是博客+文章综合计算。
+
+**用户拍板四决策**：① 给文章新增 article_collect + article_like（照 blog 范式）+ 主表冗余 like_count/collect_count，推荐维度与博客对齐；② 章节内容搜索加上并标出命中章节（chapter.content 加 FULLTEXT ngram）；③ 标签热度直接复用既有 /portal/tag/hot（其 article 分支随①升级到 like×2+collect×3+view，与博客同维度）；④ 文章前台复用博客的分级推荐开关 + 详情越级锁态。
+
+**现状核查（Explore agent 确凿）**：article/chapter.view_count 列已存在且被浏览历史递增但 result_map/SELECT 没映射→VO 恒 null（底座 bug）；article_tag 已建；文章/章节无任何收藏/点赞；章节正文 chapter.content 不可搜索；无 ArticlePortalController；/portal/tag/hot 已 union blog_tag+article_tag（article 分支只用 view_count）；分级推荐开关 PortalConfigReader 已存在（博客侧）。blog_collect/blog_like 主表冗余 collect_count/like_count 范式 + incrCollectCount/incrLikeCount 范式可直接照抄。
+
+**SQL**（新文件 `sql/knowhub-article-portal.sql`，幂等 information_schema + PREPARE）：article_collect（PK article_id+user_id + idx_ac_user/article，照 blog_collect）、article_like（同构），article 主表加 like_count/collect_count bigint DEFAULT 0 + 各自索引，article 加 FULLTEXT ft_article_title_summary(title,summary) ngram，chapter 加 FULLTEXT ft_chapter_content(content) ngram。无新菜单/字典/sys_config（开关复用博客 knowhub.portal.hierarchical.enabled）。
+
+**后端**（com.knowhub.article.*，照内容模块切分；不新建 Maven 模块）：
+- 新建 entity `ArticleCollect`/`ArticleLike`（PK 复合，照 BlogCollect/BlogLike）；mapper `ArticleCollectMapper`+xml（insert ignore/delete/get/byUserIds listCollectedArticleIds）`ArticleLikeMapper`+xml。
+- 新建 `ArticlePortalMapper`+xml：searchArticles（MATCH(title,summary)+EXISTS(MATCH chapter.content) + article_tag join tagIds + HOT/LATEST/RELEVANCE 排序）、recommendByTags、recommendHot、relatedArticles、getPortalArticleMeta、listChapterOutline、getChapterContent、matchedChapters、getTagIdsByArticleIds、getChapterCountByArticleIds、preferTagsByUser（article_collect×3+article_like×1+浏览文章 tag×1）、viewedArticleIdsByUser。全 SQL 带 `deleted=0 AND status='PUBLISHED' AND level<=#{userViewLevel}` 前台铁律。coverUrl 由 SQL join file_object ARTICLE_COVER 取 object_id 后 concat('/file/resolve/', object_id)（对齐 FileService 落库稳定引用语义）。
+- 新建 pojo `ArticlePortalVo`(+matchedChapters)/`ArticlePortalDetailVo`(继承+chapterList+locked+lockReason)/`ChapterContentVo`/`MatchedChapterVo`(+articleId)/`ChapterOutlineVo`/quarry `ArticlePortalSearchQuarry`(+userViewLevel 透传)。
+- 新建 service `ArticlePortalService`+`ArticlePortalServiceImpl`：resolveUserViewLevel（复用 PortalConfigReader，关→1 二元闸/开→max(1,ArticlePermissionResolver.view) 阶梯闸）、search（PageHelper 分页+批量回填 tag/chapterCount/仅 keyword 时 matchedChapters）、recommend（两段式偏好召回+热门兜底，Service Java 算分 tag命中×5+collect×3+like×2+view×1+时间衰减）、getDetail（章节大纲无论越级都下发；越级 locked+lockReason 不计浏览量；达权 recordView ARTICLE）、related、getChapterContent（越级先查 article meta 判定，越级返 locked + content=null；达权 recordView CHAPTER）、toggleCollect/toggleLike（@Transactional，upsert 事实表 + 主表 incrXxx 同步 ±1，照 BlogServiceImpl.toggleCollect）、listMyCollected（按收藏顺序重排前台可见文章）。防御取 currentUserOrNull（permitAll 区不强转）。
+- 新建 controller `ArticlePortalController`（/portal/article/* 5 读无 @PreAuthorize）+ `ArticleAuthoringController`（/authoring/article/** toggle collect/like + collect/list，@PreAuthorize(isAuthenticated)）。
+- 改 `Article` 实体 + `ArticleVo` 加 likeCount/collectCount；`ArticleMapper.xml` resultMap 补 view_count/like_count/collect_count + quarryArticle SELECT 补三列 + 加 incrLikeCount/incrCollectCount update；`ChapterMapper.xml` resultMap + quarryChapter SELECT 补 view_count（底座 bug 修复）。
+- 改 `BlogPortalMapper.xml` hotTags：article 分支 `coalesce(sum(view_count),0)` → `sum(like_count*2+collect_count*3+view_count)`，维度与 blog 分支对齐（过滤维持 visibility='PUBLIC' + level=1，公开门户语义不变）。
+
+**前端**（knowhub-ui）：新建 `api/knowhub/article.ts`（searchArticlesApi/recommendArticlesApi/getArticleDetailApi/getChapterContentApi/relatedArticlesApi/collectArticleApi/likeArticleApi/listMyCollectedArticlesApi）+ `types/api/knowhub/article.ts`（ArticlePortalRecord/Detail/MatchedChapter/ChapterOutline/ChapterContent/SearchQuery）。`views/docs/index.vue` 照 notes/index.vue 范式重写（搜索→searchArticlesApi、标签云+排行复用 hotTagsApi 即 /portal/tag/hot 与笔记导航共用、侧栏推荐→recommendArticlesApi、排序 最新/最热/相关度、分页）；`views/doc/detail.vue` 切 getArticleDetailApi（meta+章节大纲 v-for chapterList、越级锁态置灰"开始阅读" + lockReason 提示）；`views/doc/read.vue` 切 getArticleDetailApi（目录 chapterList）+ getChapterContentApi（章节正文 v-md-preview、越级锁态提示 dv eyebrow、上下章导航），路径段 :chapterId；`components/doc/DocCard.vue` MockDoc→ArticlePortalRecord（去 mock 耦合，matchedChapters 标"命中章节：x章"chips 可点跳章节阅读页，封面 coverUrl）；路由 `/docs/:id/read` → `/docs/:id/read/:chapterId`。
+
+**遵守约定**：未修改 rookie-* 模块代码；新模块产物全在 knowhub 模块 com.knowhub.article.*（+BlogPortalMapper.xml 一句升级属范围内已确认）；不新建 Maven 模块；无新菜单/字典/sys_config 续编（不涉 SQL ID 续编坑）；时间字段后端 Date/前端 string（契约不变）。mock/doc.ts 现已无任何引用，按约定不重构不删（终归删除）。
+
+**校验**：mvn -pl knowhub -am clean compile BUILD SUCCESS（175 源文件全编译通过）；knowhub-ui npm run type-check 通过（无错误输出）。
+
+**待用户人工验证**：① 跑 sql/knowhub-article-portal.sql 后 article_collect/article_like 建表 + article.like_count/collect_count 列 + article/chapter FULLTEXT ngram 索引到位；② /portal/article/search keyword 命中标题、命中简介、命中章节内容三条路径各试，命中章节时卡片标"命中章节：x章"可点跳阅读页对应章；③ /portal/article/recommend 登录用户先收藏/点赞几篇文章后再调，应按偏好 tag 召回；未登录走全局热门；④ /portal/article/{id} 越级（level=2 文章 + 开关关）→locked=true+lockReason，"开始阅读"置灰，不计浏览量；达权→章节大纲可用+ recordView；⑤ /portal/article/{id}/chapter/{chapterId} 越级→content null + locked；达权→章节正文 markdown 渲染；⑥ PUT /authoring/article/{id}/collect|like 切换后主表 like_count/collect_count 同步 ±1，重复切换不重复计；⑦ /portal/tag/hot 在笔记导航与文档学习页同一榜单，文章分支纳入 like/collect 维度（收藏点赞文章后该 tag 热度上涨）；⑧ knowhub-ui /docs 列表/搜索/标签云/排行 + /docs/:id 详情 + /docs/:id/read/:chapterId 章节阅读 三页真接口全通；⑨ ArticleVo.viewCount 后台文章列表也不再恒 null（底座映射修复正向收益）。
+
+### 2026-07-31 博客点赞收藏接口迁前台（后台用不到，挪 /authoring/blog/** 与文章范式对齐）
+
+**背景**：后台 `controller/admin/BlogController` 里有 `PUT /blog/like/{blogId}` 与 `PUT /blog/collect/{blogId}`（无 `@PreAuthorize`，后台管理页用不到这两个互动接口）；前台 `BlogAuthoringController` 此前注释写明"点赞/收藏不进本 controller，复用既有 PUT /blog/like|collect"。文章前台门户 2026-07-29 已把点赞收藏放到 `/authoring/article/{id}/like|collect`，博客范式不一致。用户要求：博客点赞收藏接口挪到前台对应 controller。
+
+**后端**（com.knowhub.controller.portal）：
+- `BlogAuthoringController`（/authoring/blog/**）增两条：`PUT /authoring/blog/{blogId}/like?liked=true|false`（缺省 true）、`PUT /authoring/blog/{blogId}/collect?collected=true|false`（缺省 true），均 `@PreAuthorize("isAuthenticated()")`，复用同一 `blogService.toggleLike/toggleCollect`（业务不变：`blog_like`/`blog_collect` 明细 ± 主表 `like_count`/`collect_count` 同步）。补 import `RequestParam`，类注释/Tag 描述同步更新。
+- 后台 `BlogController` 删这两条接口 + 清理未用的 `RequestParam` import；`@Tag` 描述改为"CRUD / 发布审核相关接口（点赞收藏已挪前台 /authoring/blog/**）"。
+- query 参数风格统一为缺省 true（与文章 `/authoring/article/{id}/like|collect` 对齐；原后台接口 liked/collected 为必填 query，现已可选）。
+
+**前端**（knowhub-ui）：
+- `api/knowhub/authoring.ts` 注释更新（去掉"不含点赞收藏——复用既有 /blog/like|collect"），补 `likeBlogApi`/`collectBlogApi` 两个薄封装（调新路径，query 传 liked/collected 缺省 true），供博客前台详情页将来接入。
+- `views/blog/detail.vue` 点赞收藏此前仅占位注释（"复用既有 PUT /blog/like|collect 接口接入留后续"），未真正引用旧路径，无破坏性改动。
+
+**文档**（doc/knowhub-api.md）：
+- 博客模块章节「9. 点赞 / 取消点赞」「10. 收藏 / 取消收藏」路径更新为 `/authoring/blog/{blogId}/like|collect`，权限口径改述为"/authoring/** authenticated 兜底"，加迁移说明。
+- 总述（2026-06-30 条目）的博客接口清单去掉 `/blog/like|collect/{id}`，说明里标注"点赞/收藏后改挪前台 /authoring/blog/{id}/like|collect"。
+- 接口更新日志新增 `#### 2026-07-31 博客点赞收藏接口迁前台` 条目。
+
+**校验**：`mvn -pl knowhub -am compile` BUILD SUCCESS；`knowhub-ui npm run type-check` 通过。后端接口层改动不可在 Browser pane 验证，未自启 preview。
+
+### 2026-07-30 文章/章节创作前台对接（薄封装复用后台 service，参考博客创作范式）
+
+**背景**：文档学习前台门户（2026-07-29）补齐文章公开读 /portal/article/* 后，前台仍缺创作侧——文章/章节创作无接口、无创作的页面（文章只能后台管理写，前台作者无法建文/写章节）。用户要求：文章和章节创作参考博客，文章需相关详情信息，章节不要太多杂项。
+
+**用户拍板两点**：① 章节管理用**独立章节管理页**（/article/:id/chapters，列表+状态+编辑/发布/撤回/删除/新增章节），不从文章创作页内嵌；② 章节创作表单精简为**章节名 + 排序 + 正文**三字段（无封面/标签/等级/可见性，章节等级=文章、可见性随文章）。
+
+**现状核查**：后台 ArticleService/ChapterService 已完整（CRUD+双重审核+状态机+权限，2026-07-09 落地），前台直接薄封装复用，无需重写业务逻辑。后台 ArticleCoverUploader 既有口径——封面直存 /file/resolve/{objectId} 到 article.cover_object_key 列（未绑 file_object biz_ref_id），与博客 cover_url 列同流程。这暴露一个上一轮任务 bug：ArticlePortalMapper.xml 的封面 SQL 走 file_object join biz_ref_id 永不命中（cover_url 恒 null），本次顺修为直读 a.cover_object_key 列。FileBusinessType 后端枚举无 CHAPTER_BODY，章节正文配图复用 BLOG_BODY（PUBLIC 同语义）作过渡。ArticleService.getArticleInfo/ChapterService.getChapterInfo 内部 currentUser() 强转 principal——前台 /authoring/** 走 authenticated 兜底，登录态下 principal 是 UserInfo，强转安全；getArticleInfo/getChapterInfo 会 recordView 计一次浏览量（作者编辑回填误计，照博客 BlogAuthoringController.getForEdit 同取舍，草稿本无他人看，可忽略）。
+
+**后端**（com.knowhub.controller.portal，照 BlogAuthoringController 复用 service 范式）：
+- 扩展 `ArticleAuthoringController`（/authoring/article/**）：把上一轮的 collect/like/collect/list 三互动接口与本次创作的 level/list/{articleId}/POST 新建/PUT 编辑/{articleId}/publish/{articleId}/revoke 七接口合并到一个类（避免重复类声明 bug——中途编译报错修复：截断同名残留并合并）。
+- 新建 `ChapterAuthoringController`（/authoring/chapter/**）：list/{chapterId}/POST 提交/PUT 编辑/{chapterId}/publish/{chapterId}/revoke/DELETE {chapterIds}/review-log/{chapterId} 八接口，全部 @PreAuthorize("isAuthenticated()")。
+- 修 `ArticlePortalMapper.xml` articlePortalColumns/Joins：coverUrl 由 `concat('/file/resolve/', fo.object_id)` 改为直读 `a.cover_object_key as cover_url`，删 file_object join（对齐后台封面口径，修上一轮 cover_url 恒 null bug）。
+
+**前端**（knowhub-ui，照 blog/create.vue + BlogCoverUploader 范式）：
+- 新建 `types/api/knowhub/article-authoring.ts`（ArticleAuthoringPayload/Detail + ChapterAuthoringPayload/Detail + ArticleRecord + MyArticleListQuery + MyChapterListQuery；章节 Payload 精简为 chapterId/articleId/chapterName/sortOrder/content 五字段）+ `api/knowhub/article-authoring.ts`（7 文章创作 + 8 章节创作接口薄封装）。
+- 新建 `components/article/ArticleCoverUploader.vue`（照 BlogCoverUploader 换 businessType=ARTICLE_COVER）。
+- 新建 `views/article/create.vue`（文章创作页）：顶部工具条（返回/标题输入/状态徽标/章节管理/存草稿/发布/撤回）+ 前言区（v-md-editor 编辑 summary 可选，文章主表不存正文）+ 元信息折叠（封面/标签多选/查看等级按钮组按 myLevel 禁/可见性按钮组 PRIVATE/SEMIPUBLIC/PUBLIC）；新建存草稿跳 /profile?tab=article&t=<ts>，编辑 ?id= 回填。
+- 新建 `views/article/chapters.vue`（章节管理页 /article/:id/chapters）：文章信息条（标题+可见性提示+新增章节按钮）+ 章节列表（序号/章节名/状态徽标/作者/编辑/发布(再提交)/撤回/删除按钮），PUBLISHED 章节只能撤回后编辑，DRAFT/REJECTED/REVOKED 可发布，本次不暴露章节作者审核 UI（SEMIPUBLIC 场景的 reviewChapter 后置）。
+- 新建 `views/article/chapter-edit.vue`（章节创作/编辑页 /article/:id/chapter/edit?cid=）：工具条（返回章节/章节名输入/状态徽标/保存/提交/撤回）+ 排序输入 + v-md-editor 正文（编辑/预览切换，插图走 presignedUploadFlow businessType='BLOG_BODY' PUBLIC 过渡）；新建态调 submitChapterApi（按文章 visibility 决定状态机），编辑态调 editChapterApi（PUBLISHED 禁编兜底），DRAFT/REJECTED/REVOKED 可用 publishChapterAuthoringApi 再提交。
+- 路由 `src/router/index.ts` 加 3 条 requiresAuth：`/article/create`、`/article/:id/chapters`、`/article/:id/chapter/edit`（M 状态的 beforeEach 守卫改动未动，尊重已有改动）。
+- 改 `views/profile/index.vue`：「我的文章」tab 从占位接通真接口 getMyArticlesApi（+activeTab 切'article'触发重拉+?tab=article 进站预拉）；"我的文章" 新建按钮（/article/create）；"创作文章"下拉项补 to:'/article/create'；tabs article.count 改 myArticles.value.length 动态；statusMeta 补 PENDING_AUTHOR_REVIEW；加 visibilityLabel 三档映射；列表行加"章节管理"（Plus 图标跳 /article/:id/chapters）+ "编辑文章信息"（Edit 图标跳 /article/create?id=）。
+
+**遵守约定**：未修改 rookie-* 模块代码；产物全在 knowhub 模块（com.knowhub.controller.portal）+ knowhub-ui（views/article/、components/article/、api/types/profile/router）；不新建 Maven 模块；无新菜单/字典/sys_config（不涉 SQL ID 续编坑）；时间字段契约不变（后端 Date/前端 string）。章节正文配图复用 BLOG_BODY 已注释标记后续过渡，将来加 CHAPTER_BODY 再切换。
+
+**校验**：mvn -pl knowhub -am compile BUILD SUCCESS；knowhub-ui npm run type-check 通过（修两处：chapters.vue 的 element-plus 图标 import `upload`→`Upload` 大小写；chapter-edit.vue 删无用 @ts-expect-error）。
+
+**待用户人工验证**：① /article/create 存草稿跳 /profile?tab=article 出现在"我的文章"列表；② 草稿点"章节管理"进 /article/:id/chapters；③ 新增章节 /article/:id/chapter/edit 写名+排序+正文，作者提交免审直 PUBLISHED；④ 文章等级/可见性/封面/标签选择与等级按钮禁用按 myLevel 生效；⑤ 文章发布按审核开关 PUBLISHED/PENDING_REVIEW；⑥ PUBLISHED 文章/章节须先撤回才能改；⑦ 文章封面 cover_object_key 列存 /file/resolve/{id} 后前台列表/详情能渲染（上一轮 fixed 的 bug 验证）；⑧ 编辑回填正确（getArticleForEditApi/getChapterForEditApi）+非作者访问拒。

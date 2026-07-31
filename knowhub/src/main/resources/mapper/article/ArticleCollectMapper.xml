@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.knowhub.mapper.article.ArticleCollectMapper">
+
+    <resultMap id="ArticleCollectResultMap" type="com.knowhub.pojo.article.entity.ArticleCollect">
+        <id property="articleId" column="article_id"/>
+        <id property="userId" column="user_id"/>
+        <result property="createTime" column="create_time"/>
+    </resultMap>
+
+    <insert id="addArticleCollect" parameterType="com.knowhub.pojo.article.entity.ArticleCollect">
+        insert ignore into article_collect(article_id, user_id) values (#{articleId}, #{userId})
+    </insert>
+
+    <delete id="deleteArticleCollect" parameterType="com.knowhub.pojo.article.entity.ArticleCollect">
+        delete from article_collect where article_id = #{articleId} and user_id = #{userId}
+    </delete>
+
+    <select id="getArticleCollect" parameterType="com.knowhub.pojo.article.entity.ArticleCollect" resultMap="ArticleCollectResultMap">
+        select * from article_collect where article_id = #{articleId} and user_id = #{userId}
+    </select>
+
+    <!-- 当前用户的收藏文章ID列表（按收藏时间倒序；service 层据此 join 出文章 VO） -->
+    <select id="listCollectedArticleIds" resultType="java.lang.Long">
+        select article_id from article_collect where user_id = #{userId} order by create_time desc
+    </select>
+
+</mapper>

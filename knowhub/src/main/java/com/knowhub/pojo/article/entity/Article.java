@@ -50,6 +50,12 @@ public class Article extends BaseEntity {
     /** 浏览量（独立访客数，user_view_history 首次 INSERT +1，冗余列读快） */
     private Long viewCount;
 
+    /** 点赞量（冗余列，以 article_like 为准，前台 toggle 接口事务内同步递增/递减） */
+    private Long likeCount;
+
+    /** 收藏量（冗余列，以 article_collect 为准，前台 toggle 接口事务内同步递增/递减） */
+    private Long collectCount;
+
     private Integer deleted;
 
     // ---- 非表字段（列表/详情查询 join 带出的展示字段，resultMap 映射，不入库） ----
@@ -172,6 +178,22 @@ public class Article extends BaseEntity {
 
     public void setViewCount(Long viewCount) {
         this.viewCount = viewCount;
+    }
+
+    public Long getLikeCount() {
+        return likeCount;
+    }
+
+    public void setLikeCount(Long likeCount) {
+        this.likeCount = likeCount;
+    }
+
+    public Long getCollectCount() {
+        return collectCount;
+    }
+
+    public void setCollectCount(Long collectCount) {
+        this.collectCount = collectCount;
     }
 
     public Integer getDeleted() {

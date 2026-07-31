@@ -16,6 +16,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox, ElSelect, ElOption } from 'element-plus'
 import { ArrowLeft } from '@element-plus/icons-vue'
 import KhIcon from '@/components/common/KhIcon.vue'
+import KhMarkdownEditor from '@/components/common/KhMarkdownEditor.vue'
 import BlogCoverUploader from '@/components/blog/BlogCoverUploader.vue'
 import {
   draftBlogApi,
@@ -26,7 +27,6 @@ import {
   getMyBlogLevelApi,
 } from '@/api/knowhub/authoring'
 import { listEnabledTagsApi } from '@/api/knowhub/blog'
-import { presignedUploadFlow } from '@/utils/upload'
 import { parseMdFile } from '@/utils/md-import'
 import type { BlogAuthoringPayload } from '@/types/api/knowhub/authoring'
 import type { TagRecord } from '@/types/api/knowhub/tag'
@@ -65,16 +65,6 @@ const tagOptions = ref<TagRecord[]>([])
 
 /** 元信息折叠态（默认折叠，写完正文再展开补元信息——content-first 创作流） */
 const metaExpanded = ref(false)
-
-/**
- * 编辑器模式：'edit' 纯编辑原文 | 'preview' 纯预览渲染（只读，不显原文）。
- * 对比模式（'editable' 左右分屏）不在此控件——交给 v-md-editor 自带右工具条的小眼睛按钮，
- * 库内部 action 切 edit↔editable。分工：本浮层管"编辑/预览"二态，小眼睛管"对比"。
- * 保留 'editable' 类型联合值供小眼睛备用（mode prop 接受三态字面量）。
- * 注意库不 emit currentMode 变更回外：用户点小眼睛切到 editable 后，本 ref 仍是上一次值，
- * 浮层高亮会停在编辑/预览之一，是已接受的取舍——两个控件职责不重叠，错乱不显。
- */
-const editorMode = ref<'edit' | 'preview' | 'editable'>('edit')
 
 const saving = ref(false)
 const publishing = ref(false)
@@ -174,31 +164,9 @@ const handleRevoke = async () => {
 }
 
 /**
- * v-md-editor upload-image 回调：串行预签名直传 BLOG_BODY+PUBLIC，
- * 成功 insertImage 插入 ![name](/file/resolve/{id})。
+ * v-md-editor 正文插图上传逻辑已下沉到通用组件 KhMarkdownEditor（businessType=BLOG_BODY + PUBLIC，
+ * 预签名直传 /file/resolve/{id}）。本页不再自写 handleUploadImage。
  */
-const handleUploadImage = async (
-  _event: Event,
-  insertImage: (imageConfig: { name?: string; url: string }) => void,
-  files: File[],
-) => {
-  if (!files || files.length === 0) return
-  for (const file of files) {
-    try {
-      const result = await presignedUploadFlow({
-        file,
-        businessType: 'BLOG_BODY',
-        access: 'PUBLIC',
-      })
-      if (result.publicUrl) {
-        insertImage({ name: file.name, url: result.publicUrl })
-      }
-    } catch (error) {
-      // eslint-disable-next-line no-console
-      console.error('正文图片上传失败', file.name, error)
-    }
-  }
-}
 
 /** 隐藏 file input 的 ref，点击导入按钮触发其 click */
 const mdFileInput = ref<HTMLInputElement | null>(null)
@@ -343,29 +311,11 @@ onMounted(async () => {
 
     <!-- 主体：居中限宽容器 -->
     <div class="create__wrap">
-      <!-- 正文编辑区为主 -->
+      <!-- 正文编辑区为主（v-md-editor 封装到通用组件 KhMarkdownEditor，正文插图走预签名直传 BLOG_BODY+PUBLIC） -->
       <section class="create__editor">
-        <!-- 模式切换：浮在编辑器右下角，编辑/预览二选一；左右对比仍由 v-md-editor 自带小眼睛按钮负责（库内部 action 切 edit↔editable），不在此处重复 -->
-        <div class="create__mode-switch">
-          <button
-            v-for="m in [
-              { v: 'edit', t: '编辑' },
-              { v: 'preview', t: '预览' },
-            ]"
-            :key="m.v"
-            class="create__mode-btn"
-            :class="{ 'is-active': editorMode === m.v }"
-            type="button"
-            @click="editorMode = m.v"
-          >{{ m.t }}</button>
-        </div>
-        <v-md-editor
+        <KhMarkdownEditor
           v-model="form.content"
-          :mode="editorMode"
           height="100%"
-          :upload-image-config="{ accept: 'image/*', maxFileSize: 10 * 1024 * 1024 }"
-          :disabled-menus="[]"
-          @upload-image="handleUploadImage"
         />
       </section>
 
@@ -590,79 +540,12 @@ onMounted(async () => {
 }
 
 /* —— 正文编辑器 —— */
-/* 正文编辑区：overflow: visible 让 v-md-editor 工具栏 tooltip 可溢出顶部，
-   不被外层裁切（hidden 会让超出区域的 tooltip 提示被截掉看不到）；
-   圆角交给 v-md-editor 自身控制（下方 :deep 设 border-radius）。 */
+/* 外框（border + 圆角 + 背景）已下沉到通用组件 KhMarkdownEditor 根；本页只负责让编辑器容器
+   占满正文区高度（固定视口余量 + 最小高度兜底）。 */
 .create__editor {
   position: relative;
   height: calc(100vh - var(--kh-header-height) - 220px);
   min-height: 420px;
-  border: 1px solid var(--kh-border-soft);
-  background: var(--kh-surface);
-}
-/* 模式切换：浮在编辑器右下角的胶囊按钮组，不占独立行、不抢自带工具条位置。
-   z-index 提层避免被 v-md-editor 内部元素遮住。 */
-.create__mode-switch {
-  position: absolute;
-  right: 12px;
-  bottom: 12px;
-  z-index: 5;
-  display: flex;
-  gap: 4px;
-  padding: 4px;
-  border-radius: var(--kh-radius-pill);
-  background: color-mix(in srgb, var(--kh-surface) 92%, transparent);
-  backdrop-filter: blur(8px);
-  border: 1px solid var(--kh-border-soft);
-  box-shadow: var(--kh-shadow-sm);
-}
-.create__mode-btn {
-  height: 28px;
-  padding: 0 14px;
-  border: 1px solid transparent;
-  border-radius: var(--kh-radius-pill);
-  background: transparent;
-  color: var(--kh-text-secondary);
-  font-size: var(--kh-font-size-sm);
-  font-weight: 500;
-  cursor: pointer;
-  transition: all var(--kh-transition-fast);
-}
-.create__mode-btn:hover {
-  color: var(--kh-primary);
-  background: var(--kh-surface-muted);
-}
-.create__mode-btn.is-active {
-  background: var(--kh-primary-soft);
-  border-color: var(--kh-primary-border);
-  color: var(--kh-primary-strong);
-}
-/* 编辑器主体填满 */
-.create__editor :deep(.v-md-editor) {
-  height: 100%;
-  border: none;
-  border-radius: var(--kh-radius-lg);
-  /* 整体 visible：让工具栏 tooltip 可向上溢出到 .create__editor 之外（外层不再裁切）；
-     正文滚动由内部 .v-md-editor__main 自带 overflow:auto 负责，不受此处影响。 */
-  overflow: visible;
-  box-shadow: var(--kh-shadow-sm);
-}
-/* v-md-editor overflow visible 后，靠内部 toolbar/main 自带圆角贴合外框防漏背景 */
-.create__editor :deep(.v-md-editor__toolbar-wrapper),
-.create__editor :deep(.v-md-editor__toolbar),
-.create__editor :deep(.v-md-editor__main) {
-  border-radius: var(--kh-radius-lg);
-}
-.create__editor :deep(.v-md-editor__main) {
-  overflow: auto;
-}
-/* 工具栏本身允许 overflow，避免按钮组 tooltip 被工具条裁切 */
-.create__editor :deep(.v-md-editor__toolbar) {
-  overflow: visible;
-}
-/* 工具栏 tooltip 提层，避免被其它浮层遮住 */
-.create__editor :deep(.v-md-editor__tooltip) {
-  z-index: 3000;
 }
 
 /* —— 元信息折叠面板 —— */

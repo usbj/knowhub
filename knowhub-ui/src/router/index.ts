@@ -2,6 +2,9 @@ import { createRouter, createWebHistory } from 'vue-router'
 import { useUserStore } from '@/stores/user'
 import { useNoticeStore } from '@/stores/notice'
 import { useDictStore } from '@/stores/dict'
+import { get } from '@/utils/http'
+import type { ApiResult } from '@/types/api/common'
+import type { SysUserProfile } from '@/types/api/user'
 
 /**
  * knowhub 前台路由（静态 + 最简鉴权守卫）
@@ -75,6 +78,24 @@ const router = createRouter({
       meta: { title: '写博客', requiresAuth: true },
     },
     {
+      path: '/article/create',
+      name: 'article-create',
+      component: () => import('@/views/article/create.vue'),
+      meta: { title: '写文章', requiresAuth: true },
+    },
+    {
+      path: '/article/:id/chapters',
+      name: 'article-chapters',
+      component: () => import('@/views/article/chapters.vue'),
+      meta: { title: '章节管理', requiresAuth: true },
+    },
+    {
+      path: '/article/:id/chapter/edit',
+      name: 'article-chapter-edit',
+      component: () => import('@/views/article/chapter-edit.vue'),
+      meta: { title: '写章节', requiresAuth: true },
+    },
+    {
       path: '/blog/:id',
       name: 'blog-detail',
       component: () => import('@/views/blog/detail.vue'),
@@ -93,7 +114,7 @@ const router = createRouter({
       meta: { title: '文档详情' },
     },
     {
-      path: '/docs/:id/read',
+      path: '/docs/:id/read/:chapterId',
       name: 'doc-read',
       component: () => import('@/views/doc/read.vue'),
       meta: { title: '文档阅读' },
@@ -117,16 +138,41 @@ const router = createRouter({
 })
 
 /**
- * 前置守卫：最简鉴权。
+ * 前置守卫：最简鉴权 + 进站登录态探活。
  * - 已登录再进 /login 或 /register：直接回首页，避免重复登录。
  * - 需登录页无 token：跳 /login 并带 redirect 回填来源。
- * - 需登录页有 token 但 userInfo 未恢复（刷新页面后）：惰性拉一次 /person。
- * 公开页一律放行，不触发任何鉴权副作用。
+ * - 进站探活：本次 SPA 会话首次进入时，若本地存有 token，主动调 /person 验证是否过期；
+ *   过期则 logout() 全清登录态（含 token/userInfo/公告/字典/系统配置缓存），
+ *   不强制跳登录——让用户继续停在当前公开页，顶栏自然变游客。
+ *   探活用 skipAuthRedirect:true，避开 http.ts 的 401 整页甩登录逻辑，由守卫自己清。
+ * sessionChecked 模块级闸：一次 SPA 会话只探一次（刷新=新会话会再探，符合"每次进网站校验"）。
  */
+let sessionChecked = false
+
 router.beforeEach(async (to) => {
   const userStore = useUserStore()
   const noticeStore = useNoticeStore()
   const dictStore = useDictStore()
+
+  // 进站一次性探活：本地有 token 才验，无 token 是纯游客，跳过。
+  // 避开 /login、/register 自身——这俩页不应触发探活（探活成功会被下面"已登录进登录页"回首页）。
+  if (!sessionChecked && userStore.isAuthenticated && to.path !== '/login' && to.path !== '/register') {
+    sessionChecked = true
+    try {
+      const result = await get<ApiResult<SysUserProfile>>('/person', { skipAuthRedirect: true })
+      if (result.data) {
+        userStore.setUserProfile(result.data)
+      }
+      // 探活成功：惰性拉公告与字典，让顶栏铃铛与字典在登录态恢复后即就绪（失败不阻塞）
+      noticeStore.fetchMyNotices().catch(() => undefined)
+      dictStore.initializeDictionaries().catch(() => undefined)
+    } catch {
+      // /person 401 或网络错 → token 已失效，全清登录态（含各缓存 store reset），
+      // 不跳登录：用户继续停当前公开页，顶栏变游客；若目标是 requiresAuth 页，
+      // 下面 requiresAuth 分支会自然把他送去 /login。
+      userStore.logout()
+    }
+  }
 
   if (userStore.isAuthenticated && (to.path === '/login' || to.path === '/register')) {
     return '/'
@@ -136,20 +182,6 @@ router.beforeEach(async (to) => {
     return {
       path: '/login',
       query: to.fullPath === '/' ? undefined : { redirect: to.fullPath },
-    }
-  }
-
-  // 已登录但刷新页面导致 store userInfo 丢失时，补拉一次个人资料兜底；
-  // 同步惰性拉取公告与字典，让顶栏铃铛与字典展示在恢复登录态后即就绪（失败不阻塞）
-  if (to.meta.requiresAuth && userStore.isAuthenticated) {
-    try {
-      if (!userStore.userInfo) {
-        await userStore.fetchUserProfile()
-      }
-      noticeStore.fetchMyNotices().catch(() => undefined)
-      dictStore.initializeDictionaries().catch(() => undefined)
-    } catch {
-      // /person 拉取失败（token 失效等）时 http 工具已处理跳登录，这里不再额外处置
     }
   }
 

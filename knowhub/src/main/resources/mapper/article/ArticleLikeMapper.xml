@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.knowhub.mapper.article.ArticleLikeMapper">
+
+    <resultMap id="ArticleLikeResultMap" type="com.knowhub.pojo.article.entity.ArticleLike">
+        <id property="articleId" column="article_id"/>
+        <id property="userId" column="user_id"/>
+        <result property="createTime" column="create_time"/>
+    </resultMap>
+
+    <insert id="addArticleLike" parameterType="com.knowhub.pojo.article.entity.ArticleLike">
+        insert ignore into article_like(article_id, user_id) values (#{articleId}, #{userId})
+    </insert>
+
+    <delete id="deleteArticleLike" parameterType="com.knowhub.pojo.article.entity.ArticleLike">
+        delete from article_like where article_id = #{articleId} and user_id = #{userId}
+    </delete>
+
+    <select id="getArticleLike" parameterType="com.knowhub.pojo.article.entity.ArticleLike" resultMap="ArticleLikeResultMap">
+        select * from article_like where article_id = #{articleId} and user_id = #{userId}
+    </select>
+
+</mapper>

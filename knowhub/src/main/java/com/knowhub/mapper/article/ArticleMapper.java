@@ -37,4 +37,12 @@ public interface ArticleMapper {
 
     /** 对账用：查所有处于待审核且未删除的文章 ID（审核开关关闭后定时任务批量放行） */
     List<Long> listPendingReviewIds();
+
+    /** 点赞计数同步主表（delta=+1 点赞新增，-1 取消点赞），照 blog incrLikeCount 范式 */
+    Boolean incrLikeCount(@org.apache.ibatis.annotations.Param("articleId") Long articleId,
+                          @org.apache.ibatis.annotations.Param("delta") Long delta);
+
+    /** 收藏计数同步主表（delta=+1 收藏新增，-1 取消收藏），照 blog incrCollectCount 范式 */
+    Boolean incrCollectCount(@org.apache.ibatis.annotations.Param("articleId") Long articleId,
+                             @org.apache.ibatis.annotations.Param("delta") Long delta);
 }

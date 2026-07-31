@@ -1,12 +1,13 @@
 /**
  * 文件作用：
  * 博客创作接口（/authoring/blog/**，走 /authoring/** authenticated 兜底，需登录态）。
- * 复用后台 BlogService（addBlogInfo/publishBlog/editBlogInfo/revokeBlog），后端含分级创作闸。
- * 不含点赞/收藏——复用既有 PUT /blog/like|collect/{id}（见 BlogController）。
+ * 复用后台 BlogService（addBlogInfo/publishBlog/editBlogInfo/revokeBlog/toggleLike/toggleCollect），后端含分级创作闸。
+ * 点赞/收藏也在此路径下（2026-07-31 从后台 /blog/like|collect/{id} 挪来，与文章 /authoring/article/{id}/like|collect 范式对齐）。
  * - draft/edit：BlogVo 体提交（编辑带 blogId）。
  * - publish/revoke：仅 blogId 路径变量，后端状态机校验（DRAFT/REJECTED/REVOKED 可编辑发布，PUBLISHED 须先撤回）。
  * - getForEdit：编辑回填，复用后台 getBlogInfo（canOp 防越权，含全态+标签+canEdit/isAuthor）。
  * - myLevel：当前用户博客 view 等级（0/1/2/3），创作页等级选择器据此禁用不可选等级。
+ * - like/collect：query 参数 true|false 切换（缺省 true），主表 like_count/collect_count 同步。
  */
 import { get, getPage, post, put } from '@/utils/http'
 import type { ApiResult, NormalizedPageResult } from '@/types/api/common'
@@ -35,6 +36,14 @@ export const getBlogForEditApi = (blogId: number) =>
 /** 当前用户博客 view 等级（0/1/2/3），创作页等级选择器据此禁用不可选等级。 */
 export const getMyBlogLevelApi = () =>
   get<ApiResult<number>>('/authoring/blog/level')
+
+/** 点赞/取消点赞博客（liked 缺省 true；主表 like_count 同步）。2026-07-31 从后台 /blog/like/{id} 挪来。 */
+export const likeBlogApi = (blogId: number, liked = true) =>
+  put<ApiResult<boolean>>(`/authoring/blog/${blogId}/like`, null, { params: { liked } })
+
+/** 收藏/取消收藏博客（collected 缺省 true；主表 collect_count 同步）。2026-07-31 从后台 /blog/collect/{id} 挪来。 */
+export const collectBlogApi = (blogId: number, collected = true) =>
+  put<ApiResult<boolean>>(`/authoring/blog/${blogId}/collect`, null, { params: { collected } })
 
 /**
  * 前台我的博客列表（薄封装 quarryBlog，service 内回填 userId 走 author_id 分支，

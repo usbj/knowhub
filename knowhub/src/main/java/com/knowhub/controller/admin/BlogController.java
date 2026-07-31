@@ -20,7 +20,6 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
@@ -30,7 +29,7 @@ import java.util.List;
  * 模块本身即"博客(blog)"，文章实体直接称 Blog，权限键三段式 knowhub:blog:quarry/knowhub:blog:add/...，
  * 路由为 /blog；权限键与 sys_menu 中 knowhub:blog:* 行一致。
  */
-@Tag(name = "博客文章", description = "博客文章 CRUD / 发布审核 / 点赞收藏相关接口")
+@Tag(name = "博客文章", description = "博客文章 CRUD / 发布审核相关接口（点赞收藏已挪前台 /authoring/blog/**）")
 @RestController
 @RequestMapping("/blog")
 public class BlogController {
@@ -114,21 +113,5 @@ public class BlogController {
     public Result<List<ReviewLogVo>> listReviewLog(@PathVariable Long blogId) {
         List<ReviewLogVo> list = blogService.listReviewLog(blogId);
         return Result.success(list);
-    }
-
-    @PutMapping("/like/{blogId}")
-    @Operation(summary = "点赞/取消点赞")
-    @Log(title = "博客文章", businessType = BusinessType.UPDATE)
-    public Result<Boolean> toggleLike(@PathVariable Long blogId, @RequestParam Boolean liked) {
-        Boolean b = blogService.toggleLike(blogId, liked);
-        return Result.success(b);
-    }
-
-    @PutMapping("/collect/{blogId}")
-    @Operation(summary = "收藏/取消收藏")
-    @Log(title = "博客文章", businessType = BusinessType.UPDATE)
-    public Result<Boolean> toggleCollect(@PathVariable Long blogId, @RequestParam Boolean collected) {
-        Boolean b = blogService.toggleCollect(blogId, collected);
-        return Result.success(b);
     }
 }

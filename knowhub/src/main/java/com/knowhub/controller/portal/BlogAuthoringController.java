@@ -18,17 +18,18 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
  * 前台作者创作接口（/authoring/blog/**，走 /authoring/** authenticated 兜底，不进 /portal/ permitAll）。
  * <p>
  * 读走 /portal/** permitAll、写走 /authoring/** authenticated（决策#10 读写物理隔离）。
- * 复用后台 BlogService（addBlogInfo/publishBlog/editBlogInfo/revokeBlog），不重复实现业务逻辑；
+ * 复用后台 BlogService（addBlogInfo/publishBlog/editBlogInfo/revokeBlog/toggleLike/toggleCollect），不重复实现业务逻辑；
  * addBlogInfo 内含分级创作闸（决策#11，前后台共用）。无按钮权限键——登录即可创作自己的内容。
- * 点赞/收藏不进本 controller：复用既有 PUT /blog/like|collect/{id}（已无 @PreAuthorize 仅登录态）。
+ * 点赞/收藏在此 controller（PUT /authoring/blog/{id}/like|collect）：后台管理用不到，挪到前台与文章范式对齐。
  */
-@Tag(name = "博客创作", description = "前台作者写博客：存草稿/发布/编辑/撤回")
+@Tag(name = "博客创作", description = "前台作者写博客：存草稿/发布/编辑/撤回/点赞收藏")
 @RestController
 @RequestMapping("/authoring/blog")
 public class BlogAuthoringController {
@@ -100,6 +101,26 @@ public class BlogAuthoringController {
     @PreAuthorize("isAuthenticated()")
     public Result<Boolean> revoke(@PathVariable Long blogId) {
         Boolean b = blogService.revokeBlog(blogId);
+        return Result.success(b);
+    }
+
+    @PutMapping("/{blogId}/like")
+    @Operation(summary = "点赞/取消点赞博客（liked=true 点赞, false 取消）")
+    @Log(title = "博客点赞", businessType = BusinessType.UPDATE)
+    @PreAuthorize("isAuthenticated()")
+    public Result<Boolean> toggleLike(@PathVariable Long blogId,
+                                      @RequestParam(required = false, defaultValue = "true") Boolean liked) {
+        Boolean b = blogService.toggleLike(blogId, liked);
+        return Result.success(b);
+    }
+
+    @PutMapping("/{blogId}/collect")
+    @Operation(summary = "收藏/取消收藏博客（collected=true 收藏, false 取消）")
+    @Log(title = "博客收藏", businessType = BusinessType.UPDATE)
+    @PreAuthorize("isAuthenticated()")
+    public Result<Boolean> toggleCollect(@PathVariable Long blogId,
+                                          @RequestParam(required = false, defaultValue = "true") Boolean collected) {
+        Boolean b = blogService.toggleCollect(blogId, collected);
         return Result.success(b);
     }
 }

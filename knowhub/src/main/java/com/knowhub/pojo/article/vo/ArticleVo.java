@@ -49,6 +49,12 @@ public class ArticleVo {
     /** 浏览量（独立访客数，读主表 view_count 冗余列） */
     private Long viewCount;
 
+    /** 点赞量（读主表 like_count 冗余列，以 article_like 为准） */
+    private Long likeCount;
+
+    /** 收藏量（读主表 collect_count 冗余列，以 article_collect 为准） */
+    private Long collectCount;
+
     /** 标签ID列表（详情/编辑回填，照博客 BlogVo.tagIds 范式） */
     private java.util.List<Long> tagIds;
 
@@ -168,6 +174,22 @@ public class ArticleVo {
 
     public void setViewCount(Long viewCount) {
         this.viewCount = viewCount;
+    }
+
+    public Long getLikeCount() {
+        return likeCount;
+    }
+
+    public void setLikeCount(Long likeCount) {
+        this.likeCount = likeCount;
+    }
+
+    public Long getCollectCount() {
+        return collectCount;
+    }
+
+    public void setCollectCount(Long collectCount) {
+        this.collectCount = collectCount;
     }
 
     public java.util.List<Long> getTagIds() {

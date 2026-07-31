@@ -1,0 +1,145 @@
+package com.knowhub.controller.portal;
+
+import com.github.pagehelper.PageInfo;
+import com.knowhub.pojo.article.quarry.ArticleQuarry;
+import com.knowhub.pojo.article.vo.ArticlePortalVo;
+import com.knowhub.pojo.article.vo.ArticleVo;
+import com.knowhub.service.article.impl.ArticlePortalService;
+import com.knowhub.service.article.impl.ArticleService;
+import com.knowhub.support.ArticlePermissionResolver;
+import com.rookie.common.annotation.Log;
+import com.rookie.common.enums.BusinessType;
+import com.rookie.common.pojo.Result;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
+
+/**
+ * 前台作者/读者互动 + 创作接口（/authoring/article/**，走 /authoring/** authenticated 兜底，不进 /portal/ permitAll）。
+ * <p>
+ * 读走 /portal/** permitAll、写走 /authoring/** authenticated（决策#10 读写物理隔离，照 BlogAuthoringController）。
+ * 两类职责合一：
+ * - 互动（点赞/收藏 toggle + 我的收藏列表）：业务逻辑在 ArticlePortalService（事务内 upsert 事实表 + 主表冗余列同步），2026-07-29 落地。
+ * - 创作（存草稿/发布/编辑/撤回/我的文章列表/编辑回填/view 等级）：复用后台 ArticleService，2026-07-29 文档学习前台对接补齐。
+ * 文章无按钮权限键——登录即可互动/创作自己的内容。点赞/收藏计数同步走 ArticlePortalService。
+ */
+@Tag(name = "文章创作与互动", description = "前台文章点赞/收藏 + 创作：存草稿/发布/编辑/撤回/列表/章节管理")
+@RestController
+@RequestMapping("/authoring/article")
+public class ArticleAuthoringController {
+
+    @Autowired
+    ArticleService articleService;
+
+    @Autowired
+    ArticlePortalService articlePortalService;
+
+    // ============================ 创作 ============================
+
+    @GetMapping("/level")
+    @Operation(summary = "当前用户文章 view 等级（创作页等级选择器权限感知，0/1/2/3）")
+    @PreAuthorize("isAuthenticated()")
+    public Result<Integer> myLevel() {
+        // 纯内存计算：扫描当前登录用户 perms 取 view 最高等级（admin 自然 3，未授权 0）。
+        // 前端据此禁用不可选等级（L1 用户只能公开，L2 可选 L1/L2，L3 全开），后端 editArticleInfo 的 level 升级校验兜底。
+        return Result.success(ArticlePermissionResolver.resolve().view());
+    }
+
+    @GetMapping("/list")
+    @Operation(summary = "前台我的文章列表（薄封装 quarryArticle，service 内回填 userId 走 author_id 分支）")
+    @PreAuthorize("isAuthenticated()")
+    public Result<PageInfo<ArticleVo>> myList(ArticleQuarry quarry) {
+        // 复用后台 quarryArticle：service 内已回填当前用户 userId 走"author_id=userId OR level<=userViewLevel"
+        // 权限分支——前台登录用户调它天然只返回"自己写的 + 有权看的"。前端可传 status 过滤草稿/已发布。
+        PageInfo<ArticleVo> page = articleService.quarryArticle(quarry);
+        return Result.success(page);
+    }
+
+    @GetMapping("/{articleId}")
+    @Operation(summary = "前台编辑回填（复用 getArticleInfo，canOp 已防越权：作者看自己全态、别人草稿拒）")
+    @PreAuthorize("isAuthenticated()")
+    public Result<ArticleVo> getForEdit(@PathVariable Long articleId) {
+        // 复用后台 getArticleInfo：内部 canOp(view) 校验防越权遍历（作者能看自己的、别人草稿拒），
+        // 并回填 tagIds/tagNames/canView/canEdit/isAuthor。副作用是会 recordView 计一次浏览量——
+        // 作者编辑自己草稿误计一次影响可忽略（草稿本无他人看）。前端回填表单只用编辑相关字段，多余字段忽略。
+        ArticleVo vo = articleService.getArticleInfo(articleId);
+        return Result.success(vo);
+    }
+
+    @PostMapping
+    @Operation(summary = "前台新建文章草稿（复用 addArticleInfo，作者=current user，DRAFT）")
+    @Log(title = "文章创作", businessType = BusinessType.INSERT)
+    @PreAuthorize("isAuthenticated()")
+    public Result<Boolean> draft(@RequestBody ArticleVo vo) {
+        Boolean b = articleService.addArticleInfo(vo);
+        return Result.success(b);
+    }
+
+    @PutMapping
+    @Operation(summary = "前台编辑文章（复用 editArticleInfo，校验归属+状态机+先删后插标签）")
+    @Log(title = "文章创作", businessType = BusinessType.UPDATE)
+    @PreAuthorize("isAuthenticated()")
+    public Result<Boolean> edit(@RequestBody ArticleVo vo) {
+        Boolean b = articleService.editArticleInfo(vo);
+        return Result.success(b);
+    }
+
+    @PutMapping("/{articleId}/publish")
+    @Operation(summary = "前台发布文章（复用 publishArticle，按审核开关决定 PUBLISHED 或 PENDING_REVIEW）")
+    @Log(title = "文章创作", businessType = BusinessType.UPDATE)
+    @PreAuthorize("isAuthenticated()")
+    public Result<Boolean> publish(@PathVariable Long articleId) {
+        Boolean b = articleService.publishArticle(articleId);
+        return Result.success(b);
+    }
+
+    @PutMapping("/{articleId}/revoke")
+    @Operation(summary = "前台撤回文章（复用 revokeArticle → REVOKED，撤回后可再编辑/再发布）")
+    @Log(title = "文章创作", businessType = BusinessType.UPDATE)
+    @PreAuthorize("isAuthenticated()")
+    public Result<Boolean> revoke(@PathVariable Long articleId) {
+        Boolean b = articleService.revokeArticle(articleId);
+        return Result.success(b);
+    }
+
+    // ============================ 互动（2026-07-29 落地，创作补齐时合并到此类） ============================
+
+    @PutMapping("/{articleId}/collect")
+    @Operation(summary = "收藏/取消收藏文章（collected=true 收藏, false 取消，主表 collect_count 同步）")
+    @Log(title = "文章收藏", businessType = BusinessType.UPDATE)
+    @PreAuthorize("isAuthenticated()")
+    public Result<Boolean> toggleCollect(@PathVariable Long articleId,
+                                          @RequestParam(required = false, defaultValue = "true") Boolean collected) {
+        Boolean b = articlePortalService.toggleCollect(articleId, collected);
+        return Result.success(b);
+    }
+
+    @PutMapping("/{articleId}/like")
+    @Operation(summary = "点赞/取消点赞文章（like=true 点赞, false 取消，主表 like_count 同步）")
+    @Log(title = "文章点赞", businessType = BusinessType.UPDATE)
+    @PreAuthorize("isAuthenticated()")
+    public Result<Boolean> toggleLike(@PathVariable Long articleId,
+                                       @RequestParam(required = false, defaultValue = "true") Boolean liked) {
+        Boolean b = articlePortalService.toggleLike(articleId, liked);
+        return Result.success(b);
+    }
+
+    @GetMapping("/collect/list")
+    @Operation(summary = "我的文章收藏列表（按收藏时间倒序，仅返回前台可见口径的已发布文章）")
+    @PreAuthorize("isAuthenticated()")
+    public Result<PageInfo<ArticlePortalVo>> myCollected(
+            @RequestParam(defaultValue = "1") int pageNum,
+            @RequestParam(defaultValue = "20") int pageSize) {
+        PageInfo<ArticlePortalVo> page = articlePortalService.listMyCollected(pageNum, pageSize);
+        return Result.success(page);
+    }
+}
