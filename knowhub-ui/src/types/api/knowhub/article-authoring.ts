@@ -124,3 +124,11 @@ export interface MyChapterListQuery {
   pageNum?: number
   pageSize?: number
 }
+
+/**
+ * 章节批量重排载荷（长按拖拽重排持久化，PUT /authoring/chapter/reorder）。
+ * **顶层即 List<ChapterVo>**（后端 @RequestBody List<ChapterVo> orders，期望 JSON 数组），
+ * 每项 = 该文章按拖拽后新顺序逐章生成的 {chapterId, sortOrder(=新 index), articleId}；
+ * 后端逐章 canEditChapter 校验 + 一次性事务，中途越权/不存在即回滚。articleId 与基准一致防跨文章串改。
+ */
+export type ChapterReorderPayload = { chapterId: number; sortOrder: number; articleId: number }[]

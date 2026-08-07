@@ -899,3 +899,38 @@ knowhub 项目管理模块开发，详见 `doc/knowhub-project-design.md`。项�
 **校验**：mvn -pl knowhub -am compile BUILD SUCCESS；knowhub-ui npm run type-check 通过（修两处：chapters.vue 的 element-plus 图标 import `upload`→`Upload` 大小写；chapter-edit.vue 删无用 @ts-expect-error）。
 
 **待用户人工验证**：① /article/create 存草稿跳 /profile?tab=article 出现在"我的文章"列表；② 草稿点"章节管理"进 /article/:id/chapters；③ 新增章节 /article/:id/chapter/edit 写名+排序+正文，作者提交免审直 PUBLISHED；④ 文章等级/可见性/封面/标签选择与等级按钮禁用按 myLevel 生效；⑤ 文章发布按审核开关 PUBLISHED/PENDING_REVIEW；⑥ PUBLISHED 文章/章节须先撤回才能改；⑦ 文章封面 cover_object_key 列存 /file/resolve/{id} 后前台列表/详情能渲染（上一轮 fixed 的 bug 验证）；⑧ 编辑回填正确（getArticleForEditApi/getChapterForEditApi）+非作者访问拒。
+
+### 2026-08-04 章节拖拽重排持久化 + 阅读目录树全层级可滚动
+
+承接 07-30 文章/章节创作前台对接，本轮补两处体验缺口：① 章节管理页章节顺序只能靠 sortOrder 输入改、无拖拽；② 文档阅读页目录只取 `## ` 且 `slice(0,10)`，长正文目录不全且 h3/h4 不显示。
+
+**后端**（com.knowhub，章节重排批量接口）：
+- `ChapterMapper.java` + `ChapterMapper.xml` 新增 `updateSortOrder(chapterId, sortOrder, updateBy)`：专用单列 update（不复用 editChapterInfo 的动态列单条更新，避免逐章构造完整 ChapterVo），`set sort_order/update_by/update_time where chapter_id and deleted=0`。
+- `ChapterService.java` 接口加 `Boolean reorderChapters(List<ChapterVo> orders)`；`ChapterServiceImpl` 实现 `@Transactional`：校验非空 + 取基准 articleId + 全部同 articleId（防跨文章串改）+ 逐章 `canEditChapter`（章节作者 OR 文章作者 OR 系统编辑权限 `edit:lN≥文章 level`），任一越权/不存在抛 `ServiceException` 回滚。
+- `ChapterAuthoringController` 加 `PUT /authoring/chapter/reorder`（body=`List<ChapterVo>` 每项 {chapterId, sortOrder, articleId}），`@PreAuthorize("isAuthenticated()")` + `@Log`。
+- mvn -pl knowhub -am compile BUILD SUCCESS。
+
+**前端**（knowhub-ui，拖拽重排 + 目录树升级）：
+- `types/api/knowhub/article-authoring.ts` 加 `ChapterReorderPayload { articleId, orders: {chapterId, sortOrder, articleId}[] }`；`api/knowhub/article-authoring.ts` 加 `reorderChaptersApi`（PUT /authoring/chapter/reorder）+ 类型再导出。
+- `views/article/chapters.vue`：HTML5 dnd（li `:draggable="canReorder"`，dragstart 记源 index / dragover preventDefault 允许 drop + 记目标 index 视觉插入 / drop 交换 + 持久化）；`canReorder = articleId && canEditArticle`（DRAFT/REJECTED/REVOKED/空态启用，PUBLISHED/PENDING 禁拖）；左侧加 ⠿ 拖把手（Rank 图标）；本地先交换 UI 即时响应，`persistReorder` 调 reorderChaptersApi（orders 按当前顺序 sortOrder=index），成功 ElMessage，失败 catch 重拉回滚；is-dragging 半透明 / is-drag-over 顶部高亮 / is-reordering 禁交互样式。
+- `components/common/KhContentToc.vue` 升级：props `items: string[]` → `items: TocItem[] {level, text}`（导出 TocItem 接口），按 level 缩进渲染成 CSDN 风格目录树（h2=·/h3,h4=–，h3/h4 字号 12px 色变浅）；列表 `max-height: calc(100vh - header - 140px) + overflow-y:auto + 细滚动条` 防长正文目录超出卡片。
+- `views/doc/read.vue`：`chapterToc` 正则 `^(#{2,4})\s+(.+)$` 提取 h2/h3/h4 全层级（去 `startsWith('## ').slice(0,10)` 限制）；`handleTocSelect` querySelectorAll 扩 `h2,h3,h4`；h4 补 `scroll-margin-top`。
+- `views/blog/detail.vue`：`toc` 同步改全层级提取；`handleTocSelect` 扩 h2,h3,h4；侧栏 `.bd__aside` 补 `max-height + overflow-y:auto`（sticky 列防目录+推荐超视口，用户已确认博客一并升级）。
+
+**遵守约定**：未改 rookie-*；产物在 knowhub（mapper/article + service/article + controller/portal）+ knowhub-ui（views/article、views/doc、views/blog、components/common、api/types）；无新菜单/字典/sys_config/SQL（不涉续编坑）；时间字段契约不变。两个 pre-existing TS7053（ProjectCard.vue / project/detail.vue 的 ViewLevel Record 索引）非本次引入，尊重已有改动未动。
+
+**校验**：mvn -pl knowhub -am compile BUILD SUCCESS；knowhub-ui npm run type-check 仅剩上述 2 个 pre-existing project 报错（本次新增代码全通过，修一处：chapters.vue 的 `splice` 返回 `T|undefined` 在 noUncheckedIndexedAccess 下加 `if (!moved) return` 守卫）。
+
+**待用户人工验证**：① /article/:id/chapters 草稿态可长按 ⠿ 拖拽章节换序，松手后调 /authoring/chapter/reorder 持久化，刷新顺序保持；② PUBLISHED 态拖把手隐藏不可拖；③ 拖拽失败（模拟越权）自动重拉恢复；④ /docs/:id/read/:chapterId 长章节目录卡显示 h2/h3/h4 全层级、可上下滚动不超卡、点击各级标题平滑跳转；⑤ /blog/:id 长博客侧栏目录同款全层级可滚动。
+
+### 2026-08-04 目录树改可折叠嵌套 + 章节拖拽放开到作者
+
+接上条用户反馈：① 目录要可展开合并（不是全铺开）、颜色统一不要浓淡、卡片加宽；② 文章章节应可拖拽（上条把拖拽锁在 DRAFT/REJECTED/REVOKED 态过严，已发布文章作者也需要调整顺序）。
+
+- `KhContentToc` 重构为**可折叠嵌套树**：扁平 TocItem → buildTree 按 level 嵌套（h2 根 / h3 子 / h4 孙），含子节点项左侧三角（ArrowRight 旋转 90°）点击折叠/合并（默认全展开，expandedMap 按 flatIndex 记状态）；颜色统一（所有层级 `.kh-toc__text` 同色，去上版 h3/h4 变浅），仅靠缩进 + 三角 + bullet 表达层级。script setup 直接 import ArrowRight（去上版多余的 `<script>` components 块）。
+- 卡片加宽：`blog/detail.vue` 栅格 `1fr 280px` → `1fr 320px`；`doc/read.vue` `240px 1fr 220px` → `240px 1fr 260px`。
+- `chapters.vue` 拖拽启用条件 `canReorder` 从 `canEditArticle`（绑状态：DRAFT/REJECTED/REVOKED/空态）改为 `article.canEdit`（纯权限：作者 OR 系统编辑权），PUBLISHED 文章作者也能拖拽重排。后端 `reorderChapters` 已是逐章 `canEditChapter` 鉴权（章节作者 OR 文章作者 OR 系统编辑权限够），无需后端改动。
+
+**校验**：knowhub-ui npm run type-check 本次代码全通过（剩 6 个 pre-existing project/profile 模块报错非本次引入，尊重已有改动未动）。
+
+**待用户人工验证**：① 目录卡各级标题颜色一致、h2 项可点三角折叠/展开 h3、h3 可折叠/展开 h4；② 长目录卡内可滚动不超出；③ 卡片明显加宽（blog 侧栏 320px / doc 右栏 260px）；④ 已发布文章的章节列表也能长按 ⠿ 拖拽换序（不再只限草稿态）。

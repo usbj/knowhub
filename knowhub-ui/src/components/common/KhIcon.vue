@@ -47,6 +47,7 @@ type IconName =
   | 'graduation'
   | 'flask'
   | 'lightbulb'
+  | 'lock'
 
 const props = withDefaults(
   defineProps<{
@@ -114,6 +115,8 @@ const pathMap: Record<string, string> = {
     '<path d="M9 3h6"/><path d="M10 3v6L4 19a2 2 0 0 0 2 3h12a2 2 0 0 0 2-3l-6-10V3"/>',
   lightbulb:
     '<path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.7c.6.5 1 1.3 1 2.1V17h6v-.2c0-.8.4-1.6 1-2.1A7 7 0 0 0 12 2z"/>',
+  lock:
+    '<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>',
 }
 
 const inner = computed(() => pathMap[props.name] ?? '')

@@ -78,8 +78,8 @@ public class FileServiceImpl implements FileService {
         if (type == null) {
             throw new ServiceException(500, "非法的业务类型: " + vo.getBusinessType());
         }
-        // 2. 校验 contentType 落白名单
-        if (!storageConfigReader.isContentTypeAllowed(type, vo.getContentType())) {
+        // 2. 校验 contentType/扩展名 落白名单（带文件名比对扩展名，避开 office 类 contentType 与扩展名不一致）
+        if (!storageConfigReader.isContentTypeAllowed(type, vo.getContentType(), vo.getOriginalName())) {
             throw new ServiceException(500, "文件类型不在允许范围: " + vo.getContentType());
         }
         // 3. 校验 size 不超上限
@@ -178,7 +178,7 @@ public class FileServiceImpl implements FileService {
         // 校验类型仍落白名单（防前端直传时改了 content-type）
         FileBusinessType type = FileBusinessType.ofCode(fileObject.getBusinessType());
         String realType = head.contentType();
-        if (type != null && !storageConfigReader.isContentTypeAllowed(type, realType)) {
+        if (type != null && !storageConfigReader.isContentTypeAllowed(type, realType, fileObject.getOriginalName())) {
             markFailed(fileObject);
             throw new ServiceException(500, "实际上传类型不在允许范围: " + realType);
         }
@@ -263,6 +263,28 @@ public class FileServiceImpl implements FileService {
         // PRIVATE 中转下载带 attachment;filename 强制下载（防浏览器直显私有文件）；PUBLIC 回显走 streamPublicObject 不带
         String disposition = "attachment;filename=\"" + sanitizeFilename(fileObject.getOriginalName()) + "\"";
         return new PublicObjectStream(contentType, contentLength, resp.eTag(), disposition, ris);
+    }
+
+    @Override
+    public PublicObjectStream openRawStream(Long objectId) {
+        FileObject fileObject = fileObjectMapper.getFileObjectById(objectId);
+        if (fileObject == null) {
+            throw new ServiceException(404, "文件对象不存在");
+        }
+        if (!UploadStatus.CONFIRMED.getCode().equals(fileObject.getUploadStatus())) {
+            throw new ServiceException(404, "文件未确认");
+        }
+        // 不做鉴权：调用方（项目打包 zip 等）自控业务级权限，本方法只负责把对象字节拉出来
+        ResponseInputStream<GetObjectResponse> ris = s3Client.getObject(GetObjectRequest.builder()
+                .bucket(fileObject.getBucket())
+                .key(fileObject.getObjectKey())
+                .build());
+        GetObjectResponse resp = ris.response();
+        String contentType = fileObject.getContentType() != null && !fileObject.getContentType().isEmpty()
+                ? fileObject.getContentType()
+                : resp.contentType();
+        long contentLength = resp.contentLength() > 0 ? resp.contentLength() : fileObject.getContentLength();
+        return new PublicObjectStream(contentType, contentLength, resp.eTag(), ris);
     }
 
     @Override

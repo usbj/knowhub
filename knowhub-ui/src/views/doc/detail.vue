@@ -266,7 +266,10 @@ watch(docId, () => void fetchDetail())
 .di__outline-head { display: flex; align-items: center; gap: 8px; color: var(--kh-text-secondary); margin-bottom: 2px; }
 .di__outline-head h3 { font-size: var(--kh-font-size-md); font-weight: 600; color: var(--kh-text); }
 .di__outline-sub { font-size: 11px; color: var(--kh-text-tertiary); margin: 0 0 var(--kh-space-3); }
-.di__outline-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--kh-space-2); }
+/* 章节大纲列表最大高度封顶 + 卡内滚动，章节数太多时不撑爆侧栏 */
+.di__outline-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--kh-space-2); max-height: 60vh; overflow-y: auto; scrollbar-width: thin; }
+.di__outline-list::-webkit-scrollbar { width: 6px; }
+.di__outline-list::-webkit-scrollbar-thumb { background: var(--kh-border); border-radius: 3px; }
 .di__outline-item {
   display: flex;
   align-items: center;

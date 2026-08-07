@@ -22,6 +22,11 @@
         <result property="status" column="status"/>
         <result property="reviewStatus" column="review_status"/>
         <result property="publishTime" column="publish_time"/>
+        <!-- 计数列（2026-08-03 补建，见 sql/knowhub-project-portal.sql）-->
+        <result property="viewCount" column="view_count"/>
+        <result property="likeCount" column="like_count"/>
+        <result property="collectCount" column="collect_count"/>
+        <result property="downloadCount" column="download_count"/>
         <result property="createBy" column="create_by"/>
         <result property="createTime" column="create_time"/>
         <result property="updateBy" column="update_by"/>
@@ -43,6 +48,7 @@
     <select id="quarryProject" parameterType="com.knowhub.pojo.project.quarry.ProjectQuarry" resultMap="ProjectResultMap">
         select p.project_id, p.title, p.type, p.level, p.summary,
                p.article_id, p.author_id, p.status, p.review_status, p.publish_time,
+               p.view_count, p.like_count, p.collect_count, p.download_count,
                p.create_by, p.create_time, p.update_by, p.update_time, p.deleted,
                u.nick_name as author_nickname
         from project p
@@ -147,5 +153,24 @@
     <select id="listPendingReviewIds" resultType="java.lang.Long">
         select project_id from project where status = 'PENDING_REVIEW' and deleted = 0
     </select>
+
+    <!--
+      下载计数 +1（下载接口成功后回写，推荐打分权重最高 + 卡片展示下载量）。
+      与博客 incrLikeCount/incrCollectCount 同套路：set download_count = download_count + #{delta}。
+      delta 通常 +1；预留参数便于后续追溯/撤销计数（如系统判定误触发回退 -1）。
+    -->
+    <update id="incrDownloadCount">
+        update project set download_count = download_count + #{delta} where project_id = #{projectId}
+    </update>
+
+    <!-- 点赞计数 +delta（预留，项目尚无点赞接口；后续互动模块给前台时复用，对齐 blog incrLikeCount） -->
+    <update id="incrLikeCount">
+        update project set like_count = like_count + #{delta} where project_id = #{projectId}
+    </update>
+
+    <!-- 收藏计数 +delta（预留，项目尚无收藏接口；后续互动模块给前台时复用，对齐 blog incrCollectCount） -->
+    <update id="incrCollectCount">
+        update project set collect_count = collect_count + #{delta} where project_id = #{projectId}
+    </update>
 
 </mapper>

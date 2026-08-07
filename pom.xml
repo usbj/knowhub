@@ -14,8 +14,8 @@
     <name>knowhub</name>
     <description>知枢 - 知识库博客系统</description>
     <modules>
-        <module>rookie-framework</module>
         <module>rookie-common</module>
+        <module>rookie-framework</module>
         <module>rookie-system</module>
         <module>rookie-admin</module>
         <module>knowhub</module>
@@ -126,18 +126,7 @@
                     </annotationProcessorPaths>
                 </configuration>
             </plugin>
-            <plugin>
-                <groupId>org.springframework.boot</groupId>
-                <artifactId>spring-boot-maven-plugin</artifactId>
-                <configuration>
-                    <excludes>
-                        <exclude>
-                            <groupId>org.projectlombok</groupId>
-                            <artifactId>lombok</artifactId>
-                        </exclude>
-                    </excludes>
-                </configuration>
-            </plugin>
+
         </plugins>
     </build>
 

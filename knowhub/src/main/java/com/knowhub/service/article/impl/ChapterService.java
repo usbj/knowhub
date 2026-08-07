@@ -47,4 +47,12 @@ public interface ChapterService {
 
     /** 章节审核历史流水（按时间升序） */
     List<ChapterReviewLogVo> listReviewLog(Long chapterId);
+
+    /**
+     * 批量重排章节顺序（前台长按拖拽重排持久化）。
+     * 入参 orders 中每项需带 chapterId + sortOrder(新顺序) + articleId(归属一致性校验)；
+     * 逐条调 updateSortOrder 仅改 sort_order 与审计列，不动正文/状态。整体事务：中途任一章越权/不存在即回滚。
+     * 权限沿用 canEditChapter（章节作者 OR 文章作者 OR 系统编辑权限够）。
+     */
+    Boolean reorderChapters(List<ChapterVo> orders);
 }

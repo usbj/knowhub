@@ -48,6 +48,19 @@ public class Project extends BaseEntity {
 
     private Date publishTime;
 
+    // ---- 计数列（表字段，2026-08-03 补建，见 sql/knowhub-project-portal.sql）----
+    /** 浏览量（独立访客，统一浏览历史回写：ViewHistoryServiceImpl 首次 INSERT 时 +1） */
+    private Long viewCount;
+
+    /** 点赞数（预留，无点赞接口时恒 0；后续互动模块给前台时回写） */
+    private Long likeCount;
+
+    /** 收藏数（预留，无收藏接口时恒 0；后续互动模块给前台时回写） */
+    private Long collectCount;
+
+    /** 下载量（下载接口成功时 +1，推荐打分权重最高 + 卡片展示） */
+    private Long downloadCount;
+
     private Integer deleted;
 
     // ---- 非表字段（列表/详情查询 join 带出的展示字段，resultMap 映射，不入库） ----
@@ -174,6 +187,38 @@ public class Project extends BaseEntity {
 
     public void setPublishTime(Date publishTime) {
         this.publishTime = publishTime;
+    }
+
+    public Long getViewCount() {
+        return viewCount;
+    }
+
+    public void setViewCount(Long viewCount) {
+        this.viewCount = viewCount;
+    }
+
+    public Long getLikeCount() {
+        return likeCount;
+    }
+
+    public void setLikeCount(Long likeCount) {
+        this.likeCount = likeCount;
+    }
+
+    public Long getCollectCount() {
+        return collectCount;
+    }
+
+    public void setCollectCount(Long collectCount) {
+        this.collectCount = collectCount;
+    }
+
+    public Long getDownloadCount() {
+        return downloadCount;
+    }
+
+    public void setDownloadCount(Long downloadCount) {
+        this.downloadCount = downloadCount;
     }
 
     public Integer getDeleted() {

@@ -78,6 +78,12 @@ const router = createRouter({
       meta: { title: '写博客', requiresAuth: true },
     },
     {
+      path: '/project/create',
+      name: 'project-create',
+      component: () => import('@/views/project/create.vue'),
+      meta: { title: '创建项目', requiresAuth: true },
+    },
+    {
       path: '/article/create',
       name: 'article-create',
       component: () => import('@/views/article/create.vue'),

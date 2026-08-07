@@ -6,12 +6,12 @@
  * - 预签名直传：applyUploadTokenApi 签发令牌 → 前端 PUT 直传 OSS → confirmUploadApi 确认。
  * - PUBLIC 回显走相对路径 /file/resolve/{id}（由 buildFileResolveUrl 拼接，不走 axios），
  *   渲染时 <img src> 命中后端 resolve 接口，由后端按当前 knowhub.file.access_mode 动态 302 分发。
- * 照搬后台 rookie-ui 的 api/knowhub/file.ts，仅保留创作页用到的上传三方法（下载/列表/绑定删掉）。
+ * 照搬后台 rookie-ui 的 api/knowhub/file.ts，创作页用到的上传三方法 + 项目文件上传下载补回的 getDownloadUrlApi / proxyDownloadApi / bindBizRefApi。
  * 权限：/file/upload-token 等需 knowhub:file:upload 按钮权限键——靠默认角色带该权限（见计划"前置条件"）。
  */
-import { post } from '@/utils/http'
+import { get, post, put } from '@/utils/http'
 import type { ApiResult } from '@/types/api/common'
-import type { UploadApplyPayload, UploadTokenRecord } from '@/types/api/knowhub/file'
+import type { UploadApplyPayload, UploadTokenRecord, DownloadRecord, BindPayload } from '@/types/api/knowhub/file'
 
 /**
  * 方法效果：
@@ -37,6 +37,43 @@ export const confirmUploadApi = (objectId: number, bizRefId?: number) =>
   post<ApiResult<boolean>>(`/file/confirm/${objectId}`, undefined, {
     params: bizRefId !== undefined ? { bizRefId } : undefined,
   })
+
+/**
+ * 方法效果：
+ * 获取 PRIVATE 下载预签名 URL。后端鉴权后返回短期 GET 预签名（带 attachment;filename）。
+ * 项目文件下载现走 /authoring/project/file/download/{fileId}（需项目级下载权限），前台通用下载仍可走本接口（需 knowhub:file:download 权限）。
+ * 参数：
+ * - `objectId`：file_object 主键。
+ * 返回值：
+ * - 后端 Result 包裹的下载结果（downloadUrl / expires / originalName）。
+ */
+export const getDownloadUrlApi = (objectId: number) =>
+  get<ApiResult<DownloadRecord>>(`/file/download/${objectId}`)
+
+/**
+ * 方法效果：
+ * 中转下载 PRIVATE 对象（同源带 Token）。直链/中转由后端决定是否路由到本接口：直链模式后端直接在
+ * downloadUrl 返回 OSS 预签名，无需前端调本接口；中转模式前端需自行 fetch 取 blob 触发下载。
+ * 用于不便在 downloadUrl 跳转的场景主动取流。
+ * 参数：
+ * - `objectId`：文件对象主键。
+ * 返回值：
+ * - 文件字节流（Blob，浏览器侧需转 URL.createObjectURL 下载）。
+ */
+export const proxyDownloadApi = (objectId: number) =>
+  get<Blob>(`/file/proxy/${objectId}`, { responseType: 'blob' })
+
+/**
+ * 方法效果：
+ * 绑定业务关联。业务行创建后回填 file_object.biz_ref_id（项目文件叶子节点 upload 后调 addFileNode 时由后端代绑定，
+ * 故前端通常不必直接调；保留备某些需要显式绑定的场景，如 legacy 项目文件挂接）。
+ * 参数：
+ * - `data`：绑定入参（objectId / bizRefId）。
+ * 返回值：
+ * - 后端 Result 包裹的布尔结果。
+ */
+export const bindBizRefApi = (data: BindPayload) =>
+  put<ApiResult<boolean>, BindPayload>('/file/bind', data)
 
 /**
  * 方法效果：

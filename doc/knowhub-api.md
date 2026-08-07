@@ -1374,10 +1374,22 @@ Accept-Ranges: none
 | PUT | `/authoring/chapter` | 编辑章节（复用 editChapterInfo；ChapterVo 体带 chapterId；PUBLISHED 须先撤回） | `Result<Boolean>` |
 | PUT | `/authoring/chapter/{chapterId}/publish` | 再次提交/发布章节（复用 publishChapter，用于 DRAFT/REJECTED/REVOKED 再提交） | `Result<Boolean>` |
 | PUT | `/authoring/chapter/{chapterId}/revoke` | 撤回章节（复用 revokeChapter → REVOKED，仅 PUBLISHED 可撤回） | `Result<Boolean>` |
+| PUT | `/authoring/chapter/reorder` | 批量重排章节顺序（长按拖拽持久化；body=`List<ChapterVo>` 每项 {chapterId, sortOrder, articleId}，逐章 canEdit 校验 + 事务，中途越权/不存在回滚） | `Result<Boolean>` |
 | DELETE | `/authoring/chapter/{chapterIds}` | 删除章节（复用 deleteChapterInfo，章节作者 OR 文章作者 OR delete 权限；chapterIds 逗号分隔） | `Result<Boolean>` |
 | GET | `/authoring/chapter/review-log/{chapterId}` | 章节审核历史（复用 listReviewLog，仅 SEMIPUBLIC 场景有记录） | `Result<List<ChapterReviewLogVo>>` |
 
 ### 接口更新日志
+
+#### 2026-08-04 章节批量重排接口 + 目录树升级（章节拖拽持久化 + TOC 全层级可滚动）
+
+- 新增 `PUT /authoring/chapter/reorder`（前台章节管理页长按拖拽重排持久化）：body 为 `List<ChapterVo>`，每项 `{chapterId, sortOrder=新 index, articleId}`。
+  - 新增 `ChapterMapper.updateSortOrder(chapterId, sortOrder, updateBy)` + XML（专用单列 update，不复用 editChapterInfo 的动态列单条更新）。
+  - `ChapterService.reorderChapters` `@Transactional`：校验非空 + 基准 articleId + 全部同 articleId（防跨文章串改）+ 逐章 `canEditChapter`（章节作者 OR 文章作者 OR 系统编辑权限够），任一越权/不存在抛 `ServiceException` 回滚。
+  - 前端 `reorderChaptersApi` + `ChapterReorderPayload` 类型；`chapters.vue` HTML5 dnd（draggable + dragstart/dragover/drop），仅 `canEditArticle`（DRAFT/REJECTED/REVOKED/空态）启用拖拽，本地先交换 UI 即时响应，失败重拉回滚。
+- `KhContentToc` 升级：`items: string[]` → `items: TocItem[] {level, text}`（level=2/3/4 对齐 ##/###/####），按 level 缩进渲染成 CSDN 风格目录树（h3/h4 字号变小、色变浅）；列表 `max-height: calc(100vh - header - 140px) + overflow-y:auto` 防长正文目录超出卡片。
+  - `doc/read.vue` `chapterToc` 与 `blog/detail.vue` `toc` 同步改为正则 `^(#{2,4})\s+(.+)$` 提取全层级；`handleTocSelect` 的 `querySelectorAll` 扩到 `h2,h3,h4`；doc/read h4 补 `scroll-margin-top`。
+  - 博客侧栏 `.bd__aside` 补 `max-height + overflow-y:auto`（sticky 列防目录+推荐超视口）。
+- **2026-08-04 续**：KhContentToc 由扁平缩进改为**可折叠嵌套树**（buildTree 按 level 嵌套，三角折叠/合并，默认全展开），颜色统一不分层级深浅；卡片加宽（blog 侧栏 280→320px / doc 右栏 220→260px）。章节拖拽放开到 `article.canEdit`（作者即可拖，PUBLISHED 也允许），后端 reorderChapters 逐章 canEditChapter 鉴权不变。
 
 #### 2026-07-31 博客点赞收藏接口迁前台（后台用不到，挪 /authoring/blog/** 与文章范式对齐）
 

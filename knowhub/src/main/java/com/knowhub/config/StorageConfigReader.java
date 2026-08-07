@@ -113,24 +113,49 @@ public class StorageConfigReader {
         return Collections.emptyList();
     }
 
-    /** 校验 contentType 是否落在该业务类型白名单内（白名单空表示不限制） */
+    /**
+     * 校验 contentType 是否落在该业务类型白名单内（白名单空表示不限制）。
+     * <p>
+     * 仅按 contentType 匹配 MIME 项；扩展名项（.docx 等）因浏览器对 office 类文件给出的
+     * contentType 形如 application/vnd.openxmlformats-officedocument.wordprocessingml.document，
+     * 与扩展名末尾不一致，无法用 contentType 兜底，请改用
+     * {@link #isContentTypeAllowed(FileBusinessType, String, String)} 传文件名比对。
+     */
     public boolean isContentTypeAllowed(FileBusinessType type, String contentType) {
-        if (contentType == null || contentType.isEmpty()) {
+        return isContentTypeAllowed(type, contentType, null);
+    }
+
+    /**
+     * 校验 contentType / 文件名是否落在该业务类型白名单内（白名单空表示不限制）。
+     * <p>
+     * 与前端 upload-whitelist.ts 同口径：
+     * - MIME 项（含 /）：contentType 全匹配或以 {item}; 开头；
+     * - 扩展名项（带不带前导点都兜底）：按 originalName 末尾扩展名比对（case-insensitive），
+     *   避开浏览器对 office 等文件 contentType 与扩展名不一致导致误拦的问题。
+     * originalName 为 null/空时退化为仅按 contentType 匹配 MIME 项（旧调用点兼容口径）。
+     */
+    public boolean isContentTypeAllowed(FileBusinessType type, String contentType, String originalName) {
+        if ((contentType == null || contentType.isEmpty()) && (originalName == null || originalName.isEmpty())) {
             return false;
         }
         List<String> whitelist = typeWhitelist(type);
         if (whitelist.isEmpty()) {
             return true;
         }
-        String lower = contentType.toLowerCase();
-        // 白名单项可能是 MIME（image/png）或扩展名（.png）；MIME 全匹配，扩展名按 contentType 末尾比对
+        String lower = contentType == null ? "" : contentType.toLowerCase();
+        String lowerName = originalName == null ? "" : originalName.toLowerCase();
         for (String item : whitelist) {
-            if (lower.equals(item) || lower.startsWith(item + ";")) {
-                return true;
-            }
-            if (item.startsWith(".") && lower.endsWith(item.substring(1))) {
-                // 宽松匹配：用扩展名兜底（contentType 推断不出扩展名时也放过）
-                return true;
+            if (item.contains("/")) {
+                // MIME 项：按 contentType 匹配（含分号参数情形）
+                if (lower.equals(item) || lower.startsWith(item + ";")) {
+                    return true;
+                }
+            } else {
+                // 扩展名项（带不带前导点都兜底）：按文件名末尾比对
+                String ext = item.startsWith(".") ? item : "." + item;
+                if (lowerName.endsWith(ext)) {
+                    return true;
+                }
             }
         }
         return false;

@@ -14,7 +14,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ArrowLeft, Plus, Edit, Upload, Delete, RefreshLeft } from '@element-plus/icons-vue'
+import { ArrowLeft, Plus, Edit, Upload, Delete, RefreshLeft, Rank } from '@element-plus/icons-vue'
 import KhIcon from '@/components/common/KhIcon.vue'
 import KhTag from '@/components/common/KhTag.vue'
 import {
@@ -25,6 +25,7 @@ import {
   publishChapterAuthoringApi,
   revokeChapterAuthoringApi,
   deleteChapterApi,
+  reorderChaptersApi,
 } from '@/api/knowhub/article-authoring'
 import type { ChapterAuthoringDetail, ArticleAuthoringDetail } from '@/types/api/knowhub/article-authoring'
 
@@ -35,6 +36,11 @@ const articleId = computed(() => Number(route.params.id))
 const article = ref<ArticleAuthoringDetail | null>(null)
 const chapters = ref<ChapterAuthoringDetail[]>([])
 const loading = ref(false)
+
+/** 分页：章节多了太长，分页展示（拖拽只在当前页内重排，不跨页）。复用后台 quarryChapter 的 PageHelper 分页 */
+const pageNum = ref(1)
+const pageSize = ref(10)
+const total = ref(0)
 
 /** 章节状态 → 徽标样式/文案 */
 const statusMeta: Record<string, { text: string; type: 'success' | 'warning' | 'danger' | 'neutral' | 'info' }> = {
@@ -91,11 +97,18 @@ const fetchArticle = async () => {
 const fetchChapters = async () => {
   loading.value = true
   try {
-    const res = await getMyChaptersApi({ articleId: articleId.value, pageNum: 1, pageSize: 200 })
+    const res = await getMyChaptersApi({ articleId: articleId.value, pageNum: pageNum.value, pageSize: pageSize.value })
     chapters.value = res.records ?? []
+    total.value = res.total ?? 0
   } finally {
     loading.value = false
   }
+}
+
+/** 翻页：重拉当前页章节；拖拽重排在分页内排序后基于全局起始位置持久化 */
+const onPageChange = (p: number) => {
+  pageNum.value = p
+  void fetchChapters()
 }
 
 const goAddChapter = () => {
@@ -174,6 +187,68 @@ const visibilityHint = computed(() => {
   }
 })
 
+/** 拖拽重排：作者/系统编辑权限即可调（排序是组织权，不涉内容审核，PUBLISHED 也允许）。
+ *  后端 reorderChapters 逐章 canEditChapter 鉴权 + 同 articleId 一致校验 + 事务。
+ *  前端用 article.canEdit 放开拖拽（已发布文章作者仍可重排章节顺序）。 */
+const dragIndex = ref<number | null>(null)
+const dropIndex = ref<number | null>(null)
+const reordering = ref(false)
+
+const canReorder = computed(() => Boolean(article.value?.articleId) && Boolean(article.value?.canEdit))
+
+const onDragStart = (i: number) => {
+  if (!canReorder.value) return
+  dragIndex.value = i
+}
+const onDragOver = (e: DragEvent, i: number) => {
+  if (!canReorder.value || dragIndex.value === null) return
+  e.preventDefault()
+  if (dropIndex.value !== i) dropIndex.value = i
+}
+const onDragLeave = () => {
+  dropIndex.value = null
+}
+const onDrop = async (i: number) => {
+  if (!canReorder.value || dragIndex.value === null || dragIndex.value === i) {
+    dragIndex.value = null
+    dropIndex.value = null
+    return
+  }
+  const from = dragIndex.value
+  dragIndex.value = null
+  dropIndex.value = null
+  // 本地先交换顺序，UI 即时响应；失败回滚（catch 里重拉）
+  const list = chapters.value.slice()
+  const [moved] = list.splice(from, 1)
+  if (!moved) return
+  list.splice(i, 0, moved)
+  chapters.value = list
+  await persistReorder()
+}
+
+/** 持久化当前页章节顺序：拖拽只在当前页内交换，sortOrder = (pageNum-1)*pageSize + 页内index
+ *  （全局连续，不影响其他页章节相对顺序）；顶层即数组，每项 {chapterId, sortOrder, articleId} 调 reorderChaptersApi */
+const persistReorder = async () => {
+  if (!article.value?.articleId) return
+  const base = (pageNum.value - 1) * pageSize.value
+  reordering.value = true
+  try {
+    await reorderChaptersApi(
+      chapters.value.map((c, idx) => ({
+        chapterId: c.chapterId,
+        sortOrder: base + idx,
+        articleId: article.value!.articleId,
+      })),
+    )
+    ElMessage.success('章节顺序已更新')
+  } catch {
+    // 失败重拉，恢复后端真实顺序
+    void fetchChapters()
+  } finally {
+    reordering.value = false
+  }
+}
+
 onMounted(() => {
   void fetchArticle()
   void fetchChapters()
@@ -244,8 +319,29 @@ onMounted(() => {
         <p>暂无章节，点上方「新增章节」开始写正文</p>
       </div>
       <ol v-else class="ac-ch__list">
-        <li v-for="(c, i) in chapters" :key="c.chapterId" class="ac-ch__item">
-          <span class="ac-ch__no">{{ String(i + 1).padStart(2, '0') }}</span>
+        <li
+          v-for="(c, i) in chapters"
+          :key="c.chapterId"
+          class="ac-ch__item"
+          :class="{
+            'is-dragging': dragIndex === i,
+            'is-drag-over': dropIndex === i && dragIndex !== null && dragIndex !== i,
+            'is-reordering': reordering,
+          }"
+          :draggable="canReorder"
+          @dragstart="onDragStart(i)"
+          @dragover="onDragOver($event, i)"
+          @dragleave="onDragLeave"
+          @drop="onDrop(i)"
+        >
+          <span
+            v-if="canReorder"
+            class="ac-ch__drag-handle"
+            :title="reordering ? '保存中…' : '长按拖拽调整顺序'"
+          >
+            <el-icon><Rank /></el-icon>
+          </span>
+          <span class="ac-ch__no">{{ String((pageNum - 1) * pageSize + i + 1).padStart(2, '0') }}</span>
           <div class="ac-ch__item-main">
             <div class="ac-ch__item-title" @click="goEditChapter(c.chapterId)">{{ c.chapterName }}</div>
             <div class="ac-ch__item-meta">
@@ -269,6 +365,18 @@ onMounted(() => {
           </div>
         </li>
       </ol>
+
+      <!-- 分页：章节数多时分页展示，拖拽只在当前页内重排（不跨页）。复用后台 el-pagination 范式 -->
+      <div v-if="total > pageSize" class="ac-ch__pager">
+        <el-pagination
+          layout="prev, pager, next"
+          :total="total"
+          :page-size="pageSize"
+          :current-page="pageNum"
+          background
+          @current-change="onPageChange"
+        />
+      </div>
     </div>
   </div>
 </template>
@@ -305,10 +413,17 @@ onMounted(() => {
 .ac-ch__add:hover { transform: translateY(-1px); }
 
 .ac-ch__list-wrap { padding-bottom: var(--kh-space-12); }
+.ac-ch__pager { display: flex; justify-content: center; margin-top: var(--kh-space-6); }
 .ac-ch__placeholder { display: flex; flex-direction: column; align-items: center; gap: var(--kh-space-3); padding: var(--kh-space-12); color: var(--kh-text-tertiary); text-align: center; }
 .ac-ch__list { list-style: none; margin: var(--kh-space-6) 0 0; padding: 0; display: flex; flex-direction: column; gap: var(--kh-space-3); }
 .ac-ch__item { display: flex; align-items: center; gap: var(--kh-space-4); padding: var(--kh-space-4) var(--kh-space-5); background: var(--kh-surface); border: 1px solid var(--kh-border-soft); border-radius: var(--kh-radius-lg); transition: border-color var(--kh-transition-fast); }
 .ac-ch__item:hover { border-color: var(--kh-primary-border); }
+.ac-ch__item.is-dragging { opacity: 0.4; }
+.ac-ch__item.is-drag-over { border-top: 2px solid var(--kh-primary); padding-top: calc(var(--kh-space-4) - 1px); }
+.ac-ch__item.is-reordering { pointer-events: none; opacity: 0.6; }
+.ac-ch__drag-handle { display: inline-flex; align-items: center; justify-content: center; width: 24px; flex: none; color: var(--kh-text-tertiary); cursor: grab; }
+.ac-ch__drag-handle:active { cursor: grabbing; }
+.ac-ch__drag-handle:hover { color: var(--kh-primary); }
 .ac-ch__no { font-family: var(--kh-font-mono); font-size: var(--kh-font-size-lg); font-weight: 700; color: var(--kh-primary); width: 32px; flex: none; }
 .ac-ch__item-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
 .ac-ch__item-title { font-size: var(--kh-font-size-md); font-weight: 600; color: var(--kh-text); cursor: pointer; }

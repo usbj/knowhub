@@ -7,7 +7,7 @@
  * - businessType 取值见后端 FileBusinessType 枚举（BLOG_BODY / BLOG_COVER 等）。
  * - uploadUrl 由后端按访问模式决定：中转模式→/file/proxy-upload/{objectId}（同源带 Token）；
  *   直链模式→预签名绝对 URL（OSS/nginx，不带 Token）。前端按链接形态决定带不带 Token。
- * 照搬后台 rookie-ui 的 types/api/knowhub/file.ts，仅保留创作页用到的上传两个类型（下载/列表/绑定删掉）。
+ * 照搬后台 rookie-ui 的 types/api/knowhub/file.ts，保留创作页用到的上传两类型 + 项目文件上传下载补回的 DownloadRecord / BindPayload。
  */
 
 /**
@@ -35,4 +35,24 @@ export interface UploadTokenRecord {
   objectKey?: string
   objectId: number
   expires?: number
+}
+
+/**
+ * PRIVATE 下载结果，与后端 DownloadVo 对齐。
+ * downloadUrl 由后端按访问模式决定：中转模式→/file/proxy/{objectId}（同源带 Token，前端 fetch 取 blob）；
+ * 直链模式→带 attachment;filename 的预签名绝对 URL（前端 window.open 跳转）。
+ */
+export interface DownloadRecord {
+  downloadUrl: string
+  expires?: number
+  originalName?: string
+}
+
+/**
+ * 文件业务关联绑定入参，与后端 BindVo 对齐。
+ * 业务行创建后回填 file_object.biz_ref_id，便于删业务行时级联清文件。
+ */
+export interface BindPayload {
+  objectId: number
+  bizRefId: number
 }

@@ -40,4 +40,12 @@ public interface ChapterMapper {
 
     /** 软删某文章下所有章节（删文章时事务内级联调用） */
     Boolean softDeleteByArticleId(Long articleId);
+
+    /**
+     * 单章排序更新（批量重排逐条调用，仅改 sort_order + 审计列，不动正文/状态）。
+     * ChapterAuthoringController.reorder 走 Service 事务逐条调用本方法持久化拖拽后的新顺序。
+     */
+    Boolean updateSortOrder(@org.apache.ibatis.annotations.Param("chapterId") Long chapterId,
+                            @org.apache.ibatis.annotations.Param("sortOrder") Integer sortOrder,
+                            @org.apache.ibatis.annotations.Param("updateBy") String updateBy);
 }

@@ -41,4 +41,19 @@ public interface ProjectMapper {
 
     /** 对账用：查所有处于待审核且未删除的项目 ID（审核开关关闭后定时任务批量放行） */
     List<Long> listPendingReviewIds();
+
+    /**
+     * 下载计数 +delta（下载接口成功后回写，推荐打分权重最高 + 卡片展示下载量）。
+     * 对齐博客 incrLikeCount/incrCollectCount；delta 通常 +1，预留参数便于后续回退。
+     */
+    Boolean incrDownloadCount(@org.apache.ibatis.annotations.Param("projectId") Long projectId,
+                              @org.apache.ibatis.annotations.Param("delta") int delta);
+
+    /** 点赞计数 +delta（预留，项目尚无点赞接口；后续互动模块给前台时复用） */
+    Boolean incrLikeCount(@org.apache.ibatis.annotations.Param("projectId") Long projectId,
+                          @org.apache.ibatis.annotations.Param("delta") int delta);
+
+    /** 收藏计数 +delta（预留，项目尚无收藏接口；后续互动模块给前台时复用） */
+    Boolean incrCollectCount(@org.apache.ibatis.annotations.Param("projectId") Long projectId,
+                             @org.apache.ibatis.annotations.Param("delta") int delta);
 }

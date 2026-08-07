@@ -4,7 +4,7 @@
   标题 + 作者/时间/标签/观看数/评分 + 点赞/收藏/分享 + 左侧目录锚点 + 正文（静态预渲染）+ 相关推荐 + 评论区占位。
 -->
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onActivated, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import {
@@ -23,12 +23,18 @@ import KhContentToc from '@/components/common/KhContentToc.vue'
 import KhIcon from '@/components/common/KhIcon.vue'
 import { getBlogDetailApi, relatedBlogsApi } from '@/api/knowhub/blog'
 import type { BlogPortalDetailRecord, BlogPortalRecord } from '@/types/api/knowhub/blog'
+import { useStickyBottom } from '@/utils/use-footer-visible'
 import { formatDateTime } from '@/utils/format'
 import { useUserStore } from '@/stores/user'
 
 const route = useRoute()
 const router = useRouter()
 const userStore = useUserStore()
+
+/** sticky 侧栏底部预留量：sticky 父容器（.bd__layout）末端进视口时收紧 max-height，
+ *  防侧栏上推钻 header；footer 进视口也兜底收缩。 */
+const footerVisible = useStickyBottom('.bd__layout')
+const stickyBottom = computed(() => `${footerVisible.value}px`)
 
 const blogId = computed(() => Number(route.params.id))
 const blog = ref<BlogPortalDetailRecord | null>(null)
@@ -58,6 +64,8 @@ const fetchDetail = async () => {
   if (b.locked) {
     ElMessage.warning(b.lockReason ?? '当前内容需更高权限查看完整正文')
   }
+  // 正文 v-md-preview 异步渲染，等下一帧再计算 scroll spy 初值
+  nextTick(computeActive)
 }
 
 const fetchRelated = async () => {
@@ -68,32 +76,73 @@ const fetchRelated = async () => {
   }))
 }
 
-/** 从正文提取标题作为目录锚点（锁态时 content 为 null，目录为空） */
+/** 从正文提取 ##/###/#### 标题作为目录锚点（含层级，供目录树渲染；锁态时 content 为 null，目录为空） */
 const toc = computed(() => {
   const lines = (blog.value?.content ?? '').split('\n')
-  return lines
-    .filter((l) => l.startsWith('## '))
-    .map((l) => l.replace(/^##\s+/, '').trim())
-    .slice(0, 8)
+  const out: { level: number; text: string }[] = []
+  for (const line of lines) {
+    const m = /^(#{2,4})\s+(.+)$/.exec(line)
+    if (m && m[1] && m[2]) {
+      out.push({ level: m[1].length, text: m[2].trim() })
+    }
+  }
+  return out
 })
 
-/** 正文容器 DOM 引用：v-md-preview 在其内渲染，目录跳转靠 querySel 取第 idx 个 h2 */
+/** 正文容器 DOM 引用：v-md-preview 在其内渲染，目录跳转靠 querySel 取第 idx 个 h2/h3/h4 */
 const contentRef = ref<HTMLElement | null>(null)
 
 /**
- * 点击目录项 i：在正文容器内取第 i 个 h2（v-md-preview github 主题不给 heading 加 id，
- * 故靠 .github-markdown-body 下 querySelectorAll('h2') 按 DOM 顺序取第 i 个）。
- * toc 提取末 slice(0,8)；同一份 source 的 h2 渲染顺序与 toc 序号一一对应，索引一致。
- * nextTick 等首屏渲染完成（博客正文 v-md-preview 异步解析），避免取不到 h2。
+ * 点击目录项 i：在正文容器内取第 i 个 h2/h3/h4（v-md-preview github 主题不给 heading 加 id，
+ * 故靠 .github-markdown-body 下 querySelectorAll('h2,h3,h4') 按 DOM 顺序取第 i 个）。
+ * toc 提取与渲染顺序一一对应，索引一致。nextTick 等首屏渲染完成（v-md-preview 异步解析）。
  */
 const handleTocSelect = (idx: number) => {
   const root = contentRef.value
   if (!root) return
   nextTick(() => {
-    const hs = root.querySelectorAll<HTMLElement>(':scope .github-markdown-body h2')
+    const hs = root.querySelectorAll<HTMLElement>(':scope .github-markdown-body h2, :scope .github-markdown-body h3, :scope .github-markdown-body h4')
     hs[idx]?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   })
 }
+
+/**
+ * Scroll spy：监听 window scroll，取离视口顶部最近且已越过偏移线（header 高度+缓冲）的标题序号，
+ * 驱动 KhContentToc 高亮 + 自动展开祖先链。rAF 节流。
+ */
+const activeTocIndex = ref(-1)
+let spyRaf = 0
+const SPY_OFFSET = () => {
+  const v = getComputedStyle(document.documentElement).getPropertyValue('--kh-header-height').trim()
+  return (parseFloat(v) || 64) + 24
+}
+const computeActive = () => {
+  const root = contentRef.value
+  if (!root) return
+  const hs = root.querySelectorAll<HTMLElement>(':scope .github-markdown-body h2, :scope .github-markdown-body h3, :scope .github-markdown-body h4')
+  if (!hs.length) { activeTocIndex.value = -1; return }
+  const line = SPY_OFFSET()
+  let idx = -1
+  hs.forEach((h, i) => {
+    if (h.getBoundingClientRect().top < line) idx = i
+  })
+  if (idx === -1) idx = 0
+  if (idx !== activeTocIndex.value) activeTocIndex.value = idx
+}
+const onScroll = () => {
+  if (spyRaf) return
+  spyRaf = requestAnimationFrame(() => {
+    spyRaf = 0
+    computeActive()
+  })
+}
+
+onMounted(() => window.addEventListener('scroll', onScroll, { passive: true }))
+onBeforeUnmount(() => {
+  window.removeEventListener('scroll', onScroll)
+  if (spyRaf) cancelAnimationFrame(spyRaf)
+})
+onActivated(() => nextTick(computeActive))
 
 /** 展示用标签名：tagNames 优先（后端当前置空），无则留空数组 */
 const displayTags = computed<string[]>(() => blog.value?.tagNames ?? [])
@@ -195,8 +244,8 @@ watch(blogId, () => {
       </article>
 
       <!-- 侧栏：目录（复用 KhContentToc，与文档阅读页同款）+ 相关推荐（作者卡已移除：目前无作者主页等可跳链的承载页） -->
-      <aside class="bd__aside">
-        <KhContentToc :items="toc" @select="handleTocSelect" />
+      <aside class="bd__aside" :style="{ '--kh-sticky-bottom': stickyBottom }">
+        <KhContentToc :items="toc" :active-index="activeTocIndex" @select="handleTocSelect" />
 
         <KhCard padding="md" class="bd__related">
           <KhSectionTitle title="相关推荐" />
@@ -264,7 +313,7 @@ watch(blogId, () => {
 
 .bd__layout {
   display: grid;
-  grid-template-columns: 1fr 280px;
+  grid-template-columns: 1fr 320px;
   gap: var(--kh-space-8);
   align-items: start;
   padding-bottom: var(--kh-space-12);
@@ -463,7 +512,12 @@ watch(blogId, () => {
   flex-direction: column;
   gap: var(--kh-space-5);
   position: sticky;
-  top: calc(var(--kh-header-height) + var(--kh-space-4));
+  /* 紧贴 header 底部（不留间隙，避免上推时段钻入 header 被遮） */
+  top: var(--kh-header-height);
+  padding-top: var(--kh-space-3);
+  /* 外层 aside 不滚（防"卡片整体滑动"）：目录卡列表内部滚（KhContentToc .kh-toc__root 限高），
+     相关推荐卡在下方正常排。目录卡长度固定 40vh 不随 footer 收缩（用户要求目录卡定长不动）。 */
+  --kh-toc-max-height: 40vh;
 }
 .bd__related-list {
   list-style: none;

@@ -24,12 +24,12 @@ import KhIcon from '@/components/common/KhIcon.vue'
 import { useUserStore } from '@/stores/user'
 import { currentUser } from '@/mock/user'
 import { blogs } from '@/mock/blog'
-import { projects } from '@/mock/project'
 import { resources } from '@/mock/resource'
 import { notices } from '@/mock/notice'
 import { viewLevelTagType, getViewLevelLabel } from '@/utils/viewLevel'
 import { getMyBlogsApi } from '@/api/knowhub/authoring'
 import { getMyArticlesApi } from '@/api/knowhub/article-authoring'
+import { getMyProjectsApi } from '@/api/knowhub/project-authoring'
 import type { BlogRecord } from '@/types/api/knowhub/authoring'
 import { formatDateTime } from '@/utils/format'
 
@@ -126,21 +126,37 @@ const fetchMyArticles = async () => {
   }
 }
 
-const myProjects = projects
-  .filter(
-    (p) =>
-      p.authorNickname === currentUser.name ||
-      p.members.some((m) => m.nickname === currentUser.name),
-  )
-  .slice(0, 4)
-  .map((p) => ({
-    id: p.projectId,
-    title: p.title,
-    type: p.type,
-    status: p.status,
-    level: p.level,
-    updateTime: p.updateTime,
-  }))
+const myProjects = ref<{
+  id: number
+  title: string
+  type: string
+  status: string
+  level: number
+  updateTime: string
+}[]>([])
+const myProjectsLoading = ref(false)
+const fetchMyProjects = async () => {
+  myProjectsLoading.value = true
+  try {
+    const res = await getMyProjectsApi({ pageNum: 1, pageSize: 20 })
+    myProjects.value = (res.records ?? []).map((p) => ({
+      id: p.projectId,
+      title: p.title,
+      type: p.type,
+      status: p.status ?? 'DRAFT',
+      level: p.level,
+      updateTime: p.updateTime
+        ? (formatDateTime(p.updateTime) as string)
+        : p.publishTime
+          ? (formatDateTime(p.publishTime) as string)
+          : '',
+    }))
+  } catch {
+    myProjects.value = []
+  } finally {
+    myProjectsLoading.value = false
+  }
+}
 const myResources = resources.slice(0, 4).map((r) => ({
   id: r.resourceId,
   title: r.title,
@@ -155,7 +171,7 @@ const myMessages = notices.slice(0, 3)
 const tabs: { key: TabKey; label: string; count: number }[] = [
   { key: 'blog', label: '我的博客', count: currentUser.stats.blogs },
   { key: 'article', label: '我的文章', count: myArticles.value.length },
-  { key: 'project', label: '我的项目', count: currentUser.stats.projects },
+  { key: 'project', label: '我的项目', count: myProjects.value.length },
   { key: 'resource', label: '我的资源', count: currentUser.stats.resources },
   { key: 'collect', label: '我的收藏', count: currentUser.stats.collections },
   { key: 'message', label: '消息通知', count: 3 },
@@ -165,7 +181,7 @@ const tabs: { key: TabKey; label: string; count: number }[] = [
 const createItems: { icon: string; label: string; tone: string; to?: string }[] = [
   { icon: 'blog', label: '创作博客', tone: 'var(--kh-primary)', to: '/blog/create' },
   { icon: 'doc', label: '创作文章', tone: 'var(--kh-accent)', to: '/article/create' },
-  { icon: 'project', label: '创建项目', tone: 'var(--kh-warm)' },
+  { icon: 'project', label: '创建项目', tone: 'var(--kh-warm)', to: '/project/create' },
   { icon: 'resource', label: '上传资源', tone: 'var(--kh-success)' },
 ]
 
@@ -215,10 +231,12 @@ onMounted(async () => {
   // 从文章创作页跳回 ?tab=article 时也预拉文章列表
   if (activeTab.value === 'article') {
     void fetchMyArticles()
+  } else if (activeTab.value === 'project') {
+    void fetchMyProjects()
   }
 })
 
-// tab 切到 blog/article 或 route query t 变化（带时间戳跳转）：重拉对应列表，保证新建草稿立即可见
+// tab 切到 blog/article/project 或 route query t 变化（带时间戳跳转）：重拉对应列表，保证新建草稿立即可见
 watch(
   () => [activeTab.value, route.query.t],
   ([tab]) => {
@@ -226,6 +244,8 @@ watch(
       void fetchMyBlogs()
     } else if (tab === 'article') {
       void fetchMyArticles()
+    } else if (tab === 'project') {
+      void fetchMyProjects()
     }
   },
 )
@@ -309,6 +329,7 @@ watch(
               <div class="profile__tab-tools">
                 <button v-if="activeTab === 'blog'" class="profile__tab-tool" type="button" @click="$router.push('/blog/create')"><el-icon><Plus /></el-icon> 新建</button>
                 <button v-if="activeTab === 'article'" class="profile__tab-tool" type="button" @click="$router.push('/article/create')"><el-icon><Plus /></el-icon> 新建</button>
+                <button v-if="activeTab === 'project'" class="profile__tab-tool" type="button" @click="$router.push('/project/create')"><el-icon><Plus /></el-icon> 新建</button>
               </div>
             </div>
 
@@ -370,13 +391,20 @@ watch(
               </div>
             </div>
 
-            <!-- 我的项目 -->
+            <!-- 我的项目（真实接口 /authoring/project/list，薄封装 quarryProject 走作者分支） -->
             <div v-else-if="activeTab === 'project'" class="profile__list">
+              <div v-if="myProjectsLoading" class="profile__placeholder">
+                <p>加载中…</p>
+              </div>
+              <div v-else-if="!myProjects.length" class="profile__placeholder">
+                <KhIcon name="project" :size="40" :stroke="1.4" />
+                <p>还没有项目，点上方「新建」开始创建</p>
+              </div>
               <div v-for="p in myProjects" :key="p.id" class="profile__row">
                 <div class="profile__row-main">
-                  <div class="profile__row-title">{{ p.title }}</div>
+                  <div class="profile__row-title" @click="$router.push(`/project/${p.id}`)">{{ p.title }}</div>
                   <div class="profile__row-meta">
-                    <KhTag size="sm" type="primary">{{ typeLabel[p.type] }}</KhTag>
+                    <KhTag size="sm" type="primary">{{ typeLabel[p.type] ?? p.type }}</KhTag>
                     <KhTag size="sm" :type="statusMeta[p.status]?.type ?? 'neutral'">{{ statusMeta[p.status]?.text ?? '未知' }}</KhTag>
                     <KhTag size="sm" :type="viewLevelTagType[p.level] ?? 'neutral'">{{ getViewLevelLabel(p.level) }}</KhTag>
                     <span>·</span>
@@ -384,7 +412,7 @@ watch(
                   </div>
                 </div>
                 <div class="profile__row-actions">
-                  <button class="profile__row-btn" type="button" title="编辑"><el-icon><Edit /></el-icon></button>
+                  <button class="profile__row-btn" type="button" title="编辑" @click="$router.push(`/project/create?id=${p.id}`)"><el-icon><Edit /></el-icon></button>
                   <button class="profile__row-btn profile__row-btn--danger" type="button" title="删除"><el-icon><Delete /></el-icon></button>
                 </div>
               </div>

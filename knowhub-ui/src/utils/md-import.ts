@@ -55,9 +55,17 @@ export const sanitizeLocalImages = (md: string): string =>
 
 /**
  * 解析 .md File 为可填入创作表单的 {title, content}。
+ * @param file .md 文件
+ * @param opts.maxTitleLen 标题截断长度（默认 100，博客用 100）
+ * @param opts.fallbackTitle 解析得空时的占位标题（默认"未命名博客"）
  * @throws 文件超 MD_IMPORT_MAX_SIZE 或读为空时抛错，由调用方提示用户。
  */
-export const parseMdFile = async (file: File): Promise<ImportedMd> => {
+export const parseMdFile = async (
+  file: File,
+  opts?: { maxTitleLen?: number; fallbackTitle?: string },
+): Promise<ImportedMd> => {
+  const maxTitleLen = opts?.maxTitleLen ?? 100
+  const fallbackTitle = opts?.fallbackTitle ?? '未命名博客'
   if (file.size > MD_IMPORT_MAX_SIZE) {
     throw new Error(`md 文件过大（>${MD_IMPORT_MAX_SIZE / 1024 / 1024}MB），请压缩后重试`)
   }
@@ -67,6 +75,58 @@ export const parseMdFile = async (file: File): Promise<ImportedMd> => {
   }
   const content = sanitizeLocalImages(raw)
   const title =
-    file.name.replace(/\.md$/i, '').trim().slice(0, 100) || '未命名博客'
+    file.name.replace(/\.md$/i, '').trim().slice(0, maxTitleLen) || fallbackTitle
   return { title, content }
+}
+
+/**
+ * 方法效果：
+ * 把"隐藏 file input 触发选 .md → 解析 → 回填表单 → 提示"这套样板抽成公共工具方法，
+ * 供博客/章节创作页复用（博客 [blog/create.vue] 与章节 [article/chapter-edit.vue] 都支持 md 本地上传）。
+ * 数据流转：
+ * - 调用方持有一个 input ref（或任意可 click 的元素），把返回的 handleFileChange 挂到 <input @change>；
+ * - 点按钮调 openPicker() 触发文件选择，选完 change 事件进 handleFileChange；
+ * - parseMdFile 解析（本地图片就地改写占位），成功后 onImported(title, content) 回填表单；
+ * - 失败/为空 ElMessage 提示，不抛出（调用方无需 try/catch）；input.value 清空保证同文件二次可触发。
+ * 参数：
+ * - onImported：拿到 {title, content} 回填表单（title 通常填标题/章节名字段，content 填正文）。
+ * - opts：{ maxTitleLen, fallbackTitle } 透传给 parseMdFile（章节名可传 20、占位"未命名章节"等）。
+ * - 返回 { openPicker, handleFileChange }：openPicker 给触发按钮用、handleFileChange 挂 input。
+ * 副作用：
+ * - 仅前端读文件、解析，不碰后端；本地图片路径改写为 `[图片：alt]` 占位由作者手动重插图。
+ */
+import { ElMessage } from 'element-plus'
+
+export interface MdImportOptions {
+  maxTitleLen?: number
+  fallbackTitle?: string
+}
+
+export const createMdImporter = (
+  onImported: (result: ImportedMd) => void,
+  opts?: MdImportOptions,
+) => {
+  const openPicker = () => {
+    const el = document.createElement('input')
+    el.type = 'file'
+    el.accept = '.md,.markdown,text/markdown'
+    el.style.display = 'none'
+    el.addEventListener('change', async (e) => {
+      const input = e.target as HTMLInputElement
+      const file = input.files?.[0]
+      input.value = ''
+      if (!file) return
+      try {
+        const result = await parseMdFile(file, opts)
+        onImported(result)
+        ElMessage.success(`已导入「${result.title}」，请检查正文并对本地图片占位手动重插图`)
+      } catch (err) {
+        ElMessage.error(err instanceof Error ? err.message : '导入失败')
+      }
+    })
+    document.body.appendChild(el)
+    el.click()
+    document.body.removeChild(el)
+  }
+  return { openPicker }
 }

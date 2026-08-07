@@ -224,6 +224,46 @@ public class ChapterServiceImpl implements ChapterService {
 
     @Override
     @Transactional
+    public Boolean reorderChapters(List<ChapterVo> orders) {
+        // 前台长按拖拽重排持久化：入参每项带 chapterId + 新 sortOrder + articleId。
+        // 校验：非空；所有 chapterId 归属同一 articleId（前端传文章视角的整列顺序，归属一致才合法）；
+        // 逐章按 canEditChapter 鉴权（同编辑态权限口径，章节作者 OR 文章作者 OR 系统编辑权限够），
+        // 仅改 sort_order + 审计列，不动正文/状态。中途任一章越权/不存在即抛错回滚（事务保证一致性）。
+        if (orders == null || orders.isEmpty()) {
+            throw new ServiceException(500, "重排列表不能为空");
+        }
+        // 取第一项 articleId 作为基准，校验所有项归属一致
+        Long baseArticleId = orders.get(0).getArticleId();
+        if (baseArticleId == null) {
+            throw new ServiceException(500, "章节归属文章不能为空");
+        }
+        Article article = articleMapper.getArticleInfoById(baseArticleId);
+        if (article == null) {
+            throw new ServiceException(500, "所属文章不存在");
+        }
+        UserInfo user = currentUser();
+        for (ChapterVo o : orders) {
+            if (o.getChapterId() == null || o.getSortOrder() == null) {
+                throw new ServiceException(500, "章节ID与排序值不能为空");
+            }
+            // 归属一致：每项 articleId 必须与基准相符（防跨文章拖拽串改）
+            if (!baseArticleId.equals(o.getArticleId())) {
+                throw new ServiceException(500, "重排章节必须属于同一文章");
+            }
+            Chapter exist = chapterMapper.getChapterInfoById(o.getChapterId());
+            if (exist == null) {
+                throw new ServiceException(500, "章节不存在：" + o.getChapterId());
+            }
+            if (!canEditChapter(exist, article, user)) {
+                throw new ServiceException(500, "无权重排该章节：" + o.getChapterId());
+            }
+            chapterMapper.updateSortOrder(o.getChapterId(), o.getSortOrder(), user.getUsername());
+        }
+        return true;
+    }
+
+    @Override
+    @Transactional
     public Boolean deleteChapterInfo(Long[] chapterIds) {
         UserInfo user = currentUser();
         for (Long id : chapterIds) {

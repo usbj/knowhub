@@ -27,7 +27,7 @@ import {
   getMyBlogLevelApi,
 } from '@/api/knowhub/authoring'
 import { listEnabledTagsApi } from '@/api/knowhub/blog'
-import { parseMdFile } from '@/utils/md-import'
+import { createMdImporter } from '@/utils/md-import'
 import type { BlogAuthoringPayload } from '@/types/api/knowhub/authoring'
 import type { TagRecord } from '@/types/api/knowhub/tag'
 
@@ -168,31 +168,16 @@ const handleRevoke = async () => {
  * 预签名直传 /file/resolve/{id}）。本页不再自写 handleUploadImage。
  */
 
-/** 隐藏 file input 的 ref，点击导入按钮触发其 click */
-const mdFileInput = ref<HTMLInputElement | null>(null)
-
 /**
- * 导入 .md 文件为草稿内容：纯前端解析（FileReader 读文本），本地图片路径就地改写成
- * `[图片：alt]` 单行占位。填 title+content 后展开元信息面板，让作者补等级/标签/封面、
- * 对占位图手动重插图，再点"存草稿"。不自动提交——保留作者检查机会。
- * 复用既有 draftBlogApi，零新后端接口。
+ * 导入 .md 文件为草稿内容：复用公共工具 createMdImporter（utils/md-import.ts）——纯前端解析，
+ * 本地图片路径就地改写为 `[图片：alt]` 占位，作者后续对占位手动重插图。回填 title+content 后展开
+ * 元信息面板让作者补等级/标签/封面，再点"存草稿"（不自动提交，保留作者检查机会）。复用 draftBlogApi，零新后端接口。
  */
-const handleImportMd = async (e: Event) => {
-  const input = e.target as HTMLInputElement
-  const file = input.files?.[0]
-  // 清空 input.value 否则同文件二次选不触发 change
-  input.value = ''
-  if (!file) return
-  try {
-    const { title, content } = await parseMdFile(file)
-    form.value.title = title
-    form.value.content = content
-    metaExpanded.value = true
-    ElMessage.success(`已导入「${title}」，请检查正文并对本地图片占位手动重插图`)
-  } catch (err) {
-    ElMessage.error(err instanceof Error ? err.message : '导入失败')
-  }
-}
+const { openPicker: openMdPicker } = createMdImporter(({ title, content }) => {
+  form.value.title = title
+  form.value.content = content
+  metaExpanded.value = true
+})
 const statusText = computed(() => {
   const m: Record<string, string> = {
     DRAFT: '草稿',
@@ -262,20 +247,13 @@ onMounted(async () => {
           <span v-if="statusText" class="create__status">{{ statusText }}</span>
         </div>
         <div class="create__bar-right">
-          <!-- 隐藏 file input：导入 .md 文件纯前端解析为草稿内容，本地图片路径改写占位 -->
-          <input
-            ref="mdFileInput"
-            type="file"
-            accept=".md,.markdown,text/markdown"
-            class="create__md-input"
-            @change="handleImportMd"
-          />
+          <!-- 导入 .md 文件纯前端解析为草稿内容（本地图片路径改写占位，需手动重插图） -->
           <button
             class="create__btn create__btn--ghost"
             type="button"
             title="从 .md 文件导入正文（本地图片路径会标为占位，需手动重插图）"
             :disabled="saving || publishing"
-            @click="mdFileInput?.click()"
+            @click="openMdPicker"
           >
             <KhIcon name="file" :size="14" /> 导入 .md
           </button>
@@ -521,10 +499,6 @@ onMounted(async () => {
 }
 .create__btn--warn:hover:not(:disabled) {
   background: var(--kh-warm-soft);
-}
-/* 隐藏的 md 文件 input：用按钮触发其 click，自身不占位不显示 */
-.create__md-input {
-  display: none;
 }
 
 /* —— 主体限宽容器 —— */

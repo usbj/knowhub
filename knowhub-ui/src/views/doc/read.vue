@@ -8,16 +8,22 @@
   底部上/下章导航。返回按钮回上一级（文章介绍页 /docs/:id）。
 -->
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from 'vue'
+import { computed, nextTick, onActivated, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ArrowLeft, ArrowUp, ArrowDown } from '@element-plus/icons-vue'
 import KhIcon from '@/components/common/KhIcon.vue'
 import KhContentToc from '@/components/common/KhContentToc.vue'
 import { getArticleDetailApi, getChapterContentApi } from '@/api/knowhub/article'
 import type { ArticlePortalDetailRecord, ChapterContentRecord } from '@/types/api/knowhub/article'
+import { useStickyBottom } from '@/utils/use-footer-visible'
 
 const route = useRoute()
 const router = useRouter()
+
+/** sticky 侧栏底部预留量：sticky 父容器（.dr__layout）末端进视口时收紧 max-height，
+ *  防 sticky aside 上推钻 header；footer 进视口也兜底收缩。 */
+const footerVisible = useStickyBottom('.dr__layout')
+const stickyBottom = computed(() => `${footerVisible.value}px`)
 
 const docId = computed(() => Number(route.params.id))
 const activeChapterId = computed(() => Number(route.params.chapterId))
@@ -70,27 +76,73 @@ const selectChapter = (chapterId: number) => {
 
 const goIntro = () => router.push(`/docs/${docId.value}`)
 
-/** 当前章内容大纲：从正文提取 ## 二级标题，供右栏大纲卡展示（无标题则空；越级锁态时正文为空 → 目录空） */
-const chapterToc = computed<string[]>(() => {
+/** 当前章内容大纲：从正文提取 ##/###/#### 标题（含层级），供右栏目录树展示（无标题则空；越级锁态时正文为空 → 目录空）。
+ *  用 TocItem{level,text} 扁平按出现顺序入参，组件按 level 缩进渲染成 CSDN 风格目录树，覆盖 h2/h3/h4 全层级。 */
+const chapterToc = computed<{ level: number; text: string }[]>(() => {
   const content = chapter.value?.content ?? ''
-  return content
-    .split('\n')
-    .filter((l) => l.startsWith('## '))
-    .map((l) => l.replace(/^##\s+/, '').trim())
-    .slice(0, 10)
+  const out: { level: number; text: string }[] = []
+  for (const line of content.split('\n')) {
+    const m = /^(#{2,4})\s+(.+)$/.exec(line)
+    if (m && m[1] && m[2]) {
+      out.push({ level: m[1].length, text: m[2].trim() })
+    }
+  }
+  return out
 })
 
 const contentRef = ref<HTMLElement | null>(null)
 
-/** 点击目录项 i：取正文容器内第 i 个 h2 平滑滚动定位 */
+/** 点击目录项 i：取正文容器内第 i 个 h2/h3/h4（按 DOM 顺序与 toc 提取顺序一一对应）平滑滚动定位 */
 const handleTocSelect = (idx: number) => {
   const root = contentRef.value
   if (!root) return
   nextTick(() => {
-    const hs = root.querySelectorAll<HTMLElement>(':scope .github-markdown-body h2')
+    const hs = root.querySelectorAll<HTMLElement>(':scope .github-markdown-body h2, :scope .github-markdown-body h3, :scope .github-markdown-body h4')
     hs[idx]?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   })
 }
+
+/**
+ * Scroll spy：监听 window scroll，取离视口顶部（留出 header 高度的偏移线）最近且已越过该线的标题，
+ * 作为当前阅读标题序号 → 驱动 KhContentToc 高亮 + 自动展开祖先链。
+ * - 偏移线 = header 高度 + 一点缓冲；标题在该线上方（getBoundingClientRect().top < 偏移线）就算"已读过"。
+ * - 取最后一个已越过偏移线的标题（向下滚时高亮顺次往下）；向上滚同理，最近的已过线标题会变回上方，自然回退到上一个。
+ * - 节流：rAF，避免 scroll 高频 setState。
+ */
+const activeTocIndex = ref(-1)
+let spyRaf = 0
+const SPY_OFFSET = () => {
+  const v = getComputedStyle(document.documentElement).getPropertyValue('--kh-header-height').trim()
+  return (parseFloat(v) || 64) + 24
+}
+const computeActive = () => {
+  const root = contentRef.value
+  if (!root) return
+  const hs = root.querySelectorAll<HTMLElement>(':scope .github-markdown-body h2, :scope .github-markdown-body h3, :scope .github-markdown-body h4')
+  if (!hs.length) { activeTocIndex.value = -1; return }
+  const line = SPY_OFFSET()
+  let idx = -1
+  hs.forEach((h, i) => {
+    if (h.getBoundingClientRect().top < line) idx = i
+  })
+  // 全部都在偏移线下方（页面顶部、未滚到任何标题）→ 高亮第一个
+  if (idx === -1) idx = 0
+  if (idx !== activeTocIndex.value) activeTocIndex.value = idx
+}
+const onScroll = () => {
+  if (spyRaf) return
+  spyRaf = requestAnimationFrame(() => {
+    spyRaf = 0
+    computeActive()
+  })
+}
+
+onMounted(() => window.addEventListener('scroll', onScroll, { passive: true }))
+onBeforeUnmount(() => {
+  window.removeEventListener('scroll', onScroll)
+  if (spyRaf) cancelAnimationFrame(spyRaf)
+})
+onActivated(() => nextTick(computeActive))
 
 /** 切文章时重拉详情 + 正文；切章节时只重拉正文 */
 watch(docId, () => {
@@ -98,7 +150,7 @@ watch(docId, () => {
   void fetchChapter()
 })
 watch(activeChapterId, () => {
-  void fetchChapter()
+  void fetchChapter().then(() => nextTick(computeActive))
 })
 
 // 首次：先拉详情（得章节目录），再拉当前章正文
@@ -121,8 +173,8 @@ fetchDoc().then(() => fetchChapter())
 
     <!-- 主体三栏 -->
     <div class="kh-container kh-container--wide dr__layout">
-      <!-- 左：章节目录 sticky -->
-      <aside class="dr__toc">
+      <!-- 左：章节目录 sticky（随 footer 出现而缩短，--kh-sticky-bottom 由 footer observer 驱动） -->
+      <aside class="dr__toc" :style="{ '--kh-sticky-bottom': stickyBottom }">
         <div class="dr__toc-head"><KhIcon name="doc" :size="16" /> 章节</div>
         <ul class="dr__toc-list">
           <li
@@ -180,8 +232,8 @@ fetchDoc().then(() => fetchChapter())
       </article>
 
       <!-- 右：本章目录卡（无小标题则不显示） -->
-      <aside v-if="chapterToc.length" class="dr__subtoc">
-        <KhContentToc :items="chapterToc" title="目录" @select="handleTocSelect" />
+      <aside v-if="chapterToc.length" class="dr__subtoc" :style="{ '--kh-sticky-bottom': stickyBottom }">
+        <KhContentToc :items="chapterToc" :active-index="activeTocIndex" title="目录" @select="handleTocSelect" />
       </aside>
     </div>
   </div>
@@ -224,7 +276,7 @@ fetchDoc().then(() => fetchChapter())
 
 .dr__layout {
   display: grid;
-  grid-template-columns: 240px 1fr 220px;
+  grid-template-columns: 240px 1fr 260px;
   gap: var(--kh-space-8);
   align-items: start;
   padding-bottom: var(--kh-space-12);
@@ -232,9 +284,17 @@ fetchDoc().then(() => fetchChapter())
 
 .dr__toc {
   position: sticky;
-  top: calc(var(--kh-header-height) + var(--kh-space-4));
-  max-height: calc(100vh - var(--kh-header-height) - var(--kh-space-8));
-  overflow-y: auto;
+  /* 紧贴头导航底部（不留间隙，避免 sticky 上推时段被推到 header 内部被遮） */
+  top: var(--kh-header-height);
+  /* height 固定占满可用区（不随内容自适应缩），短内容时下半留白、长内容时 list 内滚，
+     根除"刚点开比正常短"的视觉跳变 + footer 出现时底部平滑缩 */
+  height: calc(100vh - var(--kh-header-height) - var(--kh-space-12) - var(--kh-sticky-bottom, 0px));
+  display: flex;
+  flex-direction: column;
+  padding-top: var(--kh-space-3);
+  /* 不加 transition：height 必须逐帧精确等于 (vh - header - space-12 - sticky_bottom)，
+     否则过渡帧内 aside 底会超出 sticky 容器末端，触发 sticky bottom-pin（顶上移=抖动）。
+     sticky_bottom 由 useStickyBottom 在每个 scroll 事件同步算出，本身已足够平滑。 */
 }
 .dr__toc-head {
   display: flex;
@@ -244,9 +304,24 @@ fetchDoc().then(() => fetchChapter())
   font-size: var(--kh-font-size-sm);
   font-weight: 600;
   margin-bottom: var(--kh-space-3);
-  padding: 0 var(--kh-space-3);
+  padding: 0 var(--kh-space-3) var(--kh-space-3);
+  border-bottom: 1px solid var(--kh-border-soft);
+  flex: none;
 }
-.dr__toc-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.dr__toc-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+.dr__toc-list::-webkit-scrollbar { width: 6px; }
+.dr__toc-list::-webkit-scrollbar-thumb { background: var(--kh-border); border-radius: 3px; }
 .dr__toc-item {
   display: flex;
   gap: 8px;
@@ -286,7 +361,8 @@ fetchDoc().then(() => fetchChapter())
 .dr__content :deep(.github-markdown-body h1),
 .dr__content :deep(.github-markdown-body h2) { border-bottom: none; }
 .dr__content :deep(.github-markdown-body h2),
-.dr__content :deep(.github-markdown-body h3) {
+.dr__content :deep(.github-markdown-body h3),
+.dr__content :deep(.github-markdown-body h4) {
   scroll-margin-top: calc(var(--kh-header-height) + var(--kh-space-4));
 }
 
@@ -329,9 +405,10 @@ fetchDoc().then(() => fetchChapter())
   border-top: 1px solid var(--kh-border-soft);
 }
 .dr__nav.is-first,
-.dr__nav.is-last { justify-content: center; }
+.dr__nav.is-last { justify-content: stretch; }
+/* 第一章/最后一章单按钮：宽度占满整行（=其他章节两按钮总长），但内部内容居中显示 */
 .dr__nav.is-first .dr__nav-btn,
-.dr__nav.is-last .dr__nav-btn { flex: 0 1 auto; max-width: 60%; }
+.dr__nav.is-last .dr__nav-btn { flex: 1; max-width: none; justify-content: center; text-align: center; }
 .dr__nav-btn {
   display: flex;
   align-items: center;
@@ -356,9 +433,12 @@ fetchDoc().then(() => fetchChapter())
 
 .dr__subtoc {
   position: sticky;
-  top: calc(var(--kh-header-height) + var(--kh-space-4));
-  max-height: calc(100vh - var(--kh-header-height) - var(--kh-space-8));
-  overflow-y: auto;
+  /* 紧贴 header 底部（与左卡同口径） */
+  top: var(--kh-header-height);
+  padding-top: var(--kh-space-3);
+  /* 目录卡固定大小（≈视口 40%，用户指定长度），目录超长时**列表内部滚动**；
+     外层 aside 不滚（防"卡片整体滑动"）。长度固定不随 footer 收缩（用户要求目录卡定长不动）。 */
+  --kh-toc-max-height: 40vh;
 }
 
 @media (max-width: 1280px) {

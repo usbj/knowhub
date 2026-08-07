@@ -3,10 +3,13 @@
   ------------------------------------------------------------------
   章节是文章子页面，正文走章节主表。表单精简（用户拍板"不要太多杂项"）：章节名 + 排序 + 正文 markdown。
   - 不含封面/标签/等级（章节不分等级、可见性随文章、无标签）。
-  - 顶部工具条：返回 / 章节名输入 / 状态徽标 / 存草稿 / 发布(提交) / 撤回。
-  - 主体：排序输入(窄) + 正文编辑器（复用通用 KhMarkdownEditor，编辑/预览浮层切换，拖拽/粘贴插图
-    走预签名直传 BLOG_BODY 暂用——后端 FileBusinessType 暂无 CHAPTER_BODY，将来加后切）。
-    编辑器 height=100% 占满 main 区剩余高度，超出由内部滚动条兜底，不再随内容往下蔓延。
+  - 顶部工具条：返回 / 章节名输入 / 状态徽标 / 导入.md / 存草稿 / 发布(提交) / 撤回。
+  「导入 .md」复用公共 createMdImporter（与博客创作页同源）——本地 md 纯前端解析，本地图片路径
+  改写为 `[图片：alt]` 占位需作者手动重插图；章节名为空时自动填文件名，正文填 content。
+  - 主体：正文编辑器（content-first，复用通用 KhMarkdownEditor，编辑/预览浮层切换，拖拽/粘贴插图
+    走预签名直传 BLOG_BODY 暂用——后端 FileBusinessType 暂无 CHAPTER_BODY，将来加后切）占满 main 区，
+    超出由内部滚动条兜底不再往下蔓延；**排序杂项置正文下方折叠面板**（仿博客元信息区，默认折叠，
+    写完正文再展开补排序），不再挤在正文上方。
   - 状态机：新建 schema — submitChapterApi（按文章 visibility 决定状态机：作者免审直 PUBLISHED；
     非作者 PRIVATE 拒、SEMIPUBLIC 进 PENDING_AUTHOR_REVIEW、PUBLIC 免审 PUBLISHED）。
     编辑 ?cid=xxx — getChapterForEditApi 回填；PUBLISHED 须先撤回才能改（编辑接口挡），REVOKE 后可再 submit/publish。
@@ -27,6 +30,7 @@ import {
   revokeChapterAuthoringApi,
   getChapterForEditApi,
 } from '@/api/knowhub/article-authoring'
+import { createMdImporter } from '@/utils/md-import'
 import type { ChapterAuthoringPayload } from '@/types/api/knowhub/article-authoring'
 
 const route = useRoute()
@@ -52,6 +56,9 @@ const form = ref<{
 const chapterStatus = ref<string>('')
 const saving = ref(false)
 const publishing = ref(false)
+
+/** 章节元信息折叠态（默认折叠，content-first 仿博客；写完正文再展开补排序） */
+const metaExpanded = ref(false)
 
 const isPublished = computed(() => chapterStatus.value === 'PUBLISHED')
 const canEditNow = computed(() => ['DRAFT', 'REJECTED', 'REVOKED', ''].includes(chapterStatus.value))
@@ -170,6 +177,19 @@ const fetchForEdit = async (chapterId: number) => {
   }
 }
 
+/**
+ * 导入 .md 文件为章节正文：复用公共工具 createMdImporter（utils/md-import.ts）——纯前端解析，
+ * 本地图片路径就地改写为 `[图片：alt]` 占位，作者后续对占位手动重插图。章节名为空时填文件名
+ * （200 字截断对齐 maxlength）；正文填 form.content。不自动提交，保留作者检查机会。
+ */
+const { openPicker: openMdPicker } = createMdImporter(
+  ({ title, content }) => {
+    if (!form.value.chapterName.trim()) form.value.chapterName = title
+    form.value.content = content
+  },
+  { maxTitleLen: 200, fallbackTitle: '未命名章节' },
+)
+
 onMounted(() => {
   form.value.articleId = articleId.value
   if (editCid.value) {
@@ -191,6 +211,15 @@ onMounted(() => {
           <span v-if="statusText" class="ace__status">{{ statusText }}</span>
         </div>
         <div class="ace__bar-right">
+          <button
+            class="ace__btn ace__btn--ghost"
+            type="button"
+            title="从 .md 文件导入章节正文（本地图片路径会标为占位，需手动重插图；章节名为空时自动填文件名）"
+            :disabled="saving || publishing"
+            @click="openMdPicker"
+          >
+            <KhIcon name="file" :size="14" /> 导入 .md
+          </button>
           <button class="ace__btn ace__btn--ghost" type="button" :disabled="saving || publishing" @click="handleSaveDraft">
             {{ saving ? '保存中…' : (isEdit ? '保存修改' : '存草稿') }}
           </button>
@@ -213,16 +242,7 @@ onMounted(() => {
     </header>
 
     <div class="ace__wrap">
-      <!-- 排序 -->
-      <div class="ace__sort-row">
-        <label class="ace__sort-label">
-          <KhIcon name="order" :size="14" /> 排序
-        </label>
-        <input v-model.number="form.sortOrder" type="number" class="ace__sort-input" min="0" max="9999" placeholder="0" />
-        <span class="ace__sort-hint">数字小的在前（缺省 0，同级按创建顺序）</span>
-      </div>
-
-      <!-- 正文编辑器：复用通用 KhMarkdownEditor；height="100%" 占满（父用 flex:1 + min-height:0
+      <!-- 正文编辑器（content-first）：复用通用 KhMarkdownEditor；height="100%" 占满（父用 flex:1 + min-height:0
            链约束高度，正文滚动由组件内部 .v-md-editor__main 自带 overflow:auto 负责，
            不会随内容往下蔓延、超出范围由组件内部滚动条兜底) -->
       <section class="ace__editor">
@@ -233,6 +253,33 @@ onMounted(() => {
           business-type="BLOG_BODY"
           access="PUBLIC"
         />
+      </section>
+
+      <!-- 章节元信息折叠面板（正文下方，仿博客 meta）：排序杂项置此，默认折叠，content-first -->
+      <section class="ace__meta">
+        <button class="ace__meta-head" type="button" @click="metaExpanded = !metaExpanded">
+          <KhIcon name="tag" :size="14" />
+          <span>章节信息</span>
+          <span class="ace__meta-summary">排序 {{ form.sortOrder ?? 0 }}</span>
+          <span class="ace__meta-caret" :class="{ 'is-open': metaExpanded }">▾</span>
+        </button>
+        <div v-show="metaExpanded" class="ace__meta-body">
+          <!-- 排序 -->
+          <div class="ace__field">
+            <label class="ace__label">
+              <KhIcon name="order" :size="14" /> 排序
+              <span class="ace__label-hint">数字小的在前（缺省 0，同级按创建顺序）</span>
+            </label>
+            <input
+              v-model.number="form.sortOrder"
+              type="number"
+              class="ace__sort-input"
+              min="0"
+              max="9999"
+              placeholder="0"
+            />
+          </div>
+        </div>
       </section>
     </div>
   </div>
@@ -261,16 +308,30 @@ onMounted(() => {
 .ace__btn--warn { border-color: var(--kh-warm); color: var(--kh-warm); background: var(--kh-surface); }
 .ace__btn--warn:hover:not(:disabled) { background: var(--kh-primary-soft); }
 
-/* 主容器：flex:1 + min-height:0 链，把高度传给正文编辑器，让编辑器占满而非随内容撑高 */
+/* 主容器：flex:1 + min-height:0 链，把高度传给正文编辑器，让编辑器占满而非随内容撑高。
+   content-first：正文编辑器 flex:1 占主体，元信息折叠面板 flex:none 置于正文下方展开/折叠。 */
 .ace__wrap { max-width: 880px; margin: 0 auto; width: 100%; padding: var(--kh-space-4) var(--kh-space-5) var(--kh-space-6); display: flex; flex-direction: column; gap: var(--kh-space-4); flex: 1; min-height: 0; }
-
-.ace__sort-row { display: flex; align-items: center; gap: var(--kh-space-3); flex: none; }
-.ace__sort-label { display: inline-flex; align-items: center; gap: 5px; font-size: var(--kh-font-size-sm); font-weight: 600; color: var(--kh-text-secondary); flex: none; }
-.ace__sort-input { width: 80px; height: 34px; padding: 0 10px; border: 1px solid var(--kh-border); border-radius: var(--kh-radius-sm); background: var(--kh-surface); font-size: var(--kh-font-size-sm); color: var(--kh-text); }
-.ace__sort-input:focus { outline: none; border-color: var(--kh-primary-border); }
-.ace__sort-hint { font-size: 12px; color: var(--kh-text-tertiary); }
 
 /* 正文编辑器容器：flex:1 + min-height:0 占满 main 区剩余高度，最小高度兜底防小屏过窄。
    外框/mode 浮层/圆角 /tooltip 溢出已封装进 KhMarkdownEditor 根，本类只管"占满"。 */
 .ace__editor { position: relative; flex: 1; min-height: 320px; display: flex; flex-direction: column; }
+
+/* 章节元信息折叠面板（仿博客 meta）：正文下方，默认折叠 content-first */
+.ace__meta { background: var(--kh-surface); border: 1px solid var(--kh-border-soft); border-radius: var(--kh-radius-lg); overflow: hidden; flex: none; }
+.ace__meta-head {
+  width: 100%; display: flex; align-items: center; gap: var(--kh-space-2);
+  padding: var(--kh-space-3) var(--kh-space-4); background: transparent; border: none; cursor: pointer;
+  font-size: var(--kh-font-size-sm); color: var(--kh-text-secondary); transition: background var(--kh-transition-fast);
+}
+.ace__meta-head:hover { background: var(--kh-surface-muted); }
+.ace__meta-head > :first-child { color: var(--kh-primary); }
+.ace__meta-summary { margin-left: auto; font-size: 12px; color: var(--kh-text-tertiary); font-family: var(--kh-font-mono); }
+.ace__meta-caret { transition: transform var(--kh-transition-fast); color: var(--kh-text-tertiary); font-size: 12px; }
+.ace__meta-caret.is-open { transform: rotate(180deg); }
+.ace__meta-body { padding: var(--kh-space-4) var(--kh-space-5); border-top: 1px solid var(--kh-border-soft); display: flex; flex-direction: column; gap: var(--kh-space-4); }
+.ace__field { display: flex; flex-direction: column; gap: var(--kh-space-2); }
+.ace__label { display: flex; align-items: center; gap: 6px; font-size: var(--kh-font-size-sm); font-weight: 600; color: var(--kh-text); }
+.ace__label-hint { font-size: 12px; font-weight: 400; color: var(--kh-text-tertiary); }
+.ace__sort-input { width: 120px; height: 34px; padding: 0 10px; border: 1px solid var(--kh-border); border-radius: var(--kh-radius-sm); background: var(--kh-surface); font-size: var(--kh-font-size-sm); color: var(--kh-text); }
+.ace__sort-input:focus { outline: none; border-color: var(--kh-primary-border); }
 </style>

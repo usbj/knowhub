@@ -1,8 +1,11 @@
 <!--
   ProjectCard —— 项目卡片
   ------------------------------------------------------------------
-  类型/状态/等级徽标 + 标题 + 简介 + 负责人 + 参与者头像组 + 评分 + 下载量。
-  项目无封面："最活跃"徽标已去掉，卡片头部行只留等级标记。
+  类型/等级徽标 + 标题 + 简介 + 负责人 + 浏览/下载量。
+  数据源：后端 ProjectPortalVo（/portal/project/search|recommend）。
+  说明：原本 mock 的评分 rating / 参与者头像组（members）/ "最活跃" 徽标均不在后端 VO 上
+  （后端列表只回元数据 + 计数，无成员关系回填），按 README.dev §11.1 私加字段方向去除，
+  卡片以"类型徽标 + 等级标签 + 负责人 + 下载/浏览"为主——与博客卡片同口径。
 -->
 <script setup lang="ts">
 import { computed } from 'vue'
@@ -10,47 +13,36 @@ import { useRouter } from 'vue-router'
 import KhCard from '@/components/common/KhCard.vue'
 import KhTag from '@/components/common/KhTag.vue'
 import KhAvatar from '@/components/common/KhAvatar.vue'
-import KhRating from '@/components/common/KhRating.vue'
 import KhStatPill from '@/components/common/KhStatPill.vue'
-import type { MockProject } from '@/mock/project'
+import type { ProjectPortalRecord } from '@/types/api/knowhub/project-portal'
 import { viewLevelTagType, getViewLevelLabel } from '@/utils/viewLevel'
 
-const props = defineProps<{ project: MockProject }>()
+const props = defineProps<{ project: ProjectPortalRecord }>()
 const router = useRouter()
 const goDetail = () => router.push(`/project/${props.project.projectId}`)
 
-/** 负责人：取成员表 LEADER 角色的 nickname（与项目模块负责人语义一致） */
-const leader = computed(
-  () => props.project.members.find((m) => m.role === 'LEADER')?.nickname ?? props.project.authorNickname,
-)
+/** 负责人昵称（后端 join sys_user on author_id 带出，直接展示） */
+const leader = computed(() => props.project.authorNickname ?? '未知负责人')
 
-/** 类型/状态文案映射 */
+/** 类型文案映射 */
 const typeLabel: Record<string, string> = { COMPETITION: '比赛项目', PRACTICE: '练习项目', OPS: '运维项目' }
-const statusLabel: Record<string, { text: string; type: 'success' | 'warning' | 'danger' | 'neutral' | 'info' }> = {
-  PUBLISHED: { text: '已发布', type: 'success' },
-  PENDING_REVIEW: { text: '待审核', type: 'warning' },
-  REJECTED: { text: '已驳回', type: 'danger' },
-  DRAFT: { text: '草稿', type: 'neutral' },
-  REVOKED: { text: '已撤回', type: 'neutral' },
-  ARCHIVED: { text: '已归档', type: 'info' },
-}
+const typeText = computed(() => typeLabel[props.project.type ?? ''] ?? props.project.type ?? '项目')
 </script>
 
 <template>
   <KhCard clickable padding="md" class="proj-card" @click="goDetail">
-    <!-- 头部行：类型/状态标签 + 等级 -->
+    <!-- 头部行：类型标签 + 等级 -->
     <div class="proj-card__header">
       <div class="proj-card__tags">
-        <KhTag size="sm" type="primary">{{ typeLabel[project.type] }}</KhTag>
-        <KhTag size="sm" :type="statusLabel[project.status]?.type ?? 'neutral'" dot>{{ statusLabel[project.status]?.text ?? '未知' }}</KhTag>
+        <KhTag size="sm" type="primary">{{ typeText }}</KhTag>
       </div>
       <div class="proj-card__header-tail">
-        <KhTag size="sm" :type="viewLevelTagType[project.level] ?? 'neutral'">{{ getViewLevelLabel(project.level) }}</KhTag>
+        <KhTag size="sm" :type="viewLevelTagType[project.level ?? 1] ?? 'neutral'">{{ getViewLevelLabel(project.level ?? 1) }}</KhTag>
       </div>
     </div>
 
     <h3 class="proj-card__title kh-line-clamp-2">{{ project.title }}</h3>
-    <p class="proj-card__summary kh-line-clamp-2">{{ project.summary }}</p>
+    <p class="proj-card__summary kh-line-clamp-2">{{ project.summary ?? '暂无简介' }}</p>
 
     <div class="proj-card__people">
       <div class="proj-card__leader">
@@ -60,18 +52,12 @@ const statusLabel: Record<string, { text: string; type: 'success' | 'warning' | 
           <span class="proj-card__leader-role">负责人</span>
         </div>
       </div>
-      <KhAvatar
-        :items="project.members.map((m) => ({ label: m.nickname }))"
-        :size="26"
-        :max="3"
-        :overlap="6"
-      />
     </div>
 
     <div class="proj-card__stats">
-      <KhRating :value="project.rating" :size="12" show-value />
+      <KhStatPill icon="eye" :value="project.viewCount ?? 0" />
       <span class="proj-card__spacer" />
-      <KhStatPill icon="download" :value="project.downloadCount" />
+      <KhStatPill icon="download" :value="project.downloadCount ?? 0" />
     </div>
   </KhCard>
 </template>

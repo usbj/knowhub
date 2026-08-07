@@ -147,4 +147,11 @@
         update chapter set deleted = 1, update_time = now() where article_id = #{articleId} and deleted = 0
     </update>
 
+    <!-- 单章排序更新（批量重排 Service 逐条调用，仅改 sort_order + 审计列） -->
+    <update id="updateSortOrder">
+        update chapter
+        set sort_order = #{sortOrder}, update_by = #{updateBy}, update_time = now()
+        where chapter_id = #{chapterId} and deleted = 0
+    </update>
+
 </mapper>

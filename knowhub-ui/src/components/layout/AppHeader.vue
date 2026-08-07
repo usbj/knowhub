@@ -13,9 +13,9 @@ import {
   Bell,
   User,
   CaretBottom,
-  Plus,
 } from '@element-plus/icons-vue'
 import KhTag from '@/components/common/KhTag.vue'
+import KhIcon from '@/components/common/KhIcon.vue'
 import { useUserStore } from '@/stores/user'
 import { useNoticeStore } from '@/stores/notice'
 import { formatDateTime } from '@/utils/format'
@@ -206,7 +206,15 @@ const handleLogout = () => {
             <template #dropdown>
               <el-dropdown-menu>
                 <el-dropdown-item :icon="User" @click="$router.push('/profile')">个人中心</el-dropdown-item>
-                <el-dropdown-item :icon="Plus" @click="$router.push('/blog/create')">创作中心</el-dropdown-item>
+                <el-dropdown-item divided @click="$router.push('/blog/create')">
+                  <KhIcon name="blog" :size="14" style="margin-right: 6px" /> 写博客
+                </el-dropdown-item>
+                <el-dropdown-item @click="$router.push('/article/create')">
+                  <KhIcon name="doc" :size="14" style="margin-right: 6px" /> 写文章
+                </el-dropdown-item>
+                <el-dropdown-item @click="$router.push('/project/create')">
+                  <KhIcon name="project" :size="14" style="margin-right: 6px" /> 创建项目
+                </el-dropdown-item>
                 <el-dropdown-item divided @click="handleLogout">退出登录</el-dropdown-item>
               </el-dropdown-menu>
             </template>

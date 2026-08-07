@@ -100,6 +100,15 @@ public class ChapterAuthoringController {
         return Result.success(b);
     }
 
+    @PutMapping("/reorder")
+    @Operation(summary = "前台批量重排章节顺序（长按拖拽持久化，body=[{chapterId,sortOrder,articleId}]，逐章 canEdit 校验）")
+    @Log(title = "章节重排", businessType = BusinessType.UPDATE)
+    @PreAuthorize("isAuthenticated()")
+    public Result<Boolean> reorder(@RequestBody List<ChapterVo> orders) {
+        Boolean b = chapterService.reorderChapters(orders);
+        return Result.success(b);
+    }
+
     @DeleteMapping("/{chapterIds}")
     @Operation(summary = "前台删除章节（复用 deleteChapterInfo，章节作者 OR 文章作者 OR delete 权限）")
     @Log(title = "章节创作", businessType = BusinessType.DELETE)

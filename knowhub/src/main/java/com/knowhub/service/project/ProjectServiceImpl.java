@@ -686,6 +686,13 @@ public class ProjectServiceImpl implements ProjectService {
             throw new ServiceException(500, "无权下载该文件");
         }
         DownloadVo downloadVo = fileService.getDownloadUrl(exist.getObjectId());
+        // 下载计数 +1（前台门户/后台均经此路径，推荐打分权重最高；计数失败不阻断下载，仅记日志）
+        try {
+            projectMapper.incrDownloadCount(exist.getProjectId(), 1);
+        } catch (Exception e) {
+            org.slf4j.LoggerFactory.getLogger(ProjectServiceImpl.class)
+                    .warn("项目 {} 下载计数 +1 失败，不影响下载链接下发", exist.getProjectId(), e);
+        }
         return downloadVo != null ? downloadVo.getDownloadUrl() : null;
     }
 

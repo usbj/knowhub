@@ -21,6 +21,7 @@ import type {
   ChapterAuthoringPayload,
   ChapterAuthoringDetail,
   MyChapterListQuery,
+  ChapterReorderPayload,
 } from '@/types/api/knowhub/article-authoring'
 
 // ============================ 文章创作 ============================
@@ -89,6 +90,15 @@ export const revokeChapterAuthoringApi = (chapterId: number) =>
 export const deleteChapterApi = (chapterIds: number | number[]) =>
   del<ApiResult<boolean>>(`/authoring/chapter/${Array.isArray(chapterIds) ? chapterIds.join(',') : chapterIds}`)
 
+/**
+ * 前台批量重排章节顺序（长按拖拽持久化，PUT /authoring/chapter/reorder）。
+ * **入参顶层即 List<ChapterVo>**（后端 @RequestBody List<ChapterVo> orders 期望 JSON 数组，
+ * 不是 {orders:[...]} 包裹对象）。每项 = 拖拽后新顺序逐章生成的 {chapterId, sortOrder=新index, articleId}，
+ * 后端逐章 canEdit 校验 + 事务。
+ */
+export const reorderChaptersApi = (orders: ChapterReorderPayload) =>
+  put<ApiResult<boolean>, ChapterReorderPayload>('/authoring/chapter/reorder', orders)
+
 /** 类型再导出，供页面直接用 */
 export type {
   ArticleAuthoringPayload,
@@ -98,5 +108,6 @@ export type {
   ChapterAuthoringPayload,
   ChapterAuthoringDetail,
   MyChapterListQuery,
+  ChapterReorderPayload,
 }
 export type { NormalizedPageResult }

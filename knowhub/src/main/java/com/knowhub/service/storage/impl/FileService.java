@@ -35,6 +35,14 @@ public interface FileService {
     PublicObjectStream streamDownloadObject(Long objectId);
 
     /**
+     * 按 objectId 拉对象字节流，不做任何鉴权（调用方自控权限，如项目打包下载走项目级 canDownload 校验）。
+     * 仅校验对象存在 + CONFIRMED，用 s3Client.getObject 拉流并封 PublicObjectStream（contentDisposition=null、
+     * 字段口径与 streamPublicObject 同：contentType 优先元数据、contentLength 优先 S3 响应）。
+     * stream 的 close 责任在调用方。用于项目打包 zip 这种"业务侧自控权限、批量拉流"的场景。
+     */
+    PublicObjectStream openRawStream(Long objectId);
+
+    /**
      * 后端代理转发上传：接收前端 PUT 的字节流，用 s3Client.putObject 写入 OSS，再走 confirm 核对置 CONFIRMED。
      * 用于中转模式的上传接口 PUT /file/proxy-upload/{objectId}（前端拿不到 OSS 直连地址时的兜底通道）。
      * @param objectId  上传令牌签发时返回的元数据行主键（PENDING 行）
