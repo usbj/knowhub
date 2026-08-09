@@ -24,12 +24,12 @@ import KhIcon from '@/components/common/KhIcon.vue'
 import { useUserStore } from '@/stores/user'
 import { currentUser } from '@/mock/user'
 import { blogs } from '@/mock/blog'
-import { resources } from '@/mock/resource'
 import { notices } from '@/mock/notice'
 import { viewLevelTagType, getViewLevelLabel } from '@/utils/viewLevel'
 import { getMyBlogsApi } from '@/api/knowhub/authoring'
 import { getMyArticlesApi } from '@/api/knowhub/article-authoring'
 import { getMyProjectsApi } from '@/api/knowhub/project-authoring'
+import { getMyResourcesApi } from '@/api/knowhub/resource-authoring'
 import type { BlogRecord } from '@/types/api/knowhub/authoring'
 import { formatDateTime } from '@/utils/format'
 
@@ -157,14 +157,39 @@ const fetchMyProjects = async () => {
     myProjectsLoading.value = false
   }
 }
-const myResources = resources.slice(0, 4).map((r) => ({
-  id: r.resourceId,
-  title: r.title,
-  category: r.category,
-  status: r.status,
-  downloadCount: r.downloadCount,
-  updateTime: r.createTime,
-}))
+const myResources = ref<{
+  id: number
+  title: string
+  resourceType: string
+  categoryName: string
+  status: string
+  downloadCount: number
+  updateTime: string
+}[]>([])
+const myResourcesLoading = ref(false)
+const fetchMyResources = async () => {
+  myResourcesLoading.value = true
+  try {
+    const res = await getMyResourcesApi({ pageNum: 1, pageSize: 20 })
+    myResources.value = (res.records ?? []).map((r) => ({
+      id: r.resourceId,
+      title: r.title,
+      resourceType: r.resourceType ?? 'FILE',
+      categoryName: r.categoryName ?? '其他',
+      status: r.status ?? 'DRAFT',
+      downloadCount: r.downloadCount ?? 0,
+      updateTime: r.updateTime
+        ? (formatDateTime(r.updateTime) as string)
+        : r.publishTime
+          ? (formatDateTime(r.publishTime) as string)
+          : '',
+    }))
+  } catch {
+    myResources.value = []
+  } finally {
+    myResourcesLoading.value = false
+  }
+}
 const myCollects = [...blogs].slice(2, 5)
 const myMessages = notices.slice(0, 3)
 
@@ -172,7 +197,7 @@ const tabs: { key: TabKey; label: string; count: number }[] = [
   { key: 'blog', label: '我的博客', count: currentUser.stats.blogs },
   { key: 'article', label: '我的文章', count: myArticles.value.length },
   { key: 'project', label: '我的项目', count: myProjects.value.length },
-  { key: 'resource', label: '我的资源', count: currentUser.stats.resources },
+  { key: 'resource', label: '我的资源', count: myResources.value.length },
   { key: 'collect', label: '我的收藏', count: currentUser.stats.collections },
   { key: 'message', label: '消息通知', count: 3 },
 ]
@@ -182,7 +207,7 @@ const createItems: { icon: string; label: string; tone: string; to?: string }[] 
   { icon: 'blog', label: '创作博客', tone: 'var(--kh-primary)', to: '/blog/create' },
   { icon: 'doc', label: '创作文章', tone: 'var(--kh-accent)', to: '/article/create' },
   { icon: 'project', label: '创建项目', tone: 'var(--kh-warm)', to: '/project/create' },
-  { icon: 'resource', label: '上传资源', tone: 'var(--kh-success)' },
+  { icon: 'resource', label: '上传资源', tone: 'var(--kh-success)', to: '/resource/upload' },
 ]
 
 const statusMeta: Record<string, { text: string; type: 'success' | 'warning' | 'danger' | 'neutral' | 'info' }> = {
@@ -196,7 +221,6 @@ const statusMeta: Record<string, { text: string; type: 'success' | 'warning' | '
 }
 
 const typeLabel: Record<string, string> = { COMPETITION: '比赛', PRACTICE: '练习', OPS: '运维' }
-const catLabel: Record<string, string> = { WEBSITE: '网站', SOFTWARE: '软件', SCRIPT: '脚本', DOCUMENT: '文档', TOOL: '工具' }
 
 /** 文章内部可见性三档 label（决定章节提交审不审，与等级正交） */
 const visibilityLabel: Record<string, string> = {
@@ -228,15 +252,17 @@ onMounted(async () => {
     activeTab.value = tab as TabKey
   }
   await fetchMyBlogs()
-  // 从文章创作页跳回 ?tab=article 时也预拉文章列表
+  // 从外部跳进来切到指定 tab 时预拉对应列表（创作页存草稿后跳 ?tab=xxx）
   if (activeTab.value === 'article') {
     void fetchMyArticles()
   } else if (activeTab.value === 'project') {
     void fetchMyProjects()
+  } else if (activeTab.value === 'resource') {
+    void fetchMyResources()
   }
 })
 
-// tab 切到 blog/article/project 或 route query t 变化（带时间戳跳转）：重拉对应列表，保证新建草稿立即可见
+// tab 切到 blog/article/project/resource 或 route query t 变化（带时间戳跳转）：重拉对应列表，保证新建草稿立即可见
 watch(
   () => [activeTab.value, route.query.t],
   ([tab]) => {
@@ -246,6 +272,8 @@ watch(
       void fetchMyArticles()
     } else if (tab === 'project') {
       void fetchMyProjects()
+    } else if (tab === 'resource') {
+      void fetchMyResources()
     }
   },
 )
@@ -330,6 +358,7 @@ watch(
                 <button v-if="activeTab === 'blog'" class="profile__tab-tool" type="button" @click="$router.push('/blog/create')"><el-icon><Plus /></el-icon> 新建</button>
                 <button v-if="activeTab === 'article'" class="profile__tab-tool" type="button" @click="$router.push('/article/create')"><el-icon><Plus /></el-icon> 新建</button>
                 <button v-if="activeTab === 'project'" class="profile__tab-tool" type="button" @click="$router.push('/project/create')"><el-icon><Plus /></el-icon> 新建</button>
+                <button v-if="activeTab === 'resource'" class="profile__tab-tool" type="button" @click="$router.push('/resource/upload')"><el-icon><Plus /></el-icon> 上传</button>
               </div>
             </div>
 
@@ -418,13 +447,21 @@ watch(
               </div>
             </div>
 
-            <!-- 我的资源 -->
+            <!-- 我的资源（真实接口 /authoring/resource/list，薄封装 listMyResources 走 author_id 分支） -->
             <div v-else-if="activeTab === 'resource'" class="profile__list">
+              <div v-if="myResourcesLoading" class="profile__placeholder">
+                <p>加载中…</p>
+              </div>
+              <div v-else-if="!myResources.length" class="profile__placeholder">
+                <KhIcon name="resource" :size="40" :stroke="1.4" />
+                <p>还没有资源，点上方「上传」开始上传</p>
+              </div>
               <div v-for="r in myResources" :key="r.id" class="profile__row">
                 <div class="profile__row-main">
-                  <div class="profile__row-title">{{ r.title }}</div>
+                  <div class="profile__row-title" @click="$router.push(`/resource/upload?id=${r.id}`)">{{ r.title }}</div>
                   <div class="profile__row-meta">
-                    <KhTag size="sm" type="accent">{{ catLabel[r.category] }}</KhTag>
+                    <KhTag size="sm" type="accent">{{ r.categoryName }}</KhTag>
+                    <KhTag size="sm" type="info">{{ r.resourceType === 'LINK' ? '链接' : '文件' }}</KhTag>
                     <KhTag size="sm" :type="statusMeta[r.status]?.type ?? 'neutral'">{{ statusMeta[r.status]?.text ?? '未知' }}</KhTag>
                     <span>·</span>
                     <span>{{ r.downloadCount }} 下载</span>
@@ -433,7 +470,7 @@ watch(
                   </div>
                 </div>
                 <div class="profile__row-actions">
-                  <button class="profile__row-btn" type="button" title="编辑"><el-icon><Edit /></el-icon></button>
+                  <button class="profile__row-btn" type="button" title="编辑" @click="$router.push(`/resource/upload?id=${r.id}`)"><el-icon><Edit /></el-icon></button>
                   <button class="profile__row-btn profile__row-btn--danger" type="button" title="删除"><el-icon><Delete /></el-icon></button>
                 </div>
               </div>

@@ -76,6 +76,10 @@ public class Resource extends BaseEntity {
     /** FILE 类型：MIME 类型（join file_object 带出，非表字段） */
     private String contentType;
 
+    /** FILE 类型：访问语义 PUBLIC/PRIVATE（join file_object.access 带出，非表字段）。
+     *  上传时可选公开/私有，落 file_object.access；编辑回填透给前端上传表单回显公私态。 */
+    private String fileAccess;
+
     public Resource() {
     }
 
@@ -268,6 +272,14 @@ public class Resource extends BaseEntity {
 
     public void setContentType(String contentType) {
         this.contentType = contentType;
+    }
+
+    public String getFileAccess() {
+        return fileAccess;
+    }
+
+    public void setFileAccess(String fileAccess) {
+        this.fileAccess = fileAccess;
     }
 
     @Override

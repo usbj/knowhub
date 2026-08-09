@@ -215,6 +215,9 @@ const handleLogout = () => {
                 <el-dropdown-item @click="$router.push('/project/create')">
                   <KhIcon name="project" :size="14" style="margin-right: 6px" /> 创建项目
                 </el-dropdown-item>
+                <el-dropdown-item @click="$router.push('/resource/upload')">
+                  <KhIcon name="resource" :size="14" style="margin-right: 6px" /> 上传资源
+                </el-dropdown-item>
                 <el-dropdown-item divided @click="handleLogout">退出登录</el-dropdown-item>
               </el-dropdown-menu>
             </template>

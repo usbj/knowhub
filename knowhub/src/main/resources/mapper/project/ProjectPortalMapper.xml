@@ -48,8 +48,9 @@
     </sql>
 
     <!--
-      搜索：标题 LIKE + type + level 复合过滤 + 排序，分页由 PageHelper 在 Service 层接管。
-      项目主表 title 无 FULLTEXT 索引，数据量小 acceptable LIKE；数据量上来再加 ft idx（不改主表其他结构）。
+      搜索：标题/简介 LIKE + type + level 复合过滤 + 排序，分页由 PageHelper 在 Service 层接管。
+      项目主表 title/summary 无 FULLTEXT 索引，数据量小 acceptable LIKE；数据量上来再加 ft idx（不改主表其他结构）。
+      keyword 一个词同时匹配 title 或 summary（前端传单 keyword，不需要分列字段）。
       排序：HOT 走推荐打分公式 (download*3+like*2+collect*1+view*1) desc + publish_time desc；
            LATEST/其它走 publish_time desc, project_id desc。列表不 select description。
       注：当 level 不传时按 userViewLevel 自动收窄（与博客一样，前台不暴露等级筛选项给无权者）。
@@ -63,7 +64,8 @@
                 left join sys_user u on p.author_id = u.user_id
         where <include refid="portalProjectWhere"/>
         <if test="keyword != null and keyword != ''">
-            and p.title like concat('%', #{keyword}, '%')
+            and (p.title like concat('%', #{keyword}, '%')
+                 or p.summary like concat('%', #{keyword}, '%'))
         </if>
         <if test="type != null and type != ''">and p.type = #{type}</if>
         <if test="level != null">and p.level = #{level}</if>

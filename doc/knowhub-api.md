@@ -594,7 +594,8 @@ Accept-Ranges: none
 }
 ```
 
-> PRIVATE 对象鉴权（首版最简：上传人/管理员可见）后按访问模式发链接：中转模式填 `/file/proxy/{objectId}`（前端 `fetch` 带 `Token` 取 blob 下载，见接口 5）；直链模式填预签名绝对 URL（带 `attachment;filename`，前端 `window.open` 直连拉取，需 OSS/nginx 配 CORS）。PUBLIC 对象下载也可直接用 `/file/public/{id}`（后端中转回写字节流，`<a>`/`window.open` 直接拉取，无 CORS）。
+> PRIVATE 对象鉴权后按访问模式发链接：中转模式填 `/file/proxy/{objectId}`（前端 `fetch` 带 `Token` 取 blob 下载，见接口 5）；直链模式填预签名绝对 URL（带 `attachment;filename`，前端 `window.open` 直连拉取，需 OSS/nginx 配 CORS）。PUBLIC 对象下载也可直接用 `/file/public/{id}`（后端中转回写字节流，`<a>`/`window.open` 直接拉取，无 CORS）。
+> **鉴权重载**（2026-08-08）：`FileService.getDownloadUrl/streamDownloadObject` 加 `bizAuthorized` 布尔重载。无 flag 走 owner 闸（仅上传人 OR `knowhub:file:review` 管理员可下 PRIVATE）——保留给`/file/download/{objectId}`这种"用户直选 objectId、文件层无业务上下文"的通用入口；带 `bizAuthorized=true` 跳过 owner 闸——业务模块（资源 `downloadResource`、项目 `downloadFile`/`getFileDownloadUrl`）已在本业务层校验业务可见性（资源 PUBLISHED、项目 `canDownload`），不再要求是文件上传人/文件管理员。PUBLIC 文件两入参对称不鉴权。中转模式业务下载命中 `/file/proxy/{objectId}` 的字节流回写同样靠 `streamDownloadObject(objectId, true)` 放行。
 
 #### 5. 中转下载（后端代理回写字节流）
 
@@ -749,7 +750,7 @@ Accept-Ranges: none
 
 **权限**：`knowhub:resource:info`
 
-**响应**：`Result<ResourceVo>`，比列表多回填：description(大字段)/hasLiked/hasCollected/myScore(当前用户态)/downloadUrl(FILE类型按访问模式回填,中转/file/proxy/{objectId}或预签名)/originalName/contentLength/contentType。
+**响应**：`Result<ResourceVo>`，比列表多回填：description(大字段)/hasLiked/hasCollected/myScore(当前用户态)/downloadUrl(FILE类型按访问模式回填,中转/file/proxy/{objectId}或预签名，调 `getDownloadUrl(id, true)` 跳过 owner 闸)/originalName/contentLength/contentType/**fileAccess**(join file_object.access 带出，PUBLIC/PRIVATE，编辑回填前端上传表单回显访问语义)。
 
 #### `POST /resource` — 新增资源（草稿）
 
@@ -831,7 +832,7 @@ Accept-Ranges: none
 
 **权限**：`knowhub:resource:download`
 
-**逻辑**：校验 PUBLISHED + FILE 类型 + fileObjectId 非空；`download_count+1`（原子自增）；调 `FileService.getDownloadUrl(fileObjectId)` 取下载链接（中转模式 /file/proxy/{objectId}；直链模式带 attachment;filename 预签名）。LINK 类型不走此接口（前端直接用 linkUrl 外链打开）。
+**逻辑**：校验 PUBLISHED + FILE 类型 + fileObjectId 非空；`download_count+1`（原子自增）；调 `FileService.getDownloadUrl(fileObjectId, true)`（bizAuthorized=true 跳过文件底座 owner 闸——资源层已校验 PUBLISHED 业务可见性，登录非上传人/无 `knowhub:file:review` 的普通用户也可下别人上传的 PUBLISHED 资源）取下载链接（中转模式 /file/proxy/{objectId}；直链模式带 attachment;filename 预签名）。LINK 类型不走此接口（前端直接用 linkUrl 外链打开）。资源文件 access（PUBLIC/PRIVATE）由上传表单的"访问语义"单选决定，落 `file_object.access`；下载统一走本业务接口（公开资源也经鉴权计数，不走匿名 `/file/public` 直链）。
 
 **响应**：`Result<String>`（下载链接字符串）
 
@@ -1378,7 +1379,98 @@ Accept-Ranges: none
 | DELETE | `/authoring/chapter/{chapterIds}` | 删除章节（复用 deleteChapterInfo，章节作者 OR 文章作者 OR delete 权限；chapterIds 逗号分隔） | `Result<Boolean>` |
 | GET | `/authoring/chapter/review-log/{chapterId}` | 章节审核历史（复用 listReviewLog，仅 SEMIPUBLIC 场景有记录） | `Result<List<ChapterReviewLogVo>>` |
 
+### 资源前台门户模块
+
+资源推荐前台门户。读走 `/portal/resource/*`（permitAll，无 @PreAuthorize），写走 `/authoring/resource/**`（authenticated 兜底），读写物理隔离。资源模块差异点（与博客/文章门户对照）：**无 level 等级、无 visibility、无 review_status 前台过滤、无标签体系**——前台铁律仅 `status='PUBLISHED' AND deleted=0`，非 PUBLISHED 资源前台根本不下发（详情查不到返业务码 404）；无 userViewLevel 透传、无越级锁态、无分级推荐开关。推荐 feed 退化为**全局热门兜底**（资源无 tag、无用户偏好源，按 `download_count*3+view_count+like_count*2+collect_count*2` 排序）；"相关推荐"= 同 `resource_category_id` 其它公开资源按热度排（-1=其他类时退化全局热门）。搜索覆盖 `resource(title,summary,description)` 的 FULLTEXT ngram 索引（`ft_resource_title_summary_desc`，`ngram_token_size=2`，同博客口径）。分类筛选用 `resource_category_id` 分类树（`ResourceCategoryService.categoryTree()`，-1=其他前端硬编码），类型筛选 FILE/LINK 辅助维度。侧栏"热门下载榜/最近上传榜"不单独建接口，前端直接复用 search 带 sort=HOT/LATEST + pageSize。
+
+#### `GET /portal/resource/search` — 前台资源搜索
+
+**权限**：无（permitAll）
+
+**请求参数**（query string）：
+
+| 参数 | 类型 | 说明 |
+|---|---|---|
+| keyword | string | 全文关键字（命中 title/summary/description，ngram 全文索引，BOOLEAN MODE） |
+| resourceType | string | FILE / LINK（可选，精确过滤） |
+| resourceCategoryId | number | 分类 id（可选，单选精确过滤；-1=其他）。向后兼容字段，多选 `resourceCategoryIds` 优先 |
+| resourceCategoryIds | string | 分类 id 多选过滤，逗号分隔串（`?resourceCategoryIds=1,2,3`，-1=其他 作为合法元素参与 IN）。Spring MVC 顺序绑定 + String→List\<Long\> 切分转 Long。不传/空不过滤。前端 paramsSerializer 把数组 join 成逗号串（默认 axios 数组序列化成 `xx[]=1&xx[]=2` Spring POJO 字段不识别末尾 `[]` 会拿空列表） |
+| sort | string | RELEVANCE 相关度 / HOT 热度 / LATEST 最新；缺省 HOT。RELEVANCE 有 keyword 走 NATURAL LANGUAGE MODE 相关度，无 keyword 退化为 publish_time desc |
+| pageNum | number | 页码 |
+| pageSize | number | 每页条数 |
+
+**响应**：`Result<PageInfo<ResourcePortalVo>>`（ResourcePortalVo：resourceId/authorId/authorNickname/resourceType/resourceCategoryId/categoryName/title/summary/linkUrl/linkIcon/fileObjectId/originalName/contentLength/contentType/publishTime/viewCount/downloadCount/likeCount/collectCount/ratingAvg/ratingCount；**列表不 select description 大字段**；like_count/collect_count 主表无冗余列，列表用 inline 子查询回填）
+
+#### `GET /portal/resource/recommend` — 前台资源推荐 feed
+
+**权限**：无（permitAll）；全局热门兜底，无用户偏好源
+
+**请求参数**（query string）：
+
+| 参数 | 类型 | 说明 |
+|---|---|---|
+| size | number | 召回条数，默认 10 |
+| excludeResourceId | number | 排除的资源ID（详情页相关推荐排除当前，feed 可空） |
+
+**响应**：`Result<List<ResourcePortalVo>>`（不分页 feed，按热度排序）
+
+#### `GET /portal/resource/{resourceId}` — 前台资源详情
+
+**权限**：无（permitAll）；登录态计浏览量（`user_view_history` biz_type=RESOURCE，未登录不计）；回填登录态互动态 hasLiked/hasCollected/myScore。详情**不下发** FILE 下载链接（避免 permitAll 区触发 fileService 鉴权）——FILE 下载链接由前端点"下载资源"按钮时调 `/authoring/resource/{id}/download`（isAuthenticated 兜底）现取，`downloadResource` 内调 `getDownloadUrl(id, true)` 跳过 owner 闸（资源层已校验 PUBLISHED），且带 `download_count+1` 业务语义。
+
+**路径参数**：resourceId
+
+**响应**：`Result<ResourcePortalDetailVo>`（继承 ResourcePortalVo + description + hasLiked/hasCollected/myScore；**无 downloadUrl 字段**）；非 PUBLISHED 或不存在返 `Result.error(404,"资源不存在或已下架")`
+
+#### `GET /portal/resource/{resourceId}/related` — 详情页相关推荐
+
+**权限**：无（permitAll）
+
+**路径参数**：resourceId
+
+**请求参数**：size number（默认 10）
+
+**响应**：`Result<List<ResourcePortalVo>>`（同 `resource_category_id` 公开资源排除自身按热度排，-1=其他类时退化全局热门）
+
+#### `GET /portal/resource/category/tree` — 资源分类树
+
+**权限**：无（permitAll）；复用 `ResourceCategoryService.categoryTree()`，供前台列表分类筛选 + 上传表单分类选择
+
+**响应**：`Result<List<ResourceCategoryTreeVo>>`（categoryId/categoryName/children 递归树）
+
+### 资源创作与互动模块
+
+资源创作 = 上传文件资源（FILE，走 `presignedUploadFlow` 直传 `RESOURCE_FILE`/PRIVATE）或登记链接资源（LINK，linkUrl+linkIcon）。前台 `/authoring/resource/**` 薄封装复用后台 `ResourceService`（add/edit/publish/revoke/getResourceInfo/quarryResource/toggleLike/toggleCollect/rateResource/downloadResource），读写物理隔离（走 /authoring/** authenticated 兜底，无按钮权限键，登录即可创作 + 互动任意已发布资源）。状态机：新建即 DRAFT，发布按审核开关 `knowhub.resource.review_enabled` 决定 PUBLISHED 或 PENDING_REVIEW；PUBLISHED/PENDING_REVIEW 禁编辑须先撤回（已发布换源须先 revoke 再 edit，后端已挡，前端按 status 隐藏换文件入口）。与「资源管理模块」后台接口的区别仅在路由前缀与权限门槛。点赞/收藏/评分走事实表（`resource_like`/`resource_collect`/`resource_rating`，PK resource_id+user_id），upsert 写入、计数读时聚合（资源主表仅冗余 view_count/download_count，不冗余互动计数）。
+
+| 方法 | 路径 | 说明 | 出参 |
+|---|---|---|---|
+| GET | `/authoring/resource/list` | 我的资源列表（薄封装 listMyResources，service 内硬置 authorId=当前用户，返回本人全态含草稿/待审/驳回） | `Result<PageInfo<ResourceVo>>`，query: ResourceQuarry |
+| GET | `/authoring/resource/{resourceId}` | 资源编辑回填（薄封装 getResourceForAuthor，归属校验拒非作者，回填互动+下载链接） | `Result<ResourceVo>` |
+| POST | `/authoring/resource` | 新建资源草稿（复用 addResourceInfo，作者=current user，DRAFT；ResourceVo 体，resourceType/title 必填，FILE 传 fileObjectId、LINK 传 linkUrl/linkIcon，summary/description/resourceCategoryId 可选） | `Result<Boolean>` |
+| PUT | `/authoring/resource` | 编辑资源（复用 editResourceInfo，校验归属+状态机；PUBLISHED/PENDING_REVIEW 须先撤回；ResourceVo 体带 resourceId） | `Result<Boolean>` |
+| PUT | `/authoring/resource/{resourceId}/publish` | 发布资源（复用 publishResource，按审核开关决定 PUBLISHED/PENDING_REVIEW） | `Result<Boolean>` |
+| PUT | `/authoring/resource/{resourceId}/revoke` | 撤回资源（复用 revokeResource → REVOKED，撤回后可再编辑/换源/再发布） | `Result<Boolean>` |
+| GET | `/authoring/resource/{resourceId}/download` | FILE 资源下载链接下发（复用 downloadResource，校验 PUBLISHED+FILE，下载量 +1，返回下载 url 字符串） | `Result<String>` |
+| PUT | `/authoring/resource/{resourceId}/like` | 点赞/取消点赞（liked=true/false 缺省 true，事实表 upsert） | `Result<Boolean>` |
+| PUT | `/authoring/resource/{resourceId}/collect` | 收藏/取消收藏（collected=true/false 缺省 true，事实表 upsert） | `Result<Boolean>` |
+| PUT | `/authoring/resource/{resourceId}/rating` | 资源评分 1-5（一人一资源一条，upsert 事实表，均值读时聚合） | `Result<Boolean>`，query: score |
+| GET | `/authoring/resource/collect/list` | 我的资源收藏列表（按收藏时间倒序，仅返回前台可见口径的已发布资源） | `Result<PageInfo<ResourcePortalVo>>`，query: pageNum/pageSize |
+
 ### 接口更新日志
+
+#### 2026-08-08 资源推荐前台门户 + 创作接口新增（15 接口）
+
+资源管理模块后台 CRUD/审核/互动早落地（2026-07-06），但前台 portal/authoring 接口全为零（knowhub-ui 资源推荐页 100% mock）。本次补齐资源前台：搜索/推荐/详情/相关推荐/分类树（5 读 permitAll）+ 创作/下载/互动/收藏列表（10 写走 authenticated）。详见上方「资源前台门户模块」「资源创作与互动模块」章节。
+
+- **新增接口（15）**：`GET /portal/resource/search|recommend|{resourceId}|{resourceId}/related|category/tree`（5 读公开）+ `/authoring/resource/` 创作侧 11 写登录（list/{resourceId}/POST/PUT/{resourceId}/publish|revoke|download|like|collect|rating|collect/list）。读写物理隔离（/portal/** permitAll、/authoring/** authenticated）。
+- **新增后端 service / mapper**：`ResourcePortalService(Impl)`（search/recommend/getDetail/related/listMyCollected）+ `ResourcePortalMapper(.xml)`（5 套 SQL 全带 `deleted=0 AND status='PUBLISHED'` 前台铁律，search 用 FULLTEXT ngram + inline 子查询回填 like/collect 计数）；`ResourceService` 新增 `listMyResources`/`getResourceForAuthor` 两个薄方法（service 内硬置 authorId + checkOwnerOrAdmin 归属校验），`ResourcePortalService` 新增 `listMyCollected`（照 ArticlePortalService.listMyCollected 范式，recommendHot 交集 + 按收藏时间倒排）。新增 VO `ResourcePortalVo`/`ResourcePortalDetailVo`、入参 `ResourcePortalSearchQuarry`。
+- **搜索 = FULLTEXT ngram 索引**（同博客口径）：`sql/knowhub-resource-portal.sql`（幂等 information_schema ALTER）给 `resource(title,summary,description)` 加 `ft_resource_title_summary_desc ... WITH PARSER ngram`；需 MySQL `ngram_token_size=2`。无新菜单/无新字典/无新 sys_config（前台读接口不加开关，对齐博客决策#7）。
+- **推荐 = 全局热门兜底 + 同分类相关**：资源无 tag、无用户偏好源（与博客/文章差异点），推荐 feed 退化为热度榜口径（`download_count*3+view_count+like_count*2+collect_count*2`）；详情页"相关推荐"= 同 `resource_category_id` 其它公开资源按热度排（-1=其他类退化全局热门）。
+- **资源无 level 等级 / 无越级锁态 / 无分级推荐开关**：与博客/文章门户差异点——前台过滤仅 `status='PUBLISHED' AND deleted=0`，详情查非 PUBLISHED 直接返 404；无 userViewLevel 透传、无 locked 锁态。
+- **分类筛选 = resource_category_id 分类树**：放弃 mock 的 WEBSITE/SOFTWARE/SCRIPT/DOCUMENT/TOOL 枚举；前台分类下拉用 `ResourceCategoryService.categoryTree()` 取树，-1=其他前端硬编码追加；resourceType（FILE/LINK）作辅助筛选维度。
+- **上传 = 前端直传 presignedUploadFlow（RESOURCE_FILE/PRIVATE）+ 后端两模式自适应**：前端不写死 OSS 地址，复用 `knowhub-ui/src/utils/upload.ts`；上传表单支持保存草稿 + 发布两个按钮；已发布资源不允许换源/换文件——`ResourceServiceImpl.editResourceInfo` 现有状态机已挡（PUBLISHED/PENDING_REVIEW 禁编辑），前端据此隐藏换文件入口（提示"已发布资源请先撤回再换源"）。description 正文配图复用 KhMarkdownEditor（businessType=BLOG_BODY 过渡，与章节正文同口径，后端暂无 RESOURCE_BODY 枚举）。
+- **前端**：knowhub-ui 新增 `types/api/knowhub/resource.ts`+`resource-authoring.ts`、`api/knowhub/resource-portal.ts`+`resource-authoring.ts`；`views/resources/index.vue`（搜索+分类树筛选+FILE/LINK 类型筛选+HOT/LATEST 排序+分页，侧栏热门/最近上传榜复用 search）、`views/resource/detail.vue`（详情+登录态点赞/收藏/评分+FILE 下载/LINK 访问+相关推荐）、`views/resource/upload.vue`（上传表单：FILE 直传RESOURCE_FILE/PRIVATE 进度条+checkFileAllowed 预检 / LINK 登记链接 / 分类 cascader / 草稿+发布双按钮 / 编辑回填 / 已发布禁换源）；`components/resource/ResourceCard.vue`（MockResource→ResourcePortalRecord，封面色/图标按 resourceType 派生）；`views/profile/index.vue`（我的资源 tab 真接口 + "上传资源"创建入口）、`views/home/index.vue`（资源推荐网格+热门资源榜改真接口，删 mock/resource import）、`components/layout/AppHeader.vue`（用户下拉加"上传资源"）；路由 `/resource/upload`（requiresAuth，排在 `/resource/:id` 之前防 :id 吃掉 upload）；删除 `src/mock/resource.ts`。
+- 校验：knowhub-ui npm run type-check 通过（无资源模块错误，余 6 处为项目模块既有 ViewLevel/accent/DefaultRow 问题，非本次范围）；后端 mvn 编译由用户在已装依赖环境验证。
 
 #### 2026-08-04 章节批量重排接口 + 目录树升级（章节拖拽持久化 + TOC 全层级可滚动）
 

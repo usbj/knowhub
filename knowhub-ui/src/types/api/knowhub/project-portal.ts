@@ -73,6 +73,13 @@ export interface ProjectPortalSearchQuery {
   level?: number
   /** 排序：HOT 热度（默认）/ LATEST 最新 */
   sort?: 'HOT' | 'LATEST'
+  /**
+   * 分页页码（后端 PageUtil.startPage 从 HTTP 请求读，默认 1）。
+   * 前台分页需显式带，与 BlogPortalSearchQuery/ArticlePortalSearchQuery 同口径。
+   */
+  pageNum?: number
+  /** 分页每页条数（后端 PageUtil 从 HTTP 请求读，默认 10） */
+  pageSize?: number
 }
 
 /**

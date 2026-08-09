@@ -69,4 +69,18 @@ public interface ResourceService {
 
     /** FILE 下载（校验 PUBLISHED + FILE 类型 + 下载量 +1，返回下载链接） */
     String downloadResource(Long resourceId);
+
+    /**
+     * 前台作者"我的资源"列表（薄包装 quarryResource，service 内硬置 authorId=当前用户，
+     * 不依赖可改的 createBy username）。返回 ResourceVo（含草稿/待审/驳回/已发布/撤回全态）。
+     * 仅作者可见自己全态资源，故不沿用读者侧 `status=PUBLISHED` 口径。
+     */
+    PageInfo<ResourceVo> listMyResources(ResourceQuarry quarry);
+
+    /**
+     * 前台编辑回填：复用 getResourceInfo 的回填逻辑，但前置归属校验拒非作者（getResourceInfo 后台口径无归属挡，
+     * 前台编辑回填必须拒别人草稿）。命中后回填互动计数 + 当前用户态 + FILE 下载链接，并记一次浏览（作者看自己草稿误计可忽略）。
+     * 非作者或资源不存在抛 ServiceException，前端按 500 提示。
+     */
+    ResourceVo getResourceForAuthor(Long resourceId);
 }

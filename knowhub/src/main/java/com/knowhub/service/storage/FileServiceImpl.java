@@ -239,6 +239,12 @@ public class FileServiceImpl implements FileService {
 
     @Override
     public PublicObjectStream streamDownloadObject(Long objectId) {
+        // 通用入口 → 走 owner 闸
+        return streamDownloadObject(objectId, false);
+    }
+
+    @Override
+    public PublicObjectStream streamDownloadObject(Long objectId, boolean bizAuthorized) {
         FileObject fileObject = fileObjectMapper.getFileObjectById(objectId);
         if (fileObject == null) {
             throw new ServiceException(404, "文件对象不存在");
@@ -246,8 +252,8 @@ public class FileServiceImpl implements FileService {
         if (!UploadStatus.CONFIRMED.getCode().equals(fileObject.getUploadStatus())) {
             throw new ServiceException(404, "文件未确认");
         }
-        // PRIVATE 走鉴权（上传人/管理员）；PUBLIC 无鉴权（中转下载接口本身已 permitAll 或走权限键，见 Controller）
-        if (FileAccess.PRIVATE.getCode().equals(fileObject.getAccess())) {
+        //PRIVATE 走鉴权（上传人/管理员）或业务可见性（bizAuthorized=true 跳过）；PUBLIC 无鉴权
+        if (FileAccess.PRIVATE.getCode().equals(fileObject.getAccess()) && !bizAuthorized) {
             checkOwnerOrAdmin(fileObject);
         }
         // 拉字节流；NoSuchKeyException（元数据与对象不一致）不在此 catch，向上抛由 Controller 兜底 404
@@ -380,6 +386,12 @@ public class FileServiceImpl implements FileService {
 
     @Override
     public DownloadVo getDownloadUrl(Long objectId) {
+        // 通用入口（用户直选 objectId，无业务上下文）→ 走文件底座自有 owner 闸
+        return getDownloadUrl(objectId, false);
+    }
+
+    @Override
+    public DownloadVo getDownloadUrl(Long objectId, boolean bizAuthorized) {
         FileObject fileObject = fileObjectMapper.getFileObjectById(objectId);
         if (fileObject == null) {
             throw new ServiceException(500, "文件对象不存在");
@@ -387,9 +399,10 @@ public class FileServiceImpl implements FileService {
         if (!UploadStatus.CONFIRMED.getCode().equals(fileObject.getUploadStatus())) {
             throw new ServiceException(500, "文件未确认，暂不可下载");
         }
-        // PUBLIC 也可走下载（享受强制文件名）；PRIVATE 需鉴权 + 业务可见性
-        if (FileAccess.PRIVATE.getCode().equals(fileObject.getAccess())) {
-            checkOwnerOrAdmin(fileObject); // 首版最简：上传人/管理员可见，业务模块接入后细化
+        //PRIVATE 需鉴权 + 业务可见性；PUBLIC 不鉴权直接签发
+        //bizAuthorized=true（业务模块已鉴权）跳过 owner 闸；false（通用入口）走 owner 闸
+        if (FileAccess.PRIVATE.getCode().equals(fileObject.getAccess()) && !bizAuthorized) {
+            checkOwnerOrAdmin(fileObject);
         }
         // 签短期 GET 预签名，带 attachment;filename 强制下载
         PresignedGetObjectRequest presigned = presignGet(fileObject, fileObject.getOriginalName());

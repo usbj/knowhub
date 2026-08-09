@@ -28,6 +28,9 @@ public class ResourceQuarry {
     /** 创建人(作者)过滤 */
     private String createBy;
 
+    /** 作者用户ID过滤（authoring"我的资源"薄包装硬置当前 userId，比 createBy 稳健；后台不传不过滤） */
+    private Long authorId;
+
     /** 创建时间区间起（含）；前端 daterange 传 yyyy-MM-dd，ISO.DATE 显式声明避免依赖 Spring 默认转换器 */
     @DateTimeFormat(iso = DateTimeFormat.ISO.DATE)
     private Date beginTime;
@@ -85,6 +88,14 @@ public class ResourceQuarry {
 
     public void setCreateBy(String createBy) {
         this.createBy = createBy;
+    }
+
+    public Long getAuthorId() {
+        return authorId;
+    }
+
+    public void setAuthorId(Long authorId) {
+        this.authorId = authorId;
     }
 
     public Date getBeginTime() {

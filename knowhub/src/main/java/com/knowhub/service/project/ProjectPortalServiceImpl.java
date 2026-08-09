@@ -185,7 +185,9 @@ public class ProjectPortalServiceImpl implements ProjectPortalService {
         if (!canDownload(exist.getProjectId(), meta.getLevel())) {
             throw new ServiceException(500, "无权下载该文件");
         }
-        com.knowhub.pojo.storage.vo.DownloadVo downloadVo = fileService.getDownloadUrl(exist.getObjectId());
+        // 取下载链接：项目层已 canDownload 鉴权（业务可见性闸），传 bizAuthorized=true 跳过文件底座 owner 闸。
+        // 否则登录非上传人（如成员 can_download=1）下不了项目文件（owner 闸只认项目文件上传人/文件管理员）。
+        com.knowhub.pojo.storage.vo.DownloadVo downloadVo = fileService.getDownloadUrl(exist.getObjectId(), true);
         // 下载计数 +1（与 admin downloadFile 同口径；前台独立路径不再走 admin service，故此自增；
         // 计数失败不阻断下载，仅记日志，推荐打分权重最高需依赖此计数）
         try {

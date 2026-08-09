@@ -470,8 +470,9 @@ public class ResourceServiceImpl implements ResourceService {
         }
         // 下载量 +1（原子自增，仅 FILE 下载）
         resourceMapper.incrDownloadCount(resourceId);
-        // 取下载链接（复用文件模块，按访问模式返回中转/预签名）
-        DownloadVo downloadVo = fileService.getDownloadUrl(exist.getFileObjectId());
+        // 取下载链接：资源层已校验 PUBLISHED + FILE（业务可见性闸），传 bizAuthorized=true 跳过文件底座 owner 闸。
+        // 否则登录非上传人/无 knowhub:file:review 的普通用户下不了别人上传的 PUBLISHED 资源（owner 闸只认上传人/文件管理员）。
+        DownloadVo downloadVo = fileService.getDownloadUrl(exist.getFileObjectId(), true);
         return downloadVo != null ? downloadVo.getDownloadUrl() : null;
     }
 
@@ -635,14 +636,17 @@ public class ResourceServiceImpl implements ResourceService {
         }
     }
 
-    /** 详情接口回填 FILE 下载链接（LINK 类型不回填，前端用 linkUrl） */
+    /** 详情接口回填 FILE 下载链接（LINK 类型不回填，前端用 linkUrl）。
+     *  getDetail/编辑回填等后台场景调本方法（外层 @PreAuthorize 已是管理上下文），传 bizAuthorized=true
+     *  跳过文件底座 owner 闸——后台 resource review 权限 ≠ file:review，旧版无 flag 时非上传人/无 file:review
+     *  的管理员会被挡，下载链接静默不回填（被 catch 忽略）。 */
     private void fillDownloadUrl(ResourceVo vo, Resource resource) {
         if (!ResourceType.FILE.getCode().equals(resource.getResourceType())
                 || resource.getFileObjectId() == null) {
             return;
         }
         try {
-            DownloadVo downloadVo = fileService.getDownloadUrl(resource.getFileObjectId());
+            DownloadVo downloadVo = fileService.getDownloadUrl(resource.getFileObjectId(), true);
             if (downloadVo != null) {
                 vo.setDownloadUrl(downloadVo.getDownloadUrl());
                 vo.setOriginalName(downloadVo.getOriginalName());
@@ -684,5 +688,30 @@ public class ResourceServiceImpl implements ResourceService {
 
     private UserInfo currentUser() {
         return (UserInfo) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+    }
+
+    /**
+     * 前台作者"我的资源"列表：硬置 authorId=当前用户后复用 quarryResource。
+     * 不依赖 createBy（username 可改，authorId 稳定）。前端可传 status 过滤草稿/已发布等。
+     */
+    @Override
+    public PageInfo<ResourceVo> listMyResources(ResourceQuarry quarry) {
+        quarry.setAuthorId(currentUser().getUserId());
+        return quarryResource(quarry);
+    }
+
+    /**
+     * 前台编辑回填：先做归属校验（拒非作者），再复用 getResourceInfo 的完整回填逻辑。
+     * 后台 getResourceInfo 不做归属挡（管理员需查任意资源），前台编辑回填必须挡别人草稿，故在此前置 checkOwnerOrAdmin。
+     * 命中后由 getResourceInfo 回填互动计数 + 当前用户态 + FILE 下载链接 + 记一次浏览量。
+     */
+    @Override
+    public ResourceVo getResourceForAuthor(Long resourceId) {
+        Resource exist = resourceMapper.getResourceInfoById(resourceId);
+        if (exist == null) {
+            throw new ServiceException(500, "资源不存在");
+        }
+        checkOwnerOrAdmin(exist);
+        return getResourceInfo(resourceId);
     }
 }

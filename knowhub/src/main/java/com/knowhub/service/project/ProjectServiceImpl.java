@@ -685,7 +685,9 @@ public class ProjectServiceImpl implements ProjectService {
         if (!canOp(project, "download")) {
             throw new ServiceException(500, "无权下载该文件");
         }
-        DownloadVo downloadVo = fileService.getDownloadUrl(exist.getObjectId());
+        // 取下载链接：后台项目层已 canOp(download) 鉴权（业务可见性闸），传 bizAuthorized=true 跳过文件底座 owner 闸
+        // （否则非文件上传人/无 knowhub:file:review 的项目管理员下不了项目文件）
+        DownloadVo downloadVo = fileService.getDownloadUrl(exist.getObjectId(), true);
         // 下载计数 +1（前台门户/后台均经此路径，推荐打分权重最高；计数失败不阻断下载，仅记日志）
         try {
             projectMapper.incrDownloadCount(exist.getProjectId(), 1);

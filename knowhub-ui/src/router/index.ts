@@ -126,6 +126,12 @@ const router = createRouter({
       meta: { title: '文档阅读' },
     },
     {
+      path: '/resource/upload',
+      name: 'resource-upload',
+      component: () => import('@/views/resource/upload.vue'),
+      meta: { title: '资源上传', requiresAuth: true },
+    },
+    {
       path: '/resource/:id',
       name: 'resource-detail',
       component: () => import('@/views/resource/detail.vue'),

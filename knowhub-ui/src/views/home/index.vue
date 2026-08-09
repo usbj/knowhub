@@ -21,11 +21,16 @@ import ResourceCard from '@/components/resource/ResourceCard.vue'
 
 import { blogs } from '@/mock/blog'
 import { projects } from '@/mock/project'
-import { resources } from '@/mock/resource'
 import { notices } from '@/mock/notice'
 import { tags } from '@/mock/tag'
 import { latestAiDaily } from '@/mock/aiDaily'
 import { useRouter } from 'vue-router'
+import { onMounted, ref } from 'vue'
+import {
+  recommendResourcesApi,
+  searchResourcesApi,
+} from '@/api/knowhub/resource-portal'
+import type { ResourcePortalRecord } from '@/types/api/knowhub/resource'
 
 const router = useRouter()
 
@@ -35,20 +40,44 @@ const hotProjects = projects
   .filter((p) => p.status === 'PUBLISHED')
   .sort((a, b) => b.downloadCount - a.downloadCount)
   .slice(0, 4)
-const featuredResources = resources.filter((r) => r.status === 'PUBLISHED').slice(0, 8)
 const pinnedNotices = notices
 
-/** 热门资源榜（按下载量，文件类优先） */
-const hotResourceRank = [...resources]
-  .filter((r) => r.status === 'PUBLISHED' && r.category !== 'WEBSITE' && r.category !== 'TOOL')
-  .sort((a, b) => b.downloadCount - a.downloadCount)
-  .slice(0, 6)
+/** 资源推荐网格：真实接口 recommendResourcesApi（全局热门兜底，无用户偏好源） */
+const featuredResources = ref<ResourcePortalRecord[]>([])
+
+/** 热门资源榜：真实接口 search 带 sort=HOT（与侧栏榜同口径，按下载量/热度排序） */
+const hotResourceRank = ref<ResourcePortalRecord[]>([])
+
+const fetchHomeResources = async () => {
+  try {
+    const [feat, hot] = await Promise.all([
+      recommendResourcesApi(8),
+      searchResourcesApi({ sort: 'HOT', pageSize: 6 }),
+    ])
+    featuredResources.value = feat.data ?? []
+    hotResourceRank.value = hot.records ?? []
+  } catch {
+    featuredResources.value = []
+    hotResourceRank.value = []
+  }
+}
+
+/** 资源榜图标按类型派生（资源主表无 cover/linkIcon 列，前端按 resourceType 占位） */
+const rankCoverGradient = (r: ResourcePortalRecord) =>
+  r.resourceType === 'LINK'
+    ? 'linear-gradient(135deg,#2563eb,#0ea5e9)'
+    : 'linear-gradient(135deg,#6366f1,#a5b4fc)'
+const rankIcon = (r: ResourcePortalRecord) => (r.resourceType === 'LINK' ? 'link' : 'file')
+
+onMounted(() => {
+  void fetchHomeResources()
+})
 
 /** 热门标签（侧栏紧凑榜，非大标签云） */
 const hotTags = [...tags].sort((a, b) => b.count - a.count).slice(0, 10)
 
 /** 字节大小 → B/KB/MB/GB，与资源卡 / 项目详情 formatSize 口径一致 */
-const formatSize = (len?: number) => {
+const formatSize = (len?: number | null) => {
   if (len == null) return '--'
   if (len < 1024) return `${len} B`
   if (len < 1024 * 1024) return `${(len / 1024).toFixed(1)} KB`
@@ -231,8 +260,8 @@ const goNotes = () => router.push('/notes')
               @click="router.push(`/resource/${r.resourceId}`)"
             >
               <span class="home__rank-no" :class="{ 'is-top': i < 3 }">{{ i + 1 }}</span>
-              <div class="home__rank-icon" :style="{ background: r.cover }">
-                <KhIcon :name="r.linkIcon" :size="14" />
+              <div class="home__rank-icon" :style="{ background: rankCoverGradient(r) }">
+                <KhIcon :name="rankIcon(r)" :size="14" />
               </div>
               <div class="home__rank-text">
                 <div class="home__rank-title kh-line-clamp-1">{{ r.title }}</div>

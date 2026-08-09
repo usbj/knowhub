@@ -35,6 +35,15 @@ public interface FileService {
     PublicObjectStream streamDownloadObject(Long objectId);
 
     /**
+     * 中转下载重载：业务模块（资源/项目）已在本业务层完成业务可见性闸，传 bizAuthorized=true
+     * 跳过文件底座 owner 闸直接拉字节流。与 {@link #getDownloadUrl(Long, boolean)} 对称——
+     * TRANSFER 访问模式下业务下载最终命中 /file/proxy/{objectId}，凭调 getDownloadUrl 时传的 bizAuthorized
+     * 不足以放行中转字节流，故此重载补齐中转路径。bizAuthorized=false 等价 {@link #streamDownloadObject(Long)}。
+     * PRIVATE 文件传 true 时不再要求上传人/文件管理员身份，PUBLIC 两入参对称不鉴权。
+     */
+    PublicObjectStream streamDownloadObject(Long objectId, boolean bizAuthorized);
+
+    /**
      * 按 objectId 拉对象字节流，不做任何鉴权（调用方自控权限，如项目打包下载走项目级 canDownload 校验）。
      * 仅校验对象存在 + CONFIRMED，用 s3Client.getObject 拉流并封 PublicObjectStream（contentDisposition=null、
      * 字段口径与 streamPublicObject 同：contentType 优先元数据、contentLength 优先 S3 响应）。
@@ -73,8 +82,22 @@ public interface FileService {
      */
     String resolvePublicUrl(Long objectId);
 
-    /** PRIVATE 下载：鉴权 + 业务可见性后签发短期 GET 预签名（带 attachment;filename） */
+    /**
+     * PRIVATE 下载：鉴权 + 业务可见性后签发短期 GET 预签名（带 attachment;filename）。
+     * 该重载保留给"无业务上下文的通用下载入口"——用户直接指定 objectId 下载（如后台
+     * /file/download/{objectId}），文件层没有业务行可校验可见性，只能走文件底座自有的 owner 闸
+     * （上传人 OR 具 knowhub:file:review 的管理员）。PUBLIC 文件不鉴权仍可直接签发。
+     */
     DownloadVo getDownloadUrl(Long objectId);
+
+    /**
+     * 业务代理下载重载：调用方为业务模块（资源/项目等），已在本业务层完成业务可见性闸
+     * （资源判 PUBLISHED+下载权限、项目判 canDownload），传 bizAuthorized=true 跳过文件底座的
+     * owner 闸直接签发。PRIVATE 文件不再要求是上传人/文件管理员——只要业务层放行即可签发。
+     * bizAuthorized=false 等价于 {@link #getDownloadUrl(Long)}，通用入口走此重载传 false。
+     * PUBLIC 文件两种入参都不鉴权，对称。
+     */
+    DownloadVo getDownloadUrl(Long objectId, boolean bizAuthorized);
 
     /** 列表查询（PageHelper 分页） */
     PageInfo<FileObjectVo> quarryFile(FileQuarry quarry);
