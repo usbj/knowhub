@@ -23,6 +23,12 @@ public class BlogPortalDetailVo extends BlogPortalVo {
     /** 博客等级（1/2/3，service 判越级锁态用；meta 查询带出，前台可据此提示内容等级） */
     private Integer level;
 
+    /** 当前用户是否已点赞（登录态回填，未登录为 null；对齐 ResourcePortalDetailVo.hasLiked） */
+    private Boolean hasLiked;
+
+    /** 当前用户是否已收藏（登录态回填，未登录为 null；对齐 ResourcePortalDetailVo.hasCollected） */
+    private Boolean hasCollected;
+
     public String getContent() {
         return content;
     }
@@ -53,5 +59,21 @@ public class BlogPortalDetailVo extends BlogPortalVo {
 
     public void setLevel(Integer level) {
         this.level = level;
+    }
+
+    public Boolean getHasLiked() {
+        return hasLiked;
+    }
+
+    public void setHasLiked(Boolean hasLiked) {
+        this.hasLiked = hasLiked;
+    }
+
+    public Boolean getHasCollected() {
+        return hasCollected;
+    }
+
+    public void setHasCollected(Boolean hasCollected) {
+        this.hasCollected = hasCollected;
     }
 }

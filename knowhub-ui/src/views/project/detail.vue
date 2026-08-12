@@ -20,6 +20,7 @@ import KhTag from '@/components/common/KhTag.vue'
 import KhAvatar from '@/components/common/KhAvatar.vue'
 import KhStatPill from '@/components/common/KhStatPill.vue'
 import KhIcon from '@/components/common/KhIcon.vue'
+import KhLoading from '@/components/common/KhLoading.vue'
 import ProjectMemberPanel from '@/components/project/ProjectMemberPanel.vue'
 import {
   getProjectDetailApi,
@@ -37,6 +38,7 @@ import {
   downloadProjectFileAuthoringApi,
   getProjectForEditApi,
   listProjectMembersApi,
+  toggleProjectCollectApi,
 } from '@/api/knowhub/project-authoring'
 import {
   PROJECT_BUSINESS_TYPE,
@@ -82,6 +84,8 @@ const members = ref<ProjectMemberRecord[]>([])
 const loading = ref(false)
 /** 权限态：能否管文件/成员（作者 OR canEdit=true OR 有 can_edit=1 的成员） */
 const canManage = ref(false)
+/** 收藏交互态：interacting 期间禁用按钮防重复点击 */
+const interacting = ref(false)
 /** 成员管理弹窗显隐 */
 const memberDialogVisible = ref(false)
 
@@ -229,6 +233,22 @@ const fetchDetail = async () => {
           const isAuthor = e.authorId != null && userStore.userInfo?.userId === e.authorId
           canManage.value = isAuthor || e.canEdit === true || e.myMemberRole === 'LEADER'
           authorized = true
+          // authoring 返回不带互动态（hasCollected）与计数（ProjectVo 无冗余计数列场景下为空）。
+          // 后台静默补拉一次公开 portal 详情：PUBLISHED 项目能拿到 hasCollected + 真实 view/like/collect/download 计数，
+          // 合并进本地模型（草稿项目 portal 返回 null → 跳过，保留 0 与 undefined 态，收藏按钮仍可点）。
+          try {
+            const portalRes = await getProjectDetailApi(projectId.value)
+            const p = portalRes.data
+            if (p) {
+              project.value!.hasCollected = p.hasCollected ?? project.value!.hasCollected
+              project.value!.viewCount = p.viewCount ?? project.value!.viewCount
+              project.value!.likeCount = p.likeCount ?? project.value!.likeCount
+              project.value!.collectCount = p.collectCount ?? project.value!.collectCount
+              project.value!.downloadCount = p.downloadCount ?? project.value!.downloadCount
+            }
+          } catch {
+            // portal 拉取失败（草稿非公开/越级锁态等）不阻塞 authoring 态展示，保持 0 与 undefined
+          }
         }
       } catch {
         // 未登录/无权/草稿非本人 → 落到公开 portal 接口
@@ -238,7 +258,8 @@ const fetchDetail = async () => {
       const detailRes = await getProjectDetailApi(projectId.value)
       const d = detailRes.data
       if (!d) {
-        ElMessage.error('项目不存在或已下架')
+        // 项目不存在或已下架：跳专门 404 页（404 页文案自带描述，不再弹红条避免重复提示）
+        router.replace({ name: 'not-found' })
         return
       }
       project.value = {
@@ -424,7 +445,14 @@ const handleUploadFileChange = (uf: UploadFile) => {
   uploadFile.value = uf.raw ?? null
 }
 
-/** 提交上传：预检白名单 → presignedUploadFlow（businessType=PROJECT_DOC, access=PRIVATE）→ 挂节点 → fetchDetail */
+/** 项目文件访问语义：L1（及前置未知等级）→ PUBLIC（公开）；L2/L3 → PRIVATE（私有）。
+ *  与后端 file_object.access 落库一致；项目层已 canDownload 鉴权，文件层走 bizAuthorized=true 跳过 owner 闸，
+ *  access 仅决定 PUBLIC 直走 /file/public 回显 vs PRIVATE 走 /file/proxy 预签名/中转（强制文件名）。
+ *  level 缺省（undefined/null）按最低等级 L1=公开处理，与详情兜底 ??1 口径一致。 */
+const fileAccessForLevel = (level: number | undefined | null): 'PUBLIC' | 'PRIVATE' =>
+  level != null && level >= 2 ? 'PRIVATE' : 'PUBLIC'
+
+/** 提交上传：预检白名单 → presignedUploadFlow（businessType=PROJECT_DOC, access 按项目等级派生 L1=PUBLIC 否则 PRIVATE）→ 挂节点 → fetchDetail */
 const submitUpload = async () => {
   const file = uploadFile.value
   if (!file || !projectId.value) {
@@ -443,7 +471,7 @@ const submitUpload = async () => {
     const result = await presignedUploadFlow({
       file,
       businessType: PROJECT_BUSINESS_TYPE.DOC,
-      access: 'PRIVATE',
+      access: fileAccessForLevel(project.value?.level),
       onProgress: (percent) => {
         uploadPercent.value = percent
       },
@@ -543,6 +571,29 @@ const editProjectInfo = () => {
   router.push(`/project/create?id=${projectId.value}`)
 }
 
+/** 收藏/取消收藏项目：未登录跳登录 + redirect 回填来源；登录态乐观更新 hasCollected + collectCount（对齐 resource 详情范式）。
+ *  项目无点赞链路（后端无 ProjectLike/事实表/toggle 端点），仅收藏。 */
+const requireAuth = (): boolean => {
+  if (!userStore.isAuthenticated) {
+    ElMessage.warning('请先登录后再操作')
+    router.push({ path: '/login', query: { redirect: route.fullPath } })
+    return false
+  }
+  return true
+}
+const handleCollect = async () => {
+  if (!project.value || !requireAuth()) return
+  interacting.value = true
+  try {
+    const collected = !project.value.hasCollected
+    await toggleProjectCollectApi(projectId.value, collected)
+    project.value.hasCollected = collected
+    project.value.collectCount = Math.max(0, (project.value.collectCount ?? 0) + (collected ? 1 : -1))
+  } finally {
+    interacting.value = false
+  }
+}
+
 /**
  * 下载项目整包（zip）：后端 /portal/project/{id}/package 直接 stream application/zip 字节流。
  * 用 axios GET 拿 blob 再用 a.download 触发下载——可捕获后端 4xx/500 给明确 ElMessage，避免 iframe/window.open
@@ -611,8 +662,11 @@ watch(projectId, () => {
       <span class="pd__crumb-current">{{ project?.title ?? '项目详情' }}</span>
     </div>
 
+    <!-- 首屏取数加载占位：loading 期间显 KhLoading，替代头卡"加载中…"文案 + 主体空白帧 -->
+    <KhLoading v-if="loading" title="正在加载项目…" />
+
     <!-- 项目头：无封面，标签 + 标题 + 摘要 + 元信息 + 管理按钮（授权态显隐） -->
-    <div class="kh-container kh-container--wide">
+    <div v-else class="kh-container kh-container--wide">
       <KhCard padding="lg" class="pd__head">
         <div v-if="project" class="pd__head-tags">
           <KhTag type="primary">{{ typeLabel[project.type ?? ''] ?? project.type ?? '项目' }}</KhTag>
@@ -621,8 +675,18 @@ watch(projectId, () => {
         </div>
         <div class="pd__head-titlerow">
           <h1 class="pd__title">{{ project?.title ?? '加载中…' }}</h1>
-          <!-- 按钮组：编辑项目信息（授权态可管）+ 下载项目整包（canDownload 权限，zip 字节流浏览器原生下载） -->
+          <!-- 按钮组：收藏项目（登录态可点）+ 下载项目整包（canDownload 权限，zip 字节流浏览器原生下载）+ 编辑项目信息（授权态可管） -->
           <div class="pd__head-actions">
+            <button
+              class="pd__head-btn pd__head-btn--collect"
+              :class="{ 'is-active': project?.hasCollected }"
+              type="button"
+              title="收藏项目"
+              :disabled="interacting"
+              @click="handleCollect"
+            >
+              <el-icon><FolderAdd /></el-icon> {{ project?.hasCollected ? '已收藏' : '收藏' }}
+            </button>
             <button
               v-if="project?.canDownload"
               class="pd__head-btn pd__head-btn--download"
@@ -1535,6 +1599,31 @@ watch(projectId, () => {
   border-color: var(--kh-primary-border);
   background: var(--kh-primary-soft);
   color: var(--kh-primary);
+}
+/* 收藏按钮：默认中性边框态（与下载按钮同款），已收藏时主色实心高亮（对齐 resource .rd__interact-btn.is-on） */
+.pd__head-btn--collect {
+  border-color: var(--kh-border-strong);
+  background: var(--kh-surface);
+  color: var(--kh-text-secondary);
+}
+.pd__head-btn--collect:hover:not(:disabled) {
+  border-color: var(--kh-primary-border);
+  background: var(--kh-primary-soft);
+  color: var(--kh-primary);
+}
+.pd__head-btn--collect.is-active {
+  border-color: var(--kh-primary);
+  background: linear-gradient(120deg, var(--kh-primary), var(--kh-primary-strong));
+  color: #fff;
+  box-shadow: var(--kh-shadow-primary);
+}
+.pd__head-btn--collect.is-active:hover:not(:disabled) {
+  color: #fff;
+  background: linear-gradient(120deg, var(--kh-primary-strong), var(--kh-primary));
+}
+.pd__head-btn--collect:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 /* 参与人员卡头部（标题 + 成员管理按钮） */

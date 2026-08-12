@@ -5,16 +5,20 @@ import com.knowhub.pojo.project.quarry.ProjectQuarry;
 import com.knowhub.pojo.project.vo.ProjectFileTreeVo;
 import com.knowhub.pojo.project.vo.ProjectFileVo;
 import com.knowhub.pojo.project.vo.ProjectMemberVo;
+import com.knowhub.pojo.project.vo.ProjectPortalVo;
 import com.knowhub.pojo.project.vo.ProjectVo;
+import com.knowhub.service.project.impl.ProjectPortalService;
 import com.knowhub.service.project.impl.ProjectService;
 import com.knowhub.support.ProjectPermissionResolver;
 import com.rookie.common.annotation.Log;
 import com.rookie.common.enums.BusinessType;
 import com.rookie.common.pojo.Result;
+import com.rookie.framework.security.pojo.UserInfo;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -22,6 +26,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
@@ -47,6 +52,9 @@ public class ProjectAuthoringController {
     @Autowired
     private ProjectService projectService;
 
+    @Autowired
+    private ProjectPortalService projectPortalService;
+
     @GetMapping("/level")
     @Operation(summary = "当前用户项目 view 等级（创作页等级选择器权限感知，0/1/2/3）")
     @PreAuthorize("isAuthenticated()")
@@ -57,13 +65,22 @@ public class ProjectAuthoringController {
     }
 
     @GetMapping("/list")
-    @Operation(summary = "前台我的项目列表（薄封装 quarryProject，service 内回填 userId 走 author_id 分支）")
+    @Operation(summary = "前台我的项目列表（薄封装 quarryProject，controller 注入 authorId=当前用户 userId 收紧到本人创建）")
     @PreAuthorize("isAuthenticated()")
     public Result<PageInfo<ProjectVo>> myList(ProjectQuarry quarry) {
-        // 复用后台 quarryProject：service 内已回填当前用户 userId 走 "author_id=userId OR level<=userViewLevel"
-        // 权限分支——前台登录用户调它天然只返回"自己创建/参与的 + 有权看的"。前端可传 status 过滤草稿/已发布。
+        // 强制只召回本人创建的项目：quarry.authorId = 当前用户 userId。
+        // service 内 quarryProject 回填 userViewLevel/userId 走 "level<=userViewLevel OR project_id IN (member 子查询)"
+        // OR 分支，叠加此 AND 后集合被 author_id=? 收紧到本人，OR 分支恒真叠加不放大，非本人创建（仅作为成员参与）即被排除。
+        // 不改 service（admin 共用 quarryProject 保持原"参与/有权看"召回口径，不受影响）。
+        // 注意：项目"多人协作"语义由成员表承载，本接口语义为"我创建的项目"，非本人作为成员参与的将不出现在此列表。
+        quarry.setAuthorId(currentUserId());
         PageInfo<ProjectVo> page = projectService.quarryProject(quarry);
         return Result.success(page);
+    }
+
+    /** 当前登录用户 userId（principal 是 UserInfo，/authoring/** 已 authenticated 兜底）。 */
+    private Long currentUserId() {
+        return ((UserInfo) SecurityContextHolder.getContext().getAuthentication().getPrincipal()).getUserId();
     }
 
     @GetMapping("/{projectId}")
@@ -155,6 +172,28 @@ public class ProjectAuthoringController {
     public Result<Boolean> deleteMember(@PathVariable Long memberId) {
         Boolean b = projectService.deleteMember(memberId);
         return Result.success(b);
+    }
+
+    // ---- 互动（前台作者对任意已发布项目的收藏/取消收藏 + 我的收藏列表，不依赖后台按钮权限） ----
+
+    @PutMapping("/{projectId}/collect")
+    @Operation(summary = "收藏/取消收藏项目（collected=true 收藏,false 取消,主表 collect_count 同步）")
+    @Log(title = "项目收藏", businessType = BusinessType.UPDATE)
+    @PreAuthorize("isAuthenticated()")
+    public Result<Boolean> toggleCollect(@PathVariable Long projectId,
+                                           @RequestParam(required = false, defaultValue = "true") Boolean collected) {
+        Boolean b = projectService.toggleCollect(projectId, collected);
+        return Result.success(b);
+    }
+
+    @GetMapping("/collect/list")
+    @Operation(summary = "我的项目收藏列表（按收藏时间倒序,仅前台可见口径已发布项目）")
+    @PreAuthorize("isAuthenticated()")
+    public Result<PageInfo<ProjectPortalVo>> myCollected(
+            @RequestParam(defaultValue = "1") int pageNum,
+            @RequestParam(defaultValue = "20") int pageSize) {
+        PageInfo<ProjectPortalVo> page = projectPortalService.listMyCollected(pageNum, pageSize);
+        return Result.success(page);
     }
 
     // ---- 文件树管理（前台创作者管理自己项目文件，不依赖后台 knowhub:project:add 按钮） ----

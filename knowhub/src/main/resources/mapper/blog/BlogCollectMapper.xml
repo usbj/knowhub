@@ -22,4 +22,9 @@
         select * from blog_collect where blog_id = #{blogId} and user_id = #{userId}
     </select>
 
+    <!-- 当前用户的收藏博客 ID 列表（按收藏时间倒序；service 层据此 join 出 VO） -->
+    <select id="listCollectedBlogIds" resultType="java.lang.Long">
+        select blog_id from blog_collect where user_id = #{userId} order by create_time desc
+    </select>
+
 </mapper>

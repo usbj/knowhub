@@ -19,28 +19,32 @@ import BlogRow from '@/components/blog/BlogRow.vue'
 import ProjectCard from '@/components/project/ProjectCard.vue'
 import ResourceCard from '@/components/resource/ResourceCard.vue'
 
-import { blogs } from '@/mock/blog'
-import { projects } from '@/mock/project'
-import { notices } from '@/mock/notice'
-import { tags } from '@/mock/tag'
-import { latestAiDaily } from '@/mock/aiDaily'
 import { useRouter } from 'vue-router'
 import { onMounted, ref } from 'vue'
 import {
   recommendResourcesApi,
   searchResourcesApi,
 } from '@/api/knowhub/resource-portal'
+import { recommendBlogsApi, hotTagsApi } from '@/api/knowhub/blog'
+import { recommendProjectsApi } from '@/api/knowhub/project-portal'
+import { getPublicNoticesApi } from '@/api/system/notice-portal'
+import type { NoticePortalRecord } from '@/types/api/notice-portal'
+import type { BlogPortalRecord } from '@/types/api/knowhub/blog'
+import type { ProjectPortalRecord } from '@/types/api/knowhub/project-portal'
+import type { HotTagRecord } from '@/types/api/knowhub/tag'
 import type { ResourcePortalRecord } from '@/types/api/knowhub/resource'
+import { useNoticeStore } from '@/stores/notice'
 
 const router = useRouter()
+const noticeStore = useNoticeStore()
 
-/** 各分区取数（demo 静态切片，仅展示已发布内容） */
-const latestBlogs = blogs.filter((b) => b.status === 'PUBLISHED').slice(0, 5)
-const hotProjects = projects
-  .filter((p) => p.status === 'PUBLISHED')
-  .sort((a, b) => b.downloadCount - a.downloadCount)
-  .slice(0, 4)
-const pinnedNotices = notices
+/** 最新笔记：博客推荐 feed recommendBlogsApi（登录用户按偏好，未登录走全局热门兜底） */
+const latestBlogs = ref<BlogPortalRecord[]>([])
+/** 活跃项目：项目推荐 feed recommendProjectsApi（全局热门兜底，无用户偏好源） */
+const hotProjects = ref<ProjectPortalRecord[]>([])
+
+/** 公告滚动条：公开公告接口（群发+已发布，置顶优先+时间倒序），未登录访客也可读 */
+const pinnedNotices = ref<NoticePortalRecord[]>([])
 
 /** 资源推荐网格：真实接口 recommendResourcesApi（全局热门兜底，无用户偏好源） */
 const featuredResources = ref<ResourcePortalRecord[]>([])
@@ -48,11 +52,49 @@ const featuredResources = ref<ResourcePortalRecord[]>([])
 /** 热门资源榜：真实接口 search 带 sort=HOT（与侧栏榜同口径，按下载量/热度排序） */
 const hotResourceRank = ref<ResourcePortalRecord[]>([])
 
+/** 通知类型字典 code → 中文标签（与 AppHeader noticeTypeMap 同款内联映射，首页公开页未登录字典未拉，不引字典预加载） */
+const noticeTypeMap: Record<string, string> = { NOTICE: '公告', NOTIFY: '通知', REMIND: '提醒' }
+const resolveNoticeType = (code: string) => noticeTypeMap[code] ?? code
+
+const fetchHomeNotices = async () => {
+  try {
+    const page = await getPublicNoticesApi({ pageNum: 1, pageSize: 8 }, { silentError: true })
+    pinnedNotices.value = page.records ?? []
+  } catch {
+    pinnedNotices.value = []
+  }
+}
+
+const fetchHomeBlogsAndProjects = async () => {
+  try {
+    const [blogs, projects] = await Promise.all([
+      recommendBlogsApi(5, undefined, { silentError: true }),
+      recommendProjectsApi(4, undefined, { silentError: true }),
+    ])
+    latestBlogs.value = blogs.data ?? []
+    hotProjects.value = projects.data ?? []
+  } catch {
+    latestBlogs.value = []
+    hotProjects.value = []
+  }
+}
+
+/** 热门标签：真实接口 hotTagsApi（跨 blog_tag+article_tag 热度聚合） */
+const hotTags = ref<HotTagRecord[]>([])
+const fetchHomeHotTags = async () => {
+  try {
+    const res = await hotTagsApi(10, { silentError: true })
+    hotTags.value = res.data ?? []
+  } catch {
+    hotTags.value = []
+  }
+}
+
 const fetchHomeResources = async () => {
   try {
     const [feat, hot] = await Promise.all([
-      recommendResourcesApi(8),
-      searchResourcesApi({ sort: 'HOT', pageSize: 6 }),
+      recommendResourcesApi(8, undefined, { silentError: true }),
+      searchResourcesApi({ sort: 'HOT', pageSize: 6 }, { silentError: true }),
     ])
     featuredResources.value = feat.data ?? []
     hotResourceRank.value = hot.records ?? []
@@ -70,11 +112,22 @@ const rankCoverGradient = (r: ResourcePortalRecord) =>
 const rankIcon = (r: ResourcePortalRecord) => (r.resourceType === 'LINK' ? 'link' : 'file')
 
 onMounted(() => {
+  void fetchHomeNotices()
+  void fetchHomeBlogsAndProjects()
+  void fetchHomeHotTags()
   void fetchHomeResources()
 })
 
-/** 热门标签（侧栏紧凑榜，非大标签云） */
-const hotTags = [...tags].sort((a, b) => b.count - a.count).slice(0, 10)
+/** 热门标签榜首热度分，做热度条占比分母（hotScore 后端加权聚合分） */
+const topTagScore = () => hotTags.value[0]?.hotScore ?? 1
+
+/** AI 日报：功能未实施，静态"即将上线"占位（不接接口） */
+const aiDaily = {
+  title: '知枢 AI 日报 · 即将上线',
+  summary: 'AI 日报功能即将上线，每日自动生成当日知识库报道，敬请期待。',
+  topics: ['即将上线'],
+  comingSoon: true,
+} as const
 
 /** 字节大小 → B/KB/MB/GB，与资源卡 / 项目详情 formatSize 口径一致 */
 const formatSize = (len?: number | null) => {
@@ -94,13 +147,19 @@ const sections = [
 
 /** Hero 内容类别徽章：标明系统里有什么资源 */
 const contentKinds = [
-  { key: 'blog', label: '博客笔记', desc: '沉淀与分享', icon: 'blog', tone: 'var(--kh-primary)', to: '/notes' },
+  { key: 'blog', label: '博客笔记', desc: '沉淀与分享', icon: 'blog', tone: 'var(--kh-primary)', to: '/blogs' },
   { key: 'project', label: '项目展示', desc: '看见成果', icon: 'project', tone: 'var(--kh-accent)', to: '/projects' },
   { key: 'resource', label: '资源推荐', desc: '精选好物', icon: 'resource', tone: 'var(--kh-warm)', to: '/resources' },
-  { key: 'doc', label: '文档学习', desc: '系统进阶', icon: 'doc', tone: 'var(--kh-success)', to: '/docs' },
+  { key: 'doc', label: '文档学习', desc: '系统进阶', icon: 'doc', tone: 'var(--kh-success)', to: '/articles' },
 ] as const
 
-const goNotes = () => router.push('/notes')
+/** Hero 搜索框：跳全局搜索结果页，空关键词不跳 */
+const searchValue = ref('')
+const goSearch = () => {
+  const kw = searchValue.value.trim()
+  if (!kw) return
+  router.push({ path: '/search', query: { keyword: kw } })
+}
 </script>
 
 <template>
@@ -125,8 +184,8 @@ const goNotes = () => router.push('/notes')
 
           <div class="hero__search">
             <el-icon class="hero__search-icon"><Search /></el-icon>
-            <input class="hero__search-input" placeholder="搜索博客、项目、资源、文档…" @keyup.enter="goNotes" />
-            <button class="hero__search-btn" type="button" @click="goNotes">搜索</button>
+            <input v-model="searchValue" class="hero__search-input" placeholder="搜索博客、项目、资源、文档…" @keyup.enter="goSearch" />
+            <button class="hero__search-btn" type="button" @click="goSearch">搜索</button>
           </div>
 
           <!-- 内容类别徽章：标明系统里有什么资源 -->
@@ -151,6 +210,7 @@ const goNotes = () => router.push('/notes')
         <KhIcon name="megaphone" :size="18" />
       </div>
       <el-carousel
+        v-if="pinnedNotices.length"
         height="44px"
         direction="vertical"
         :autoplay="true"
@@ -158,18 +218,24 @@ const goNotes = () => router.push('/notes')
         arrow="never"
         class="notice-bar__carousel"
       >
-        <el-carousel-item v-for="n in pinnedNotices" :key="n.id">
-          <div class="notice-bar__item">
+        <el-carousel-item v-for="n in pinnedNotices" :key="n.noticeId">
+          <button
+            type="button"
+            class="notice-bar__item"
+            :title="`查看公告：${n.title}`"
+            @click="noticeStore.openDetail(n)"
+          >
             <KhTag
               size="sm"
-              :type="n.type === '活动' ? 'warm' : n.type === '维护' ? 'warning' : n.type === '更新' ? 'primary' : 'info'"
-            >{{ n.type }}</KhTag>
+              :type="n.noticeType === 'NOTIFY' ? 'warning' : n.noticeType === 'REMIND' ? 'primary' : 'warm'"
+            >{{ resolveNoticeType(n.noticeType) }}</KhTag>
             <span class="notice-bar__title">{{ n.title }}</span>
             <span class="notice-bar__time">{{ n.publishTime }}</span>
-          </div>
+          </button>
         </el-carousel-item>
       </el-carousel>
-      <RouterLink to="/" class="notice-bar__more">全部公告 <el-icon><ArrowRight /></el-icon></RouterLink>
+      <span v-else class="notice-bar__empty">暂无公告</span>
+      <RouterLink to="/notices" class="notice-bar__more">全部公告 <el-icon><ArrowRight /></el-icon></RouterLink>
     </section>
 
     <!-- —— 主体两栏 —— -->
@@ -184,7 +250,7 @@ const goNotes = () => router.push('/notes')
               <KhIcon :name="sections[0]!.icon" :size="20" :style="{ color: sections[0]!.tone }" />
               <h2>{{ sections[0]!.title }}</h2>
             </div>
-            <RouterLink to="/notes" class="feed-section__more">
+            <RouterLink to="/blogs" class="feed-section__more">
               查看更多 <el-icon><ArrowRight /></el-icon>
             </RouterLink>
           </header>
@@ -231,18 +297,19 @@ const goNotes = () => router.push('/notes')
       <!-- 右侧栏 -->
       <aside class="home__aside">
         <!-- AI 日报 -->
+        <!-- AI 日报（功能即将上线占位） -->
         <KhCard gradient padding="lg" class="ai-card">
           <div class="ai-card__head">
             <span class="ai-card__tag"><KhIcon name="sparkles" :size="14" /> AI 日报</span>
-            <span class="ai-card__date">{{ latestAiDaily.date }}</span>
+            <span class="ai-card__date">敬请期待</span>
           </div>
-          <h3 class="ai-card__title">{{ latestAiDaily.title }}</h3>
-          <p class="ai-card__summary kh-line-clamp-3">{{ latestAiDaily.summary }}</p>
+          <h3 class="ai-card__title">{{ aiDaily.title }}</h3>
+          <p class="ai-card__summary kh-line-clamp-3">{{ aiDaily.summary }}</p>
           <div class="ai-card__topics">
-            <span v-for="t in latestAiDaily.topics" :key="t">{{ t }}</span>
+            <span v-for="t in aiDaily.topics" :key="t">{{ t }}</span>
           </div>
-          <button class="ai-card__more" type="button">
-            阅读完整日报 <el-icon><ArrowRight /></el-icon>
+          <button class="ai-card__more is-coming-soon" type="button" disabled title="功能即将上线">
+            即将上线 <el-icon><ArrowRight /></el-icon>
           </button>
         </KhCard>
 
@@ -280,16 +347,16 @@ const goNotes = () => router.push('/notes')
           <ol class="home__tag-list">
             <li
               v-for="(t, i) in hotTags"
-              :key="t.id"
+              :key="t.tagId"
               class="home__tag-item"
-              @click="router.push('/notes')"
+              @click="router.push('/blogs')"
             >
               <span class="home__tag-no" :class="{ 'is-top': i < 3 }">{{ i + 1 }}</span>
-              <span class="home__tag-name">{{ t.name }}</span>
+              <span class="home__tag-name">{{ t.tagName }}</span>
               <span class="home__tag-bar">
-                <span class="home__tag-bar-fill" :style="{ width: `${(t.count / (hotTags[0]?.count ?? 1)) * 100}%` }" />
+                <span class="home__tag-bar-fill" :style="{ width: `${((t.hotScore ?? 0) / topTagScore()) * 100}%` }" />
               </span>
-              <span class="home__tag-count">{{ t.count }}</span>
+              <span class="home__tag-count">{{ t.hotScore }}</span>
             </li>
           </ol>
         </KhCard>
@@ -567,6 +634,18 @@ const goNotes = () => router.push('/notes')
   align-items: center;
   gap: var(--kh-space-3);
   height: 100%;
+  /* 轮播条项现在是 <button>：清掉默认 button 样式，让它读起来像文字链接 */
+  border: none;
+  background: transparent;
+  padding: 0;
+  width: 100%;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: color var(--kh-transition-fast);
+}
+.notice-bar__item:hover .notice-bar__title {
+  color: var(--kh-primary);
 }
 .notice-bar__title {
   font-size: var(--kh-font-size-sm);
@@ -591,6 +670,11 @@ const goNotes = () => router.push('/notes')
   font-weight: 500;
   cursor: pointer;
   flex: none;
+}
+.notice-bar__empty {
+  font-size: var(--kh-font-size-sm);
+  color: var(--kh-text-tertiary);
+  flex: 1;
 }
 
 /* —— 主体两栏 —— */
@@ -745,6 +829,13 @@ const goNotes = () => router.push('/notes')
 }
 .ai-card__more:hover {
   gap: 10px;
+}
+.ai-card__more.is-coming-soon {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+.ai-card__more.is-coming-soon:hover {
+  gap: 6px;
 }
 
 /* 侧栏面板头 */

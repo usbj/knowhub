@@ -83,14 +83,43 @@ const canEditNow = computed(() =>
   ['DRAFT', 'REJECTED', 'REVOKED', ''].includes(projectStatus.value),
 )
 
-const buildPayload = (): ProjectAuthoringPayload => ({
-  projectId: form.value.projectId,
-  title: form.value.title.trim(),
-  type: form.value.type,
-  level: form.value.level,
-  summary: form.value.summary.trim() || undefined,
-  description: form.value.description || undefined,
-})
+/**
+ * 从 description（markdown 正文）剥出纯文本并取前 100 字符，用作摘要兜底。
+ * 轻量 strip：去图片/链接标签、标题井号、强调符、引用/列表前缀、HTML/代码块，压空白。
+ * 后端 summary 字段长度按 200 存（与摘要框 maxlength 同口径），这里取 100 字符留余量。
+ */
+const buildFallbackSummary = (): string | undefined => {
+  const desc = form.value.description?.trim()
+  if (!desc) return undefined
+  const plain = desc
+    .replace(/```[\s\S]*?```/g, ' ')        // 代码块
+    .replace(/`[^`]*`/g, ' ')               // 行内代码
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, ' ')  // 图片 ![alt](url)
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')// 链接 [text](url) → text
+    .replace(/<[^>]+>/g, ' ')              // HTML 标签
+    .replace(/^#{1,6}\s+/gm, '')            // 标题井号
+    .replace(/^\s{0,3}>\s?/gm, '')          // 引用 >
+    .replace(/^\s*[-*+]\s+/gm, '')          // 无序列表 - * +
+    .replace(/^\s*\d+\.\s+/gm, '')          // 有序列表 1.
+    .replace(/[*_~]{1,3}/g, '')             // 强调 * ** _ __ ~
+    .replace(/\n+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+  if (!plain) return undefined
+  return plain.slice(0, 100)
+}
+
+const buildPayload = (): ProjectAuthoringPayload => {
+  const summary = form.value.summary.trim() || buildFallbackSummary()
+  return {
+    projectId: form.value.projectId,
+    title: form.value.title.trim(),
+    type: form.value.type,
+    level: form.value.level,
+    summary,
+    description: form.value.description || undefined,
+  }
+}
 
 const validate = (): boolean => {
   if (!form.value.title.trim()) {

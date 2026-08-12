@@ -109,6 +109,11 @@ body::-webkit-scrollbar-thumb,
 }
 
 /* 工具类：截断 */
+.kh-line-clamp-1 {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .kh-line-clamp-2 {
   display: -webkit-box;
   -webkit-line-clamp: 2;

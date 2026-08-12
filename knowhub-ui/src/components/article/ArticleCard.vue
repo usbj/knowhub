@@ -1,5 +1,5 @@
 <!--
-  DocCard —— 文档（文章）卡片
+  ArticleCard —— 文章（文档）卡片
   ------------------------------------------------------------------
   封面色块 + 难度徽标 + 标题 + 简介 + 章节数 + 标签 + 作者 + 阅读量 + 发布时间。
   数据源切真实后端 ArticlePortalRecord（/portal/article/* 出参），不再耦合 mock。
@@ -7,6 +7,7 @@
 -->
 <script setup lang="ts">
 import { useRouter } from 'vue-router'
+import { computed } from 'vue'
 import KhCard from '@/components/common/KhCard.vue'
 import KhTag from '@/components/common/KhTag.vue'
 import KhAvatar from '@/components/common/KhAvatar.vue'
@@ -17,18 +18,30 @@ import { viewLevelTagType, getViewLevelLabel } from '@/utils/viewLevel'
 
 const props = defineProps<{ doc: ArticlePortalRecord }>()
 const router = useRouter()
-const goDetail = () => router.push(`/docs/${props.doc.articleId}`)
+const goDetail = () => router.push(`/article/${props.doc.articleId}`)
 
 /** 跳章节阅读页（命中章节点击直接进对应章） */
 const goChapter = (chapterId: number) => {
-  router.push(`/docs/${props.doc.articleId}/read/${chapterId}`)
+  router.push(`/article/${props.doc.articleId}/read/${chapterId}`)
 }
+
+/**
+ * 封面 coverUrl 形态辨识：真实接口为 /file/resolve/{id} 或绝对 URL（含 / 或 http）→ <img> 渲染；
+ * 兜底渐变色块由 CSS background 默认值提供（coverUrl 空时 .doc-card__cover 的渐变背景）。
+ * 与 BlogRow 同口径，避免裸 background: coverUrl 的非法 CSS 值致封面加载不出。
+ */
+const hasImageCover = computed(() => {
+  const url = props.doc.coverUrl
+  if (!url) return false
+  return /^https?:\/\//i.test(url) || url.startsWith('/')
+})
 </script>
 
 <template>
   <KhCard clickable padding="none" class="doc-card" @click="goDetail">
-    <div class="doc-card__cover" :style="{ background: props.doc.coverUrl ? `url(${props.doc.coverUrl}) center/cover` : 'linear-gradient(135deg,#2563eb,#0ea5e9)' }">
-      <KhIcon name="book" :size="28" class="doc-card__cover-icon" />
+    <div class="doc-card__cover" :class="{ 'doc-card__cover--img': hasImageCover }">
+      <img v-if="hasImageCover" :src="props.doc.coverUrl" alt="封面" class="doc-card__cover-img" />
+      <KhIcon v-else name="book" :size="28" class="doc-card__cover-icon" />
       <div v-if="props.doc.level" class="doc-card__level">
         <KhTag size="sm" :type="viewLevelTagType[props.doc.level as 1 | 2 | 3] ?? 'neutral'">{{ getViewLevelLabel(props.doc.level) }}</KhTag>
       </div>
@@ -89,6 +102,18 @@ const goChapter = (chapterId: number) => {
   height: 96px;
   display: grid;
   place-items: center;
+  /* 无封面时的渐变兜底（hasImageCover=false 走图标占位，背景渐变打底） */
+  background: linear-gradient(135deg, #2563eb, #0ea5e9);
+}
+/* 有图片封面：display 切回 block，让 <img> object-fit 铺满 */
+.doc-card__cover--img {
+  display: block;
+}
+.doc-card__cover-img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 .doc-card__cover-icon {
   color: rgba(255, 255, 255, 0.92);

@@ -7,9 +7,9 @@ import { del, getPage } from '@/utils/http'
 import type { ApiResult } from '@/types/api/common'
 import type { ViewHistoryRecord } from '@/types/api/knowhub/history'
 
-/** 当前用户浏览历史分页（bizType 可选过滤） */
-export const listHistoryApi = (bizType?: string) =>
-  getPage<ViewHistoryRecord>('/history/list', { params: { bizType } })
+/** 当前用户浏览历史分页（bizType 可选过滤；pageNum/pageSize 经 PageHelper 接管，后端 PageUtil 从请求读） */
+export const listHistoryApi = (bizType?: string, params?: { pageNum?: number; pageSize?: number }) =>
+  getPage<ViewHistoryRecord>('/history/list', { params: { bizType, ...params } })
 
 /** 删单条浏览历史（校验 user_id 归属） */
 export const deleteHistoryApi = (viewId: number) =>

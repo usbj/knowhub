@@ -6,6 +6,7 @@
  * 项目无标签体系，故无 /tag 相关接口（与博客门户差异点）。
  * 权限：未登录默认 L1（后端 resolveUserViewLevel Math.max(1, view) 兜底），L2/L3 永不下发前台。
  */
+import type { AxiosRequestConfig } from 'axios'
 import { get, getPage } from '@/utils/http'
 import type { ApiResult } from '@/types/api/common'
 import type { NormalizedPageResult } from '@/types/api/common'
@@ -28,9 +29,10 @@ export const searchProjectsApi = (query: ProjectPortalSearchQuery) =>
  * 前台项目推荐 feed（全局热门兜底，登录用户排除已浏览项目；详情页相关推荐时排除当前 projectId）。
  * 打分公式后端 download*3 + like*2 + collect*1 + view*1 + 时间衰减。
  */
-export const recommendProjectsApi = (size = 10, excludeProjectId?: number) =>
+export const recommendProjectsApi = (size = 10, excludeProjectId?: number, config?: AxiosRequestConfig) =>
   get<ApiResult<ProjectPortalRecord[]>>('/portal/project/recommend', {
     params: { size, excludeProjectId },
+    ...config,
   })
 
 /** 前台项目详情（越级锁态降级，locked=true 时 description 为 null；登录态计浏览量） */

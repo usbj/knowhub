@@ -132,6 +132,21 @@
     </select>
 
     <!--
+      按 ID 集合取前台可见博客 VO（"我的收藏"列表用）。
+      照前台铁律过滤未发布/越级博客，IN 给定的 blogIds。不排序——service 按收藏时间倒序的 blogIds 顺序拼装。
+    -->
+    <select id="listByIds" resultMap="BlogPortalVoMap">
+        select b.blog_id, b.author_id, u.nick_name as author_nickname,
+               b.title, b.summary, b.cover_url, b.publish_time,
+               b.view_count, b.like_count, b.collect_count
+        from blog b
+                left join sys_user u on b.author_id = u.user_id
+        where <include refid="portalBlogWhere"/>
+          and b.blog_id in
+          <foreach collection="blogIds" item="bid" open="(" separator="," close=")">#{bid}</foreach>
+    </select>
+
+    <!--
       详情元数据（含 level，不含 content，无 level 过滤）。
       service 取 meta 后判越级：level<=userViewLevel→达权，再取 content；level>userViewLevel→锁态（content 置空）。
       这样越级时仍能带出元数据构造锁态 VO，且不白拉 longtext 正文。
@@ -236,6 +251,23 @@
     <!-- 用户浏览过的博客ID（推荐召回排除已浏览；未登录 userId=null 不应调用） -->
     <select id="viewedBlogIdsByUser" resultType="long">
         select biz_id from user_view_history where user_id = #{userId} and biz_type = 'BLOG'
+    </select>
+
+    <!--
+      前台博客全量统计（/portal/blog/stats）：三段独立 count/sum 子查询一次返回。
+      - publishedBlogCount：blog 前台铁律（deleted=0 AND status='PUBLISHED' AND level<=userViewLevel）
+      - totalReads：sum(view_count) 应用博客铁律（view_count 主表冗余列，浏览事实表同步累加）
+      - tagCount：tag deleted=0 AND status=1 全量启用标签数（与 /portal/tag/hot 的 tag 过滤口径一致，
+        hot 只回有关联内容的 Top-N，全量数在此给）
+      固定口径，与搜索/翻页/标签过滤互不影响——统计是"全库当前可见数"而非"当前筛选结果数"。
+    -->
+    <select id="getPortalStats" parameterType="int" resultType="com.knowhub.pojo.blog.vo.PortalBlogStatsVo">
+        select
+            (select count(*) from blog b
+                where b.deleted = 0 and b.status = 'PUBLISHED' and b.level &lt;= #{userViewLevel}) as publishedBlogCount,
+            (select cast(coalesce(sum(b.view_count), 0) as unsigned) from blog b
+                where b.deleted = 0 and b.status = 'PUBLISHED' and b.level &lt;= #{userViewLevel}) as totalReads,
+            (select count(*) from tag t where t.deleted = 0 and t.status = 1) as tagCount
     </select>
 
 </mapper>

@@ -23,6 +23,7 @@ import type {
   ProjectFileTreeNode,
   MyProjectPageResult,
 } from '@/types/api/knowhub/project-authoring'
+import type { ProjectPortalRecord } from '@/types/api/knowhub/project-portal'
 
 // ============================ 项目创作 ============================
 
@@ -108,6 +109,23 @@ export const deleteProjectFileNodeApi = (fileId: number) =>
 /** 前台获取文件下载链接（薄封装 downloadFile，canOp(download) 校验）。 */
 export const downloadProjectFileAuthoringApi = (fileId: number) =>
   get<ApiResult<string>>(`/authoring/project/file/download/${fileId}`)
+
+// ============================ 互动（收藏，2026-08-11 补齐） ============================
+
+/**
+ * 收藏/取消收藏项目（PUT /authoring/project/{id}/collect，collected 缺省 true；主表 collect_count 同步）。
+ * 后端 ProjectService.toggleCollect 复用预留的 ProjectMapper.incrCollectCount + project_collect 事实表。
+ */
+export const toggleProjectCollectApi = (projectId: number, collected = true) =>
+  put<ApiResult<boolean>>(`/authoring/project/${projectId}/collect`, null, { params: { collected } })
+
+/**
+ * 我的项目收藏列表（GET /authoring/project/collect/list，按收藏时间倒序，仅前台可见口径的已发布项目）。
+ * ProjectPortalRecord 口径。后端 listMyCollected 照 article 范式实现（recommendHot 兜底可见性），
+ * 实际一次性返回可见收藏全量（pageNum/pageSize 被忽略），前端取 records+total 用即可。
+ */
+export const listMyCollectedProjectsApi = (pageNum = 1, pageSize = 20) =>
+  getPage<ProjectPortalRecord>('/authoring/project/collect/list', { params: { pageNum, pageSize } })
 
 /** 类型再导出，供页面直接用 */
 export type {

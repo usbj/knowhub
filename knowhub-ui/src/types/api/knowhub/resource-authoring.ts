@@ -53,8 +53,6 @@ export interface ResourceAuthoringDetail {
   originalName?: string | null
   contentLength?: number | null
   contentType?: string | null
-  /** FILE 类型：访问语义 PUBLIC/PRIVATE（join file_object.access 带出），编辑回填前台表单回显公私态 */
-  fileAccess?: string | null
   linkUrl?: string | null
   linkIcon?: string | null
   status?: string

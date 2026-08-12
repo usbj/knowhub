@@ -10,7 +10,7 @@
       - authorNickname：join sys_user on user_id=author_id，LEFT JOIN 防止用户被删时丢行
       - categoryName：join resource_category on resource_category_id=category_id，LEFT JOIN；
         resource_category_id=-1(其他)时无匹配行，categoryName 落 null，前端硬编码展示"其他"
-      - originalName/contentLength/contentType/fileAccess：join file_object on file_object_id=object_id，
+      - originalName/contentLength/contentType：join file_object on file_object_id=object_id，
         FILE 类型才有意义，LINK 类型 file_object_id 为 null，LEFT JOIN 不影响
     -->
     <resultMap id="ResourceResultMap" type="com.knowhub.pojo.resource.entity.Resource">
@@ -39,8 +39,6 @@
         <result property="originalName" column="original_name"/>
         <result property="contentLength" column="content_length"/>
         <result property="contentType" column="content_type"/>
-        <!-- join 带出的访问语义（file_object.access），非表字段 -->
-        <result property="fileAccess" column="file_access"/>
     </resultMap>
 
     <!--
@@ -56,8 +54,7 @@
                r.create_by, r.create_time, r.update_by, r.update_time, r.deleted,
                u.nick_name as author_nickname,
                c.category_name as category_name,
-               f.original_name as original_name, f.content_length as content_length, f.content_type as content_type,
-               f.access as file_access
+               f.original_name as original_name, f.content_length as content_length, f.content_type as content_type
         from resource r
                 left join sys_user u on r.author_id = u.user_id
                 left join resource_category c on r.resource_category_id = c.category_id and c.deleted = 0
@@ -81,8 +78,7 @@
     -->
     <select id="getResourceInfoById" parameterType="long" resultMap="ResourceResultMap">
         select r.*, u.nick_name as author_nickname, c.category_name as category_name,
-               f.original_name as original_name, f.content_length as content_length, f.content_type as content_type,
-               f.access as file_access
+               f.original_name as original_name, f.content_length as content_length, f.content_type as content_type
         from resource r
                 left join sys_user u on r.author_id = u.user_id
                 left join resource_category c on r.resource_category_id = c.category_id and c.deleted = 0

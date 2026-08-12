@@ -1,12 +1,12 @@
 <!--
   项目展示 /projects
   ------------------------------------------------------------------
-  照搬笔记导航/文档学习范式：hero(标题+搜索) + body 主列表(1fr) | 侧栏(300px)。
+  照搬博客导航/文档学习范式：hero(标题+搜索) + body 主列表(1fr) | 侧栏(300px)。
   主列表始终走 /portal/project/search（PageHelper 真分页，返回 total/pages），即使无关键词/无类型筛选也走 search，
   保证分页真实可用；/portal/project/recommend 只用于侧栏"热门项目榜"（裸 LIMIT feed，不当主列表）。
   筛选：类型(比赛/练习/运维/全部) + 排序(热度/最新)；不暴露等级筛选（后端按 userViewLevel 自动收窄，前台不向访客暴露内部权限态）。
   搜索：后端 keyword LIKE title OR summary（一词同时匹配两列）。
-  统计卡放侧栏，用 list.total 派生（类型分布无聚合接口，列表项派生同 docs 页口径，翻页下限可接受）。
+  统计卡放侧栏，用 list.total 派生（类型分布无聚合接口，列表项派生同 articles 页口径，翻页下限可接受）。
   权限：未登录默认 L1（后端 resolveUserViewLevel Math.max(1, view) 兜底），L2/L3 永不下发前台。
 -->
 <script setup lang="ts">
@@ -15,6 +15,7 @@ import { Search } from '@element-plus/icons-vue'
 import KhCard from '@/components/common/KhCard.vue'
 import KhIcon from '@/components/common/KhIcon.vue'
 import KhSectionTitle from '@/components/common/KhSectionTitle.vue'
+import KhPagination from '@/components/common/KhPagination.vue'
 import ProjectCard from '@/components/project/ProjectCard.vue'
 import { searchProjectsApi, recommendProjectsApi } from '@/api/knowhub/project-portal'
 import type { ProjectPortalRecord, ProjectPortalSearchQuery } from '@/types/api/knowhub/project-portal'
@@ -40,12 +41,17 @@ const sortOptions: { key: typeof sortKey.value; label: string; toApi: ProjectPor
 ]
 
 const keyword = ref('')
+/**
+ * 已提交的搜索词：只在点击搜索按钮 / 回车时从 keyword 同步过来，避免输入实时触发。
+ * fetchList 据此传后端；keyword 仅作输入框 v-model，不直接参与请求。
+ */
+const submittedKeyword = ref('')
 
 /** 主项目列表（真实接口分页） */
 const list = ref<ProjectPortalRecord[]>([])
 const total = ref(0)
 const pageNum = ref(1)
-const pageSize = 9
+const pageSize = ref(9)
 const loading = ref(false)
 
 /** 侧栏热门项目榜（/portal/project/recommend 兜底全局热门，取 6 条） */
@@ -58,11 +64,11 @@ const fetchList = async () => {
     const sortApi = sortOptions.find((o) => o.key === sortKey.value)?.toApi ?? 'HOT'
     const typeApi = typeOptions.find((o) => o.key === typeFilter.value)?.toApi
     const query: ProjectPortalSearchQuery = {
-      keyword: keyword.value.trim() || undefined,
+      keyword: submittedKeyword.value || undefined,
       type: typeApi,
       sort: sortApi,
       pageNum: pageNum.value,
-      pageSize,
+      pageSize: pageSize.value,
     }
     const res: NormalizedPageResult<ProjectPortalRecord> = await searchProjectsApi(query)
     list.value = res.records ?? []
@@ -83,19 +89,21 @@ const fetchHot = async () => {
 }
 
 /** 翻页 */
-const onPageChange = (p: number) => {
+const onPageChange = (p: number, sz: number) => {
   pageNum.value = p
+  pageSize.value = sz
   void fetchList()
 }
 
-/** 搜索/类型/排序变化时回到第一页重新拉取 */
-watch([keyword, typeFilter, sortKey], () => {
+/** 类型/排序变化时回到第一页重新拉取（keyword 不入 watch——搜索只在点按钮/回车时由 handleSearch 触发，避免输入实时拉） */
+watch([typeFilter, sortKey], () => {
   pageNum.value = 1
   void fetchList()
 })
 
-/** 搜索按钮 / 回车：回到第一页重拉（与 docs 页口径一致，watch 已接 keyword 但显式回调兜底即时触发） */
+/** 搜索按钮 / 回车：把输入框 keyword 提交到 submittedKeyword，回到第一页重拉 */
 const handleSearch = () => {
+  submittedKeyword.value = keyword.value.trim()
   pageNum.value = 1
   void fetchList()
 }
@@ -185,15 +193,8 @@ onMounted(() => {
           <p>没有匹配的项目，换个关键词或类型试试</p>
         </KhCard>
 
-        <div v-if="list.length && total > pageSize" class="projects__pager">
-          <el-pagination
-            layout="prev, pager, next"
-            :current-page="pageNum"
-            :page-size="pageSize"
-            :total="total"
-            background
-            @current-change="onPageChange"
-          />
+        <div v-if="list.length" class="projects__pager">
+          <KhPagination v-model:current="pageNum" v-model:page-size="pageSize" :total="total" @change="onPageChange" />
         </div>
       </div>
 

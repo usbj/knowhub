@@ -11,6 +11,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Delete, DeleteFilled } from '@element-plus/icons-vue'
 import KhCard from '@/components/common/KhCard.vue'
 import KhIcon from '@/components/common/KhIcon.vue'
+import KhPagination from '@/components/common/KhPagination.vue'
 import { listHistoryApi, deleteHistoryApi, clearHistoryApi } from '@/api/knowhub/history'
 import type { ViewHistoryRecord } from '@/types/api/knowhub/history'
 import { formatDateTime } from '@/utils/format'
@@ -39,7 +40,7 @@ const goDetail = (r: ViewHistoryRecord) => {
     case 'ARTICLE':
     case 'CHAPTER':
       // 前台文章/章节详情页尚未落地，暂跳笔记导航（后续补文章详情路由）
-      router.push('/notes')
+      router.push('/blogs')
       break
     case 'RESOURCE':
       router.push(`/resource/${r.bizId}`)
@@ -50,13 +51,16 @@ const goDetail = (r: ViewHistoryRecord) => {
 const list = ref<ViewHistoryRecord[]>([])
 const total = ref(0)
 const pageNum = ref(1)
-const pageSize = 10
+const pageSize = ref(10)
 const loading = ref(false)
 
 const fetchList = async () => {
   loading.value = true
   try {
-    const res = await listHistoryApi(bizFilter.value || undefined)
+    const res = await listHistoryApi(bizFilter.value || undefined, {
+      pageNum: pageNum.value,
+      pageSize: pageSize.value,
+    })
     list.value = (res.records ?? []).map((r) => ({
       ...r,
       viewTime: r.viewTime ? (formatDateTime(r.viewTime) as string) : r.viewTime,
@@ -68,8 +72,9 @@ const fetchList = async () => {
   }
 }
 
-const onPageChange = (p: number) => {
+const onPageChange = (p: number, sz: number) => {
   pageNum.value = p
+  pageSize.value = sz
   void fetchList()
 }
 
@@ -151,15 +156,8 @@ onMounted(() => void fetchList())
         <p>暂无浏览历史，去看看博客和资源吧</p>
       </KhCard>
 
-      <div v-if="total > pageSize" class="history__pager">
-        <el-pagination
-          layout="prev, pager, next"
-          :total="total"
-          :page-size="pageSize"
-          :current-page="pageNum"
-          background
-          @current-change="onPageChange"
-        />
+      <div v-if="list.length" class="history__pager">
+        <KhPagination v-model:current="pageNum" v-model:page-size="pageSize" :total="total" @change="onPageChange" />
       </div>
     </section>
   </div>

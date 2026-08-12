@@ -48,11 +48,11 @@
     </sql>
 
     <!--
-      搜索：标题/简介 LIKE + type + level 复合过滤 + 排序，分页由 PageHelper 在 Service 层接管。
-      项目主表 title/summary 无 FULLTEXT 索引，数据量小 acceptable LIKE；数据量上来再加 ft idx（不改主表其他结构）。
-      keyword 一个词同时匹配 title 或 summary（前端传单 keyword，不需要分列字段）。
+      搜索：标题/简介/介绍 LIKE + type + level 复合过滤 + 排序，分页由 PageHelper 在 Service 层接管。
+      项目主表 title/summary/description 无 FULLTEXT 索引，数据量小 acceptable LIKE；数据量上来再加 ft idx（不改主表其他结构）。
+      keyword 一个词同时匹配 title / summary / description（介绍正文 mediumtext，前端传单 keyword，不需要分列字段）。
       排序：HOT 走推荐打分公式 (download*3+like*2+collect*1+view*1) desc + publish_time desc；
-           LATEST/其它走 publish_time desc, project_id desc。列表不 select description。
+           LATEST/其它走 publish_time desc, project_id desc。列表不 select description（介绍正文仅在详情页按越级锁态单独拉）。
       注：当 level 不传时按 userViewLevel 自动收窄（与博客一样，前台不暴露等级筛选项给无权者）。
     -->
     <select id="searchProjects" parameterType="com.knowhub.pojo.project.quarry.ProjectPortalSearchQuarry"
@@ -65,7 +65,8 @@
         where <include refid="portalProjectWhere"/>
         <if test="keyword != null and keyword != ''">
             and (p.title like concat('%', #{keyword}, '%')
-                 or p.summary like concat('%', #{keyword}, '%'))
+                 or p.summary like concat('%', #{keyword}, '%')
+                 or p.description like concat('%', #{keyword}, '%'))
         </if>
         <if test="type != null and type != ''">and p.type = #{type}</if>
         <if test="level != null">and p.level = #{level}</if>
@@ -100,6 +101,21 @@
         order by (p.download_count * 3 + p.like_count * 2 + p.collect_count * 1 + p.view_count * 1) desc,
                  p.publish_time desc, p.project_id desc
         limit #{size}
+    </select>
+
+    <!--
+      按 ID 集合取前台可见项目 VO（"我的收藏"列表用）。
+      照前台铁律过滤未发布/越级项目，IN 给定的 projectIds。不排序——service 按收藏时间倒序的 projectIds 顺序拼装。
+    -->
+    <select id="listByIds" resultMap="ProjectPortalVoMap">
+        select p.project_id, p.title, p.type, p.level, p.summary,
+               p.author_id, u.nick_name as author_nickname, p.publish_time,
+               p.view_count, p.like_count, p.collect_count, p.download_count
+        from project p
+                left join sys_user u on p.author_id = u.user_id
+        where <include refid="portalProjectWhere"/>
+          and p.project_id in
+          <foreach collection="projectIds" item="pid" open="(" separator="," close=")">#{pid}</foreach>
     </select>
 
     <!--

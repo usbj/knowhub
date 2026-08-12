@@ -5,6 +5,7 @@ import com.knowhub.pojo.article.quarry.ArticlePortalSearchQuarry;
 import com.knowhub.pojo.article.vo.ArticlePortalDetailVo;
 import com.knowhub.pojo.article.vo.ArticlePortalVo;
 import com.knowhub.pojo.article.vo.ChapterContentVo;
+import com.knowhub.pojo.article.vo.PortalArticleStatsVo;
 
 import java.util.List;
 
@@ -18,6 +19,12 @@ public interface ArticlePortalService {
 
     /** 全文搜索（标题/简介/章节正文）+复合过滤+排序，分页；命中章节由 matchedChapters 标出 */
     PageInfo<ArticlePortalVo> search(ArticlePortalSearchQuarry quarry);
+
+    /**
+     * 前台文库全量统计（/portal/article/stats）：已发布且当前用户可见的文章数 + 这些文章下的已发布章节数 + 启用标签总数。
+     * 固定口径，与搜索/翻页/标签过滤无关——前端进入页面拉一次定盘展示，避免统计随筛选结果 total 变动。
+     */
+    PortalArticleStatsVo getStats();
 
     /**
      * 个性化推荐 feed（登录用户按偏好 tag，未登录/无行为/召回不足走全局热门兜底）。

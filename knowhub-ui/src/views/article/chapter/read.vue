@@ -1,11 +1,12 @@
 <!--
-  文章章节内容页 /docs/:id/read/:chapterId
+  <!--
+  文章章节内容页 /article/:id/read/:chapterId
   ------------------------------------------------------------------
   类 Vue 官方文档站：左章节目录（当前章高亮、可点切换）/ 中正文（v-md-preview 渲染章节 markdown）/
   右本章内容大纲卡（从正文 ## 标题提取）。越级锁态：locked=true 时正文不下发，显示锁态提示。
   章节目录来自文章详情接口的 chapterList（点章节切 URL + 拉对应章正文）；
   章节正文走 /portal/article/{id}/chapter/{chapterId} 单独拉取（达权才下发，越级 content 为 null）。
-  底部上/下章导航。返回按钮回上一级（文章介绍页 /docs/:id）。
+  底部上/下章导航。返回按钮回上一级（文章介绍页 /article/:id）。
 -->
 <script setup lang="ts">
 import { computed, nextTick, onActivated, onBeforeUnmount, onMounted, ref, watch } from 'vue'
@@ -13,6 +14,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ArrowLeft, ArrowUp, ArrowDown } from '@element-plus/icons-vue'
 import KhIcon from '@/components/common/KhIcon.vue'
 import KhContentToc from '@/components/common/KhContentToc.vue'
+import KhLoading from '@/components/common/KhLoading.vue'
 import { getArticleDetailApi, getChapterContentApi } from '@/api/knowhub/article'
 import type { ArticlePortalDetailRecord, ChapterContentRecord } from '@/types/api/knowhub/article'
 import { useStickyBottom } from '@/utils/use-footer-visible'
@@ -32,7 +34,13 @@ const activeChapterId = computed(() => Number(route.params.chapterId))
 const doc = ref<ArticlePortalDetailRecord | null>(null)
 /** 当前章节正文 */
 const chapter = ref<ChapterContentRecord | null>(null)
-const loading = ref(false)
+/**
+ * 整页加载态：首屏 + 切文章时罩整页 KhLoading，等 doc 与 chapter 都就绪再统一撤走，避免 doc 先回章节目录冒出、
+ * chapter 仍在跑且正文区被 KhLoading 盖住的"数据盖动画"割裂感。切章节（同文章）不触发，走 chapterLoading。
+ */
+const docLoading = ref(true)
+/** 正文区加载态：切章节（同文章）时只盖正文，左栏目录保持不动，避免整页闪一下 */
+const chapterLoading = ref(false)
 
 /** 拉文章详情（章节目录来源，越级锁态时 chapterList 仍下发，目录照常可用） */
 const fetchDoc = async () => {
@@ -42,13 +50,8 @@ const fetchDoc = async () => {
 
 /** 拉当前章节正文 */
 const fetchChapter = async () => {
-  loading.value = true
-  try {
-    const res = await getChapterContentApi(docId.value, activeChapterId.value)
-    chapter.value = res.data ?? null
-  } finally {
-    loading.value = false
-  }
+  const res = await getChapterContentApi(docId.value, activeChapterId.value)
+  chapter.value = res.data ?? null
 }
 
 /** 章节目录列表（来自文章详情的 chapterList） */
@@ -71,10 +74,10 @@ const nextChapter = computed(() => {
 /** 选章：切 URL 路径段，触发 watch 重拉正文 */
 const selectChapter = (chapterId: number) => {
   if (chapterId === activeChapterId.value) return
-  router.push(`/docs/${docId.value}/read/${chapterId}`)
+  router.push(`/article/${docId.value}/read/${chapterId}`)
 }
 
-const goIntro = () => router.push(`/docs/${docId.value}`)
+const goIntro = () => router.push(`/article/${docId.value}`)
 
 /** 当前章内容大纲：从正文提取 ##/###/#### 标题（含层级），供右栏目录树展示（无标题则空；越级锁态时正文为空 → 目录空）。
  *  用 TocItem{level,text} 扁平按出现顺序入参，组件按 level 缩进渲染成 CSDN 风格目录树，覆盖 h2/h3/h4 全层级。 */
@@ -144,17 +147,30 @@ onBeforeUnmount(() => {
 })
 onActivated(() => nextTick(computeActive))
 
-/** 切文章时重拉详情 + 正文；切章节时只重拉正文 */
-watch(docId, () => {
-  void fetchDoc()
-  void fetchChapter()
-})
+/**
+ * 整页加载：首屏 + 切文章时并发拉 doc 与 chapter，Promise.all 等两者都就绪再撤 docLoading，
+ * 避免 doc 先回章节目录盖在 KhLoading 上的割裂感。失败也撤 docLoading（交由 v-if 兜底空态）。
+ */
+const loadAll = async () => {
+  docLoading.value = true
+  try {
+    await Promise.all([fetchDoc(), fetchChapter()])
+  } finally {
+    docLoading.value = false
+  }
+}
+
+/** 切文章时整页重载（doc + chapter 一起等齐）；切章节时只重拉正文（左栏不动） */
+watch(docId, () => { void loadAll() })
 watch(activeChapterId, () => {
-  void fetchChapter().then(() => nextTick(computeActive))
+  chapterLoading.value = true
+  void fetchChapter()
+    .then(() => nextTick(computeActive))
+    .finally(() => { chapterLoading.value = false })
 })
 
-// 首次：先拉详情（得章节目录），再拉当前章正文
-fetchDoc().then(() => fetchChapter())
+// 首屏整页加载：doc + chapter 都就绪再统一展示
+void loadAll()
 </script>
 
 <template>
@@ -164,15 +180,18 @@ fetchDoc().then(() => fetchChapter())
       <button class="dr__back" type="button" @click="goIntro">
         <el-icon><ArrowLeft /></el-icon> 返回
       </button>
-      <RouterLink to="/docs">文档学习</RouterLink>
+      <RouterLink to="/articles">文档学习</RouterLink>
       <el-icon class="dr__crumb-sep"><KhIcon name="chevron-right" :size="12" /></el-icon>
-      <RouterLink :to="`/docs/${docId}`">{{ doc?.title }}</RouterLink>
+      <RouterLink :to="`/article/${docId}`">{{ doc?.title }}</RouterLink>
       <el-icon class="dr__crumb-sep"><KhIcon name="chevron-right" :size="12" /></el-icon>
       <span class="dr__crumb-current">{{ chapter?.chapterName }}</span>
     </div>
 
+    <!-- 整页加载占位：首屏/切文章时罩整页 KhLoading，doc+chapter 都就绪再统一撤走（避免数据盖动画） -->
+    <KhLoading v-if="docLoading" title="正在加载章节…" class="dr__page-loading" />
+
     <!-- 主体三栏 -->
-    <div class="kh-container kh-container--wide dr__layout">
+    <div v-else class="kh-container kh-container--wide dr__layout">
       <!-- 左：章节目录 sticky（随 footer 出现而缩短，--kh-sticky-bottom 由 footer observer 驱动） -->
       <aside class="dr__toc" :style="{ '--kh-sticky-bottom': stickyBottom }">
         <div class="dr__toc-head"><KhIcon name="doc" :size="16" /> 章节</div>
@@ -206,8 +225,12 @@ fetchDoc().then(() => fetchChapter())
         <div v-else-if="chapter?.content" ref="contentRef" class="dr__content">
           <v-md-preview :text="chapter.content" />
         </div>
+        <!-- 章节正文加载中（切章节时只盖正文，左栏不动） -->
+        <div v-else-if="chapterLoading" class="dr__loading">
+          <KhLoading title="正在加载章节…" />
+        </div>
         <!-- 章节无正文（内容待补） -->
-        <div v-else-if="!loading" class="dr__placeholder">
+        <div v-else class="dr__placeholder">
           <KhIcon name="doc" :size="40" :stroke="1.4" />
           <p>该章节正文待补</p>
         </div>
@@ -339,6 +362,15 @@ fetchDoc().then(() => fetchChapter())
 .dr__toc-empty { font-size: 12px; color: var(--kh-text-tertiary); padding: var(--kh-space-3); }
 
 .dr__main { min-width: 0; padding: 0 var(--kh-space-2); }
+
+/* 整页/切章加载占位：让 KhLoading 居中且撑满主体区，与正文区高度接近，避免数据浅入盖动画 */
+.dr__page-loading {
+  min-height: calc(80vh);
+  padding-top: var(--kh-space-12);
+}
+.dr__loading {
+  padding: var(--kh-space-12) 0;
+}
 .dr__chapter-title {
   font-size: var(--kh-font-size-4xl);
   font-weight: 800;

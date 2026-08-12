@@ -95,9 +95,12 @@ public class ResourcePortalServiceImpl implements ResourcePortalService {
     }
 
     /**
-     * 前台"我的收藏"列表：取当前用户收藏资源ID（按收藏时间倒序），用 recommendHot 同口径 SQL
-     * 取"收藏 ∩ 前台可见(PUBLISHED)"的 VO，再按收藏顺序排。
+     * 前台"我的收藏"列表：取当前用户收藏资源ID（按收藏时间倒序），用 listByIds 同口径 SQL
+     * 取"收藏 ∩ 前台可见(PUBLISHED)"的 VO，再按收藏时间倒序的 resourceIds 顺序排。
      * 与 ArticlePortalService.listMyCollected 同构：portal 铁律 SQL 兜底可见性，未发布/已删自然被过滤。
+     * <p>
+     * 2026-08-12 修正：原实现误调 recommendHot(全局热门 topN, size=收藏数)，再求交集——收藏资源不在
+     * 全局热门 topN 里即被丢，导致资源收藏列表为空。改为 listByIds(IN 收藏 ID 集) 精确召回。
      */
     @Override
     public PageInfo<ResourcePortalVo> listMyCollected(int pageNum, int pageSize) {
@@ -109,10 +112,9 @@ public class ResourcePortalServiceImpl implements ResourcePortalService {
         if (resourceIds == null || resourceIds.isEmpty()) {
             return new PageInfo<>(Collections.emptyList());
         }
-        // 用 recommendHot 取"收藏 ID 集 ∩ 前台可见"的全量 VO（按热度 SQL 但 limit 放到收藏数），
-        // 再按收藏时间倒序的 resourceIds 顺序排——还原"最近收藏在前"。
-        List<ResourcePortalVo> all = resourcePortalMapper.recommendHot(
-                null, Collections.emptyList(), resourceIds.size());
+        // listByIds 取"收藏 ID 集 ∩ 前台可见"的 VO（前台铁律过滤未发布/已删），不排序——
+        // service 层按收藏时间倒序的 resourceIds 顺序拼装，还原"最近收藏在前"语义。
+        List<ResourcePortalVo> all = resourcePortalMapper.listByIds(resourceIds);
         Map<Long, ResourcePortalVo> voMap = new HashMap<>();
         for (ResourcePortalVo vo : all) {
             voMap.put(vo.getResourceId(), vo);

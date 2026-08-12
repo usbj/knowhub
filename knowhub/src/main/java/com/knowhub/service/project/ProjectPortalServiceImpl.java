@@ -6,10 +6,12 @@ import com.knowhub.config.PortalConfigReader;
 import com.knowhub.enums.history.ViewBizType;
 import com.knowhub.enums.project.ProjectFileType;
 import com.knowhub.mapper.project.ProjectFileMapper;
+import com.knowhub.mapper.project.ProjectCollectMapper;
 import com.knowhub.mapper.project.ProjectMemberMapper;
 import com.knowhub.mapper.project.ProjectPortalMapper;
 import com.knowhub.pojo.project.entity.ProjectFile;
 import com.knowhub.pojo.project.entity.ProjectMember;
+import com.knowhub.pojo.project.entity.ProjectCollect;
 import com.knowhub.enums.project.ProjectMemberRole;
 import com.knowhub.pojo.project.quarry.ProjectPortalSearchQuarry;
 import com.knowhub.pojo.project.vo.ProjectFileVo;
@@ -30,7 +32,9 @@ import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 /**
@@ -62,6 +66,9 @@ public class ProjectPortalServiceImpl implements ProjectPortalService {
     ProjectMemberMapper projectMemberMapper;
 
     @Autowired
+    ProjectCollectMapper projectCollectMapper;
+
+    @Autowired
     ProjectFileMapper projectFileMapper;
 
     @Autowired
@@ -89,6 +96,38 @@ public class ProjectPortalServiceImpl implements ProjectPortalService {
     }
 
     @Override
+    public PageInfo<ProjectPortalVo> listMyCollected(int pageNum, int pageSize) {
+        UserInfo user = currentUserOrNull();
+        if (user == null) {
+            // authoring controller 已 isAuthenticated 兜底，此处双保险
+            return new PageInfo<>(Collections.emptyList());
+        }
+        List<Long> projectIds = projectCollectMapper.listCollectedProjectIds(user.getUserId());
+        if (projectIds == null || projectIds.isEmpty()) {
+            return new PageInfo<>(Collections.emptyList());
+        }
+        // listByIds 取"收藏 ID 集 ∩ 前台可见"全量 VO（前台铁律过滤未发布/越级），不排序——
+        // service 按收藏时间倒序的 projectIds 顺序拼装，还原"最近收藏在前"语义。
+        // 2026-08-12 修正：原实现误调 recommendHot(全局热门 topN, size=收藏数) 再求交集——收藏项目不在
+        // 全局热门 topN 里即被丢，收藏列表为空。改为 listByIds 精确召回。
+        Integer userViewLevel = resolveUserViewLevel();
+        List<ProjectPortalVo> all = projectPortalMapper.listByIds(userViewLevel, projectIds);
+        Map<Long, ProjectPortalVo> voMap = new HashMap<>();
+        for (ProjectPortalVo vo : all) {
+            voMap.put(vo.getProjectId(), vo);
+        }
+        List<ProjectPortalVo> ordered = new ArrayList<>();
+        for (Long pid : projectIds) {
+            ProjectPortalVo vo = voMap.get(pid);
+            if (vo != null) {
+                ordered.add(vo);
+            }
+        }
+        // 项目无标签体系，无需 fillTagsForList
+        return new PageInfo<>(ordered);
+    }
+
+    @Override
     public ProjectPortalDetailVo getDetail(Long projectId) {
         Integer userViewLevel = resolveUserViewLevel();
         ProjectPortalDetailVo meta = projectPortalMapper.getPortalProjectMeta(projectId);
@@ -99,6 +138,7 @@ public class ProjectPortalServiceImpl implements ProjectPortalService {
         Integer level = meta.getLevel();
         // canDownload 权限态回填（前端据此控制文件树下载按钮显隐）
         meta.setCanDownload(canDownload(projectId, level));
+        fillCurrentUserCollect(meta, projectId);
         // 越级锁态：level > userViewLevel → 不下发正文，只给元数据 + lockReason
         if (level != null && level > userViewLevel) {
             meta.setLocked(true);
@@ -340,5 +380,19 @@ public class ProjectPortalServiceImpl implements ProjectPortalService {
         }
         Object p = auth.getPrincipal();
         return (p instanceof UserInfo) ? (UserInfo) p : null;
+    }
+
+    /**
+     * 详情回填当前用户的收藏态（登录态查 project_collect 事实表，未登录置 null 不查库）。
+     * 项目无点赞链路（无 ProjectLike 实体/事实表/toggle 端点），故只回填 hasCollected。
+     * 照 ResourcePortalServiceImpl.fillCurrentUserInteract 同范式：Boolean 包装类型，未登录留 null。
+     */
+    private void fillCurrentUserCollect(ProjectPortalDetailVo vo, Long projectId) {
+        UserInfo user = currentUserOrNull();
+        if (user == null) {
+            return; // 未登录：hasCollected 留 null
+        }
+        vo.setHasCollected(projectCollectMapper.getProjectCollect(
+                new ProjectCollect(projectId, user.getUserId())) != null);
     }
 }

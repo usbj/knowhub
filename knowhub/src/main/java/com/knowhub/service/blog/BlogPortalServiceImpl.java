@@ -3,12 +3,17 @@ package com.knowhub.service.blog;
 import com.github.pagehelper.PageInfo;
 import com.knowhub.config.PortalConfigReader;
 import com.knowhub.enums.history.ViewBizType;
+import com.knowhub.mapper.blog.BlogCollectMapper;
+import com.knowhub.mapper.blog.BlogLikeMapper;
 import com.knowhub.mapper.blog.BlogPortalMapper;
 import com.knowhub.mapper.tag.TagMapper;
 import com.knowhub.pojo.tag.entity.Tag;
+import com.knowhub.pojo.blog.entity.BlogCollect;
+import com.knowhub.pojo.blog.entity.BlogLike;
 import com.knowhub.pojo.blog.quarry.BlogPortalSearchQuarry;
 import com.knowhub.pojo.blog.vo.BlogPortalDetailVo;
 import com.knowhub.pojo.blog.vo.BlogPortalVo;
+import com.knowhub.pojo.blog.vo.PortalBlogStatsVo;
 import com.knowhub.pojo.tag.vo.HotTagVo;
 import com.knowhub.pojo.tag.vo.TagOptionVo;
 import com.knowhub.pojo.tag.vo.TagVo;
@@ -51,6 +56,12 @@ public class BlogPortalServiceImpl implements BlogPortalService {
     BlogPortalMapper blogPortalMapper;
 
     @Autowired
+    BlogCollectMapper blogCollectMapper;
+
+    @Autowired
+    BlogLikeMapper blogLikeMapper;
+
+    @Autowired
     TagMapper tagMapper;
 
     @Autowired
@@ -66,6 +77,11 @@ public class BlogPortalServiceImpl implements BlogPortalService {
         List<BlogPortalVo> list = blogPortalMapper.searchBlogs(quarry);
         fillTagsForList(list);
         return new PageInfo<>(list);
+    }
+
+    @Override
+    public PortalBlogStatsVo getStats() {
+        return blogPortalMapper.getPortalStats(resolveUserViewLevel());
     }
 
     @Override
@@ -132,6 +148,7 @@ public class BlogPortalServiceImpl implements BlogPortalService {
             meta.setContent(null);
             meta.setLockReason("需 L" + level + " 权限查看完整正文");
             // 越级不计浏览量（未达权限不算统计量，与第二条链路决策#3"未登录不计浏览量"同构）
+            fillCurrentUserInteract(meta, blogId);
             fillTagsForOne(meta);
             return meta;
         }
@@ -143,6 +160,7 @@ public class BlogPortalServiceImpl implements BlogPortalService {
         if (user != null) {
             viewHistoryService.recordView(user.getUserId(), ViewBizType.BLOG.getCode(), blogId);
         }
+        fillCurrentUserInteract(meta, blogId);
         fillTagsForOne(meta);
         return meta;
     }
@@ -153,6 +171,38 @@ public class BlogPortalServiceImpl implements BlogPortalService {
         List<BlogPortalVo> list = blogPortalMapper.relatedBlogs(blogId, userViewLevel, size);
         fillTagsForList(list);
         return list;
+    }
+
+    @Override
+    public PageInfo<BlogPortalVo> listMyCollected(int pageNum, int pageSize) {
+        UserInfo user = currentUserOrNull();
+        if (user == null) {
+            // authoring controller 已 isAuthenticated 兜底，此处双保险
+            return new PageInfo<>(Collections.emptyList());
+        }
+        List<Long> blogIds = blogCollectMapper.listCollectedBlogIds(user.getUserId());
+        if (blogIds == null || blogIds.isEmpty()) {
+            return new PageInfo<>(Collections.emptyList());
+        }
+        // listByIds 取"收藏 ID 集 ∩ 前台可见"全量 VO（前台铁律过滤未发布/越级），不排序——
+        // service 按收藏时间倒序的 blogIds 顺序拼装，还原"最近收藏在前"语义。
+        // 2026-08-12 修正：原实现误调 recommendHot(全局热门 topN, size=收藏数) 再求交集——收藏博客不在
+        // 全局热门 topN 里即被丢，收藏列表为空。改为 listByIds 精确召回。
+        Integer userViewLevel = resolveUserViewLevel();
+        List<BlogPortalVo> all = blogPortalMapper.listByIds(userViewLevel, blogIds);
+        Map<Long, BlogPortalVo> voMap = new HashMap<>();
+        for (BlogPortalVo vo : all) {
+            voMap.put(vo.getBlogId(), vo);
+        }
+        List<BlogPortalVo> ordered = new ArrayList<>();
+        for (Long bid : blogIds) {
+            BlogPortalVo vo = voMap.get(bid);
+            if (vo != null) {
+                ordered.add(vo);
+            }
+        }
+        fillTagsForList(ordered);
+        return new PageInfo<>(ordered);
     }
 
     @Override
@@ -291,6 +341,20 @@ public class BlogPortalServiceImpl implements BlogPortalService {
         List<Tag> tags = tagMapper.getEnabledTagsByIds(tagIds);
         List<String> names = tags.stream().map(Tag::getTagName).collect(Collectors.toList());
         vo.setTagNames(names);
+    }
+
+    /**
+     * 详情回填当前用户的点赞/收藏态（登录态查 blog_like/blog_collect 事实表，未登录置 null 不查库）。
+     * 与 ResourcePortalServiceImpl.fillCurrentUserInteract 同范式：Boolean 包装类型，未登录留 null
+     * 让前端按"游客态"渲染按钮（不比已点亮的真值）。
+     */
+    private void fillCurrentUserInteract(BlogPortalDetailVo vo, Long blogId) {
+        UserInfo user = currentUserOrNull();
+        if (user == null) {
+            return; // 未登录：hasLiked/hasCollected 留 null
+        }
+        vo.setHasLiked(blogLikeMapper.getBlogLike(new BlogLike(blogId, user.getUserId())) != null);
+        vo.setHasCollected(blogCollectMapper.getBlogCollect(new BlogCollect(blogId, user.getUserId())) != null);
     }
 
     /** Map 取值转 Long（MyBatis 返回的 bigint 可能是 Long/Number） */

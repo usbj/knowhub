@@ -52,6 +52,10 @@ export interface ArticlePortalDetailRecord extends ArticlePortalRecord {
   locked?: boolean
   /** 锁态原因提示（如"需 L2 权限查看完整内容"，正常态为 null） */
   lockReason?: string | null
+  /** 当前用户是否已点赞（登录态回填，未登录为 null；详情接口下发，列表接口为空） */
+  hasLiked?: boolean | null
+  /** 当前用户是否已收藏（登录态回填，未登录为 null；详情接口下发，列表接口为空） */
+  hasCollected?: boolean | null
 }
 
 /** 章节正文（GET /portal/article/{articleId}/chapter/{chapterId}） */
@@ -74,4 +78,22 @@ export interface ArticlePortalSearchQuery {
   authorId?: number
   /** RELEVANCE 相关度 / HOT 热度 / LATEST 最新 */
   sort?: 'RELEVANCE' | 'HOT' | 'LATEST'
+  /** 页码（后端 PageUtil.startPage 从请求参数读，缺省 1） */
+  pageNum?: number
+  /** 页大小（后端默认 10，前端按 9 对齐卡片网格 3 列） */
+  pageSize?: number
+}
+
+/**
+ * 前台文库全量统计（GET /portal/article/stats）。
+ * 固定口径：已发布且当前用户可见的文章数 + 这些文章下的已发布章节数 + 启用标签总数。
+ * 与搜索/翻页/标签过滤无关——前端进入页面拉一次定盘展示，避免统计数字随筛选结果 total 变动。
+ */
+export interface PortalArticleStatsRecord {
+  /** 已发布且当前用户可见等级内的文章数 */
+  publishedDocCount: number
+  /** 上述文章下的已发布章节数 */
+  totalChapters: number
+  /** 启用标签总数（与 /portal/tag/hot 同口径，hot 只回 Top-N，全量数在此给） */
+  tagCount: number
 }

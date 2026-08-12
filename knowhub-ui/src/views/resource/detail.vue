@@ -19,6 +19,7 @@ import KhAvatar from '@/components/common/KhAvatar.vue'
 import KhStatPill from '@/components/common/KhStatPill.vue'
 import KhIcon from '@/components/common/KhIcon.vue'
 import KhSectionTitle from '@/components/common/KhSectionTitle.vue'
+import KhLoading from '@/components/common/KhLoading.vue'
 import { getResourceDetailApi, relatedResourcesApi } from '@/api/knowhub/resource-portal'
 import {
   downloadResourceApi,
@@ -57,16 +58,15 @@ const fetchDetail = async () => {
     const res = await getResourceDetailApi(resourceId.value)
     resource.value = res.data ?? null
     if (!resource.value) {
-      // 后端 404 语义（业务码 404 但 axios 走 success/code 分支时 data 可能为 null）
-      ElMessage.error('资源不存在或已下架')
-      router.replace('/resources')
+      // 资源不存在或已下架：跳专门 404 页（404 文案自带描述，不再弹红条避免重复提示）
+      router.replace({ name: 'not-found' })
       return
     }
     ratingValue.value = resource.value.myScore ?? 0
     void fetchRelated()
   } catch {
     resource.value = null
-    router.replace('/resources')
+    router.replace({ name: 'not-found' })
   } finally {
     loading.value = false
   }
@@ -97,6 +97,8 @@ const handleLike = async () => {
     const liked = !resource.value.hasLiked
     await toggleResourceLikeApi(resourceId.value, liked)
     resource.value.hasLiked = liked
+    // 乐观同步点赞计数（主表不冗余，详情读时聚合；前端 ±1 即可，刷新后由后端聚合重算兜底）
+    resource.value.likeCount = Math.max(0, (resource.value.likeCount ?? 0) + (liked ? 1 : -1))
   } finally {
     interacting.value = false
   }
@@ -109,6 +111,8 @@ const handleCollect = async () => {
     const collected = !resource.value.hasCollected
     await toggleResourceCollectApi(resourceId.value, collected)
     resource.value.hasCollected = collected
+    // 乐观同步收藏计数（同 likeCount 口径）
+    resource.value.collectCount = Math.max(0, (resource.value.collectCount ?? 0) + (collected ? 1 : -1))
   } finally {
     interacting.value = false
   }
@@ -118,9 +122,23 @@ const handleRate = async (score: number) => {
   if (!resource.value || !requireAuth()) return
   interacting.value = true
   try {
+    const prev = resource.value.myScore ?? 0
     await rateResourceApi(resourceId.value, score)
     resource.value.myScore = score
     ratingValue.value = score
+    // 乐观同步均分与评分人数：myScore 由 0→score 为新增评分（ratingCount+1），0→重打分仅变均分不计人数。
+    // 均分 = (原均分*原人数 ± 差值) / 新人数，四舍五入保留 2 位（对齐后端 round(avg,2) 口径）。
+    const prevCount = resource.value.ratingCount ?? 0
+    const prevAvg = resource.value.ratingAvg ?? 0
+    const isNew = prev === 0
+    const newCount = isNew ? prevCount + 1 : prevCount
+    if (newCount <= 0) {
+      resource.value.ratingAvg = score
+    } else {
+      const total = isNew ? prevAvg * prevCount + score : prevAvg * prevCount - prev + score
+      resource.value.ratingAvg = Math.round((total / newCount) * 100) / 100
+    }
+    resource.value.ratingCount = newCount
     ElMessage.success('评分已提交')
   } finally {
     interacting.value = false
@@ -283,7 +301,7 @@ onMounted(fetchDetail)
       </aside>
     </div>
   </div>
-  <div v-else-if="loading" class="kh-container rd__loading">加载中…</div>
+  <KhLoading v-else-if="loading" title="正在加载资源…" />
 </template>
 
 <style scoped>
@@ -613,12 +631,6 @@ onMounted(fetchDetail)
   font-size: 11px;
   color: var(--kh-text-tertiary);
   margin-top: 2px;
-}
-
-.rd__loading {
-  text-align: center;
-  padding: var(--kh-space-12);
-  color: var(--kh-text-tertiary);
 }
 
 @media (max-width: 1024px) {

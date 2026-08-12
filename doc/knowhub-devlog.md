@@ -983,19 +983,33 @@ knowhub 项目管理模块开发，详见 `doc/knowhub-project-design.md`。项�
 
 **待用户人工验证**：① 资源推荐页分类下拉多选（选多个分类 IN 过滤生效，含"其他"=-1）+ 类型筛选 + 排序切换 + 分页（始终展示）+ 点击搜索（按钮/回车，输入不实时查）+ 清空 ×；② 详情页介绍区 markdown 正常渲染（代码块/列表/标题样式）；③ 上传页顶栏视觉与博客/文章创作页一致（满宽毛玻璃 + 居中限宽 + 大字无边框标题 + 右侧按钮组），LINK 区无图标 URL 输入；④ 个人中心资源 tab 点草稿行标题进 `/resource/upload?id=` 编辑页（不再 404 跳回）；⑤ 后端 mvn 编译通过（新 `resourceCategoryIds` 字段 + mapper foreach 分支）。
 
-### 2026-08-08 文件下载鉴权分离 + 资源上传访问语义（公开/私有）
+### 2026-08-08 文件下载鉴权分离（bizAuthorized 重载，资源/项目业务代理跳过 owner 闸）
 
-资源前台对接落地后发现的深层 bug：`FileServiceImpl.getDownloadUrl`/`streamDownloadObject` 对 PRIVATE 文件内部挂 `checkOwnerOrAdmin`（仅上传人 OR `knowhub:file:review` 管理员可下），业务模块（资源 `downloadResource`、项目 `downloadFile`/`getFileDownloadUrl`）复用此方法下别人上传的 PUBLISHED 资源时被挡——登录非上传人/无文件 review 权限的普通用户下不了 PUBLISHED 共享资源。用户拍板：鉴权归业务（业务层已校验业务可见性即可放行），文件层加"业务已鉴权"标志跳过 owner 闸；同时资源上传开放"公开/私有"访问语义单选，下载统一走业务接口。
+资源前台对接落地后发现的深层 bug：`FileServiceImpl.getDownloadUrl`/`streamDownloadObject` 对 PRIVATE 文件内部挂 `checkOwnerOrAdmin`（仅上传人 OR `knowhub:file:review` 管理员可下），业务模块（资源 `downloadResource`、项目 `downloadFile`/`getFileDownloadUrl`）复用此方法下别人上传的 PUBLISHED 资源时被挡——登录非上传人/无文件 review 权限的普通用户下不了 PUBLISHED 共享资源。用户拍板：鉴权归业务（业务层已校验业务可见性即可放行），文件层加"业务已鉴权"标志跳过 owner 闸。
 
 - **文件下载方法重载（bizAuthorized 布尔）**：`FileService` 加两个重载 `getDownloadUrl(objectId, bizAuthorized)` / `streamDownloadObject(objectId, bizAuthorized)`，旧无参版本委托给 `bizAuthorized=false`（向后兼容）。实里 PRIVATE 分支 `if (PRIVATE && !bizAuthorized) checkOwnerOrAdmin(fileObject)`——`false`（通用入口）走 owner 闸，`true`（业务代理）跳过。PUBLIC 两入参对称不鉴权。逻辑只写一份（无参版本转调带参版本），避免分支散落。
   - **通用入口保留 owner 闸**：`FileController` 的 `/file/download/{objectId}` / `/file/proxy/{objectId}` 走无参版本（`false`），用户直选 objectId 下载无业务上下文，文件底座自有 owner 闸是唯一安全闸，必须留。
   - **业务代理跳过 owner 闸**（传 `true`）：`ResourceServiceImpl.downloadResource`（前台资源下载，已校验 PUBLISHED+FILE）、`ResourceServiceImpl.fillDownloadUrl`（后台资源详情回填下载链接，resource review 权限≠file review，旧版本非上传人/无 file review 的管理员下载链接被静默 catch 不回填）、`ProjectServiceImpl.downloadFile`（后台项目下载，已 `canOp(download)`）、`ProjectPortalServiceImpl.getFileDownloadUrl`（前台项目下载，已 `canDownload`）。资源/项目层业务可见性闸已在业务模块完成，文件层不再重复 owner 校验。
   - **不引入 SPI/strategy**：曾考虑 `FileDownloadAuthStrategy` 按 `file_object.businessType` 派发到各业务模块自实现的鉴权策略（γ 方案），用户判断"业务模块持有鉴权、文件层加标志"即可，SPI 装配是过度设计——重载 + 布尔 flag 足够，调用点只多一个常量参数，未来加 L1~L3 时鉴权逻辑仍在各业务模块的现有判等方法里长，文件层不变。
-- **资源上传开放访问语义单选**：`views/resource/upload.vue` FILE 区域加"访问语义"单选（私有/公开），`form.fileAccess: 'PUBLIC' | 'PRIVATE'` 缺省 PRIVATE；`presignedUploadFlow` 传 `access: form.fileAccess` 透传到后端 `UploadApplyVo.access`，落 `file_object.access`（access 本就由调用方"可指定、缺省用 FileBusinessType 枚举默认"，RESOURCE_FILE 默认 PRIVATE，现显式参数化让用户选）。已发布态先撤回才能切（与换源同口径，canEditNow 守卫）；已上传旧文件 access 不随切换改写（切后需换源重传生效，避免半切状态）。`switchAccess` 切换方法 + fetchForEdit 回填 `fileAccess`。
-- **下载统一走业务接口**：公开/私有资源下载都点 `/authoring/resource/{id}/download`（`detail.vue` 早已统一走 `downloadResourceApi`，前端无改）；后端 `downloadResource` 内 `incrDownloadCount` + `getDownloadUrl(fileObjectId, true)` 拿链接。**不走匿名 `/file/public` 直链**——用户定"没登录没权限不让你调业务接口很正常"，公开资源也须登录态经鉴权计数接口下载，`download_count` 对公开资源也计入下载榜/热度，无计数缺口。
-- **编辑回填 fileAccess 字段链路**：`Resource` 实体加 `fileAccess` 非表字段（join file_object.access 带出）+ getter/setter；`ResourceMapper.xml` `ResourceResultMap` 加 `fileAccess` mapping，`quarryResource`/`getResourceInfoById` 两 SQL select 加 `f.access as file_access` 列；`ResourceVo` 加 `fileAccess` 字段 + getter/setter（`BeanUtil.toBean(resource, ResourceVo.class)` 自动带过）；前端 `types/api/knowhub/resource-authoring.ts` `ResourceAuthoringDetail` 加 `fileAccess?: string | null`，`upload.vue` fetchForEdit 回填 `form.fileAccess = b.fileAccess === 'PUBLIC' ? 'PUBLIC' : 'PRIVATE'`。
+- **资源上传暂不开放访问语义单选**：曾加 `upload.vue` "访问语义"单选（PUBLIC/PRIVATE）+ `Resource` 实体/`ResourceVo`/`ResourceMapper.xml` 的 `fileAccess` join 字段（编辑回填），用户考虑后期将以 L1~L3 等级权限落地（语义："非 L1 都是私有"即 L1=公开、非 L1=私有），届时以等级而非布尔单选决定 access 更顺，故本次先回滚访问语义 UI + 阅读。资源文件 access 仍走 `RESOURCE_FILE` 枚举默认 PRIVATE，`presignedUploadFlow` 透传 `access: 'PRIVATE'`（与枚举默认一致）。**重载与业务代理传 `true` 的改动保留**——下载门限问题是独立的，不依赖访问语义选择。
+- **下载统一走业务接口**：公开/私有资源下载都点 `/authoring/resource/{id}/download`（`detail.vue` 早已统一走 `downloadResourceApi`，前端无改）；后端 `downloadResource` 内 `incrDownloadCount` + `getDownloadUrl(fileObjectId, true)` 拿链接。登录非上传人用户能下别人上传的 PUBLISHED 资源，不再被 owner 闸挡。
 - **不动**：SecurityConfig（`/portal/**` permitAll + `/authoring/**` authenticated 兜底已配）、`FileController` 通用路由（`/file/download` / `/file/proxy` owner 闸保留）、资源/项目业务可见性闸逻辑（只多传一个 flag）、博客/文章/章节（其封面/配图均为 PUBLIC 走 `resolvePublicUrl`/`streamPublicObject`，不调 `getDownloadUrl`，无此隐患）。
 
-**校验**：knowhub-ui `npm run type-check` 通过（资源代码零错误，剩 6 个 pre-existing project 模块 ViewLevel/accent/DefaultRow 报错非本次引入）；后端 mvn 编译由用户验证。
+**校验**：knowhub-ui `npm run type-check` 通过（资源代码零错误，剩 pre-existing project/doc 模块报错非本次引入）；后端 mvn 编译由用户验证。
 
-**待用户人工验证**：① 上传 FORM 资源时选"公开"上传文件后 DB `file_object.access='PUBLIC'`、选"私有"落 `PRIVATE`、不选默认 PRIVATE；② 编辑回填：编辑页打开已上传资源"访问语义"区显当前 access（PUBLIC/PRIVATE 单选正确选中）；③ 已发布态切"访问语义"被挡提示先撤回，撤回后可切；④ 公开资源下载：登录非上传人用户能直接下别人上传的 PUBLISHED 公开资源（不再被 owner 闸挡）；⑤ 私有资源下载：同样登录非上传人用户能下 PUBLISHED 私有资源（业务可见性闸=PUBLISHED 已放行，文件层跳过 owner）；⑥ 通用 `/file/download/{objectId}` 仍受 owner 闸保护——非上传人/无 `file:review` 直选 objectId 下载 PRIVATE 文件仍被挡；⑦ 项目前台/后台下载同样不被 owner 闸挡（成员 `can_download=1` 非文件上传人可下）；⑧ 后端 mvn 编译通过（`FileService` 重载 + 4 处调用点改传 `true` + Resource 实体/VO/mapper 加 `fileAccess`）；⑨ `download_count` 公开资源下载也 +1（经业务接口，不走匿名直链）。
+**待用户人工验证**：① 通用 `/file/download/{objectId}` 仍受 owner 闸保护——非上传人/无 `knowhub:file:review` 直选 objectId 下载 PRIVATE 文件仍被挡；② 资源前台下载：登录非上传人用户能下别人上传的 PUBLISHED 资源（不再被 owner 闸挡，`downloadResource` 走 `getDownloadUrl(id, true)`）；③ 资源后台详情：非上传人/无 file review 但有 resource review 的管理员能拿到下载链接回填（旧版静默 catch 不填）；④ 项目前台/后台下载同样不被 owner 闸挡（成员 `can_download=1` 非文件上传人可下）；⑤ 后端 mvn 编译通过（`FileService` 重载 + 4 处调用点改传 `true`）；⑥ 资源文件仍落 `file_object.access='PRIVATE'`（RESOURCE_FILE 枚举默认，UI 无访问语义单选）。
+
+### 2026-08-09 项目文件上传 access 按项目等级派生（L1=公开 / L2/L3=私有）
+
+资源上传"访问语义单选"暂回滚后，用户给出后续落地方向："后期会换成 L1~L3 权限，非 L1 都是私有"。项目模块先行落地此语义——项目本就有 level(1/2/3) 字段，文件树上传时据此派生 `file_object.access`，无需新增 UI 单选、无需后端改造，纯前端透传 `presignedUploadFlow` 的 `access` 入参。
+
+- **派生口径**：L1 → `PUBLIC`（公开，下载走 `/file/public` 直链）；L2/L3 及未知等级 → `PRIVATE`（私有，走 `/file/proxy` 中转；下载由项目层 `canOp(download)` / `canDownload` 鉴权后 `getDownloadUrl(objectId, true)` 跳过文件底座 owner 闸，沿用 2026-08-08 的 bizAuthorized 重载）。未知/缺省等级按最低等级 L1=公开处理，与项目详情 `project.value.level ?? 1` 兜底口径一致，避免等级未取到时误落 PRIVATE 挡住合法成员下载。
+- **前端改动（两处上传入口对齐）**：
+  - `views/project/detail.vue`：新增本地 helper `fileAccessForLevel(level) = level != null && level >= 2 ? 'PRIVATE' : 'PUBLIC'`；`submitUpload` 的 `presignedUploadFlow({..., access: fileAccessForLevel(project.value?.level)})`，注释明示"L1 公开 / L2/L3 私有 / level 缺省按 L1=公开处理，与详情兜底 ??1 口径一致"。
+  - `components/project/ProjectFileTree.vue`（文件树组件复用上传能力）：defineProps 加 `level?: number`；上传 `presignedUploadFlow` 调用改 `access: props.level != null && props.level >= 2 ? 'PRIVATE' : 'PUBLIC'`（同口径）；两处递归 `<ProjectFileTree>` 子节点（递归节点 children 循环 + 容器模式根列表循环）补 `:level="level"` 透传，确保深层目录上传也拿到正确等级。注释同步为"L1（及未知等级）→PUBLIC / L2/L3→PRIVATE，level 缺省按 L1=公开处理"。
+- **无后端改动**：`/authoring/project/file/node`（`addProjectFileNode`）后端只收 objectId + 绑 biz_ref_id，access 由前端上传时透传给 `applyUploadToken`（`vo.getAccess() != null ? vo.getAccess() : type.getDefaultAccess()`，PROJECT_SRC/PKG/DOC 枚举默认 PRIVATE 兜底）决定写入 `file_object.access` 字段；下载链路用的是 2026-08-08 已完工的 bizAuthorized 重载，不受影响。文件底座、SecurityConfig、项目 service 全部不动。
+- **与资源模块的关系**：资源暂仍走 RESOURCE_FILE 枚举默认 PRIVATE（无 level 概念），待资源后期引入 L1~L3 时同套派生口径可直接复用 `fileAccessForLevel` helper。
+
+**校验**：knowhub-ui `npm run type-check` 通过（本次改动零新增错误，剩 6 个 pre-existing project/doc 模块 ViewLevel/accent/DefaultRow/null 报错非本次引入，尊重既有改动未动）；后端无改动，无需 mvn。
+
+**待用户人工验证**：① L1 项目上传文件 → `file_object.access` 落 `PUBLIC`，下载走 `/file/public` 直链（无需鉴权直下）；② L2/L3 项目上传文件 → 落 `PRIVATE`，下载走 `/file/proxy` 中转，项目层 `canOp(download)`/`canDownload` 鉴权后能下（非上传人成员不再被 owner 闸挡，沿用 bizAuthorized 重载）；③ 等级未取到（level=null/undefined，如详情未加载完先上传）兜底按 L1=PUBLIC 处理，不误落 PRIVATE 挡下载；④ 文件树组件深层目录（子文件夹内）上传同样正确派生（`level` 递归透传无误）。

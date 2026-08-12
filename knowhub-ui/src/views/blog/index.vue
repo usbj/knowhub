@@ -1,7 +1,8 @@
 <!--
-  笔记导航 /notes
+  <!--
+  博客导航 /blogs
   ------------------------------------------------------------------
-  标签云（最多标签展示地）+ 内容搜索 + 博客卡片网格 + 侧栏标签排行/热门笔记 + 排序栏。
+  标签云（最多标签展示地）+ 内容搜索 + 博客卡片网格 + 侧栏标签排行/热门博客 + 排序栏。
 -->
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
@@ -10,9 +11,10 @@ import KhCard from '@/components/common/KhCard.vue'
 import KhTag from '@/components/common/KhTag.vue'
 import KhSectionTitle from '@/components/common/KhSectionTitle.vue'
 import KhIcon from '@/components/common/KhIcon.vue'
+import KhPagination from '@/components/common/KhPagination.vue'
 import BlogRow from '@/components/blog/BlogRow.vue'
-import { searchBlogsApi, recommendBlogsApi, hotTagsApi } from '@/api/knowhub/blog'
-import type { BlogPortalRecord, BlogPortalSearchQuery } from '@/types/api/knowhub/blog'
+import { searchBlogsApi, recommendBlogsApi, hotTagsApi, getBlogStatsApi } from '@/api/knowhub/blog'
+import type { BlogPortalRecord, BlogPortalSearchQuery, PortalBlogStatsRecord } from '@/types/api/knowhub/blog'
 import type { HotTagRecord } from '@/types/api/knowhub/tag'
 import type { NormalizedPageResult } from '@/types/api/common'
 import { formatDateTime } from '@/utils/format'
@@ -45,18 +47,17 @@ const toggleTag = (tagId: number) => {
 const blogList = ref<BlogPortalRecord[]>([])
 const total = ref(0)
 const pageNum = ref(1)
-const pageSize = 9
+const pageSize = ref(9)
 const loading = ref(false)
 
 /** 侧栏热门笔记（推荐 feed 兜底全局热门，取 5 条） */
 const hotNotes = ref<BlogPortalRecord[]>([])
 
-/** 概览卡数据（从真实标签榜+列表 total 派生） */
-const publishedBlogCount = computed(() => total.value)
-const tagCount = computed(() => hotTags.value.length)
-const totalReads = computed(() =>
-  blogList.value.reduce((s, b) => s + (b.viewCount ?? 0), 0).toLocaleString(),
-)
+/** 概览卡数据（独立接口 /portal/blog/stats，固定口径，不随搜索/翻页/标签过滤变动） */
+const stats = ref<PortalBlogStatsRecord>({ publishedBlogCount: 0, totalReads: 0, tagCount: 0 })
+const publishedBlogCount = computed(() => stats.value.publishedBlogCount)
+const tagCount = computed(() => stats.value.tagCount)
+const totalReads = computed(() => stats.value.totalReads.toLocaleString())
 
 /** 拉取博客列表（搜索/标签/排序/分页变化时触发） */
 const fetchBlogs = async () => {
@@ -67,10 +68,10 @@ const fetchBlogs = async () => {
       keyword: keyword.value.trim() || undefined,
       tagIds: selectedTagIds.value.length ? selectedTagIds.value : undefined,
       sort: sortApi,
+      pageNum: pageNum.value,
+      pageSize: pageSize.value,
     }
     const res: NormalizedPageResult<BlogPortalRecord> = await searchBlogsApi(query)
-    // getPage 已归一化，但 params 里 pageNum/pageSize 由 PageUtil 从请求读——前台分页需显式带
-    // 此处首版只取第一页（pageSize=9），翻页由分页组件回调触发 fetchBlogs(pageNum)
     blogList.value = (res.records ?? []).map((b) => ({
       ...b,
       publishTime: b.publishTime ? formatDateTime(b.publishTime) : b.publishTime,
@@ -81,23 +82,26 @@ const fetchBlogs = async () => {
   }
 }
 
-/** 翻页 */
-const onPageChange = (p: number) => {
+/** 翻页 / 切每页条数：切 size 时组件已把页码置 1 抛回 */
+const onPageChange = (p: number, sz: number) => {
   pageNum.value = p
+  pageSize.value = sz
   void fetchBlogs()
 }
 
-/** 拉取标签云 + 侧栏热门 */
-const fetchTagsAndHot = async () => {
-  const [tagRes, hotRes] = await Promise.all([
+/** 拉取标签云 + 侧栏热门 + 概览统计（三个独立口径，进页面拉一次，不随搜索/翻页变） */
+const fetchTagsHotAndStats = async () => {
+  const [tagRes, hotRes, statsRes] = await Promise.all([
     hotTagsApi(50),
     recommendBlogsApi(5),
+    getBlogStatsApi(),
   ])
   hotTags.value = tagRes.data ?? []
   hotNotes.value = (hotRes.data ?? []).map((b) => ({
     ...b,
     publishTime: b.publishTime ? formatDateTime(b.publishTime) : b.publishTime,
   }))
+  if (statsRes.data) stats.value = statsRes.data
 }
 
 /** 搜索/标签/排序变化时回到第一页重新拉取 */
@@ -107,7 +111,7 @@ watch([keyword, selectedTagIds, sortKey], () => {
 })
 
 onMounted(() => {
-  void fetchTagsAndHot()
+  void fetchTagsHotAndStats()
   void fetchBlogs()
 })
 </script>
@@ -203,15 +207,8 @@ onMounted(() => {
           <p>没有匹配的笔记，换个标签或关键词试试</p>
         </KhCard>
 
-        <div v-if="blogList.length && total > pageSize" class="notes__pager">
-          <el-pagination
-            layout="prev, pager, next"
-            :total="total"
-            :page-size="pageSize"
-            :current-page="pageNum"
-            background
-            @current-change="onPageChange"
-          />
+        <div v-if="blogList.length" class="notes__pager">
+          <KhPagination v-model:current="pageNum" v-model:page-size="pageSize" :total="total" @change="onPageChange" />
         </div>
       </div>
 

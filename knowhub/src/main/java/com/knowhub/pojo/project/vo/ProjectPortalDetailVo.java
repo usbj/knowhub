@@ -23,6 +23,9 @@ public class ProjectPortalDetailVo extends ProjectPortalVo {
     /** 当前用户对该项目的下载权限（系统 download:lN 够 OR 成员 can_download=1 OR LEADER；未登录=false） */
     private Boolean canDownload;
 
+    /** 当前用户是否已收藏（登录态回填，未登录为 null；项目无点赞链路，仅收藏，对齐 ResourcePortalDetailVo.hasCollected） */
+    private Boolean hasCollected;
+
     public String getDescription() {
         return description;
     }
@@ -53,5 +56,13 @@ public class ProjectPortalDetailVo extends ProjectPortalVo {
 
     public void setCanDownload(Boolean canDownload) {
         this.canDownload = canDownload;
+    }
+
+    public Boolean getHasCollected() {
+        return hasCollected;
+    }
+
+    public void setHasCollected(Boolean hasCollected) {
+        this.hasCollected = hasCollected;
     }
 }

@@ -88,4 +88,7 @@ public interface ProjectService {
 
     /** 下载文件（canOp(download) 校验，返回中转/预签名链接） */
     String downloadFile(Long fileId);
+
+    /** 收藏/取消收藏项目（collected=true 收藏,false 取消,主表 collect_count 同步;照 BlogServiceImpl.toggleCollect 范式） */
+    Boolean toggleCollect(Long projectId, Boolean collected);
 }

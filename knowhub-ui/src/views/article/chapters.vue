@@ -16,6 +16,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowLeft, Plus, Edit, Upload, Delete, RefreshLeft, Rank } from '@element-plus/icons-vue'
 import KhIcon from '@/components/common/KhIcon.vue'
+import KhPagination from '@/components/common/KhPagination.vue'
 import KhTag from '@/components/common/KhTag.vue'
 import {
   getArticleForEditApi,
@@ -105,9 +106,10 @@ const fetchChapters = async () => {
   }
 }
 
-/** 翻页：重拉当前页章节；拖拽重排在分页内排序后基于全局起始位置持久化 */
-const onPageChange = (p: number) => {
+/** 翻页 / 切每页条数：切 size 时组件已把页码置 1 抛回，重拉当前页章节 */
+const onPageChange = (p: number, sz: number) => {
   pageNum.value = p
+  pageSize.value = sz
   void fetchChapters()
 }
 
@@ -262,7 +264,7 @@ onMounted(() => {
       <button class="ac-ch__back" type="button" @click="goUp">
         <el-icon><ArrowLeft /></el-icon> 返回我的文章
       </button>
-      <RouterLink to="/docs">文档学习</RouterLink>
+      <RouterLink to="/articles">文档学习</RouterLink>
       <el-icon class="ac-ch__sep"><KhIcon name="chevron-right" :size="12" /></el-icon>
       <span class="ac-ch__current">章节管理 · {{ article?.title }}</span>
     </div>
@@ -366,16 +368,9 @@ onMounted(() => {
         </li>
       </ol>
 
-      <!-- 分页：章节数多时分页展示，拖拽只在当前页内重排（不跨页）。复用后台 el-pagination 范式 -->
-      <div v-if="total > pageSize" class="ac-ch__pager">
-        <el-pagination
-          layout="prev, pager, next"
-          :total="total"
-          :page-size="pageSize"
-          :current-page="pageNum"
-          background
-          @current-change="onPageChange"
-        />
+      <!-- 分页：统一组件，拖拽只在当前页内重排（不跨页） -->
+      <div v-if="chapters.length" class="ac-ch__pager">
+        <KhPagination v-model:current="pageNum" v-model:page-size="pageSize" :total="total" @change="onPageChange" />
       </div>
     </div>
   </div>

@@ -45,10 +45,6 @@ const form = ref<{
   fileObjectId: number | null
   originalName: string
   contentLength: number | null
-  /** FILE 访问语义：PUBLIC 公开（任何人下）/ PRIVATE 私有（鉴权后可下）；缺省 PRIVATE。
-   *  落 file_object.access（presignedUploadFlow 传 access），资源主表不存此字段。
-   *  已发布资源先撤回才能改（与换源同口径，canEditNow 守卫）。 */
-  fileAccess: 'PUBLIC' | 'PRIVATE'
   linkUrl: string
   resourceCategoryId: number | null
 }>({
@@ -59,7 +55,6 @@ const form = ref<{
   fileObjectId: null,
   originalName: '',
   contentLength: null,
-  fileAccess: 'PRIVATE',
   linkUrl: '',
   resourceCategoryId: null,
 })
@@ -117,17 +112,6 @@ const switchType = (t: ResType) => {
   form.value.resourceType = t
 }
 
-/** 切换公开/私有访问语义：仅可编辑态可切（与换源同口径）；切后已上传文件不变，新选择仅影响后续签发口。
- *  注：已上传的旧文件 access 落在 file_object 行不随此切换改写——切 PUBLIC 后旧 PRIVATE 文件仍 PRIVATE，
- *  若要生效需换源重传（与"已发布禁换源"状态机一致，避免半切状态）。 */
-const switchAccess = (a: 'PUBLIC' | 'PRIVATE') => {
-  if (!canEditNow.value) {
-    ElMessage.warning('已发布资源请先撤回再切换访问语义')
-    return
-  }
-  form.value.fileAccess = a
-}
-
 const handleFileSelect = async (file: File) => {
   if (!canEditNow.value) {
     ElMessage.warning('已发布资源请先撤回再换源')
@@ -145,7 +129,7 @@ const handleFileSelect = async (file: File) => {
     const result = await presignedUploadFlow({
       file,
       businessType: RESOURCE_BUSINESS_TYPE.FILE,
-      access: form.value.fileAccess,
+      access: 'PRIVATE',
       onProgress: (p) => {
         uploadProgress.value = p
       },
@@ -305,7 +289,6 @@ const fetchForEdit = async (id: number) => {
     form.value.fileObjectId = b.fileObjectId ?? null
     form.value.originalName = b.originalName ?? ''
     form.value.contentLength = b.contentLength ?? null
-    form.value.fileAccess = (b.fileAccess as 'PUBLIC' | 'PRIVATE') === 'PUBLIC' ? 'PUBLIC' : 'PRIVATE'
     form.value.linkUrl = b.linkUrl ?? ''
     form.value.resourceCategoryId = b.resourceCategoryId ?? null
     resourceStatus.value = b.status ?? ''
@@ -405,36 +388,6 @@ onMounted(async () => {
         <div v-if="uploading" class="ru__progress">
           <el-progress :percentage="uploadProgress" :stroke-width="6" />
           <span>上传中 {{ uploadProgress }}%</span>
-        </div>
-      </section>
-
-      <!-- 访问语义（仅 FILE 类型，PUBLIC 任何人可下 / PRIVATE 鉴权可下） -->
-      <section v-if="form.resourceType === 'FILE'" class="ru__section">
-        <div class="ru__section-title">
-          访问语义
-          <span class="ru__section-hint">控制谁能下载该文件</span>
-        </div>
-        <div class="ru__access-group">
-          <button
-            class="ru__access-btn"
-            :class="{ 'is-active': form.fileAccess === 'PRIVATE' }"
-            type="button"
-            :disabled="!canEditNow"
-            @click="switchAccess('PRIVATE')"
-          >
-            <KhIcon name="lock" :size="18" /> 私有
-            <span class="ru__type-sub">登录并经业务鉴权可下</span>
-          </button>
-          <button
-            class="ru__access-btn"
-            :class="{ 'is-active': form.fileAccess === 'PUBLIC' }"
-            type="button"
-            :disabled="!canEditNow"
-            @click="switchAccess('PUBLIC')"
-          >
-            <KhIcon name="eye" :size="18" /> 公开
-            <span class="ru__type-sub">登录用户可下（不走匿名直链）</span>
-          </button>
         </div>
       </section>
 
@@ -672,38 +625,6 @@ onMounted(async () => {
   font-weight: 400;
 }
 
-.ru__access-group {
-  display: flex;
-  gap: var(--kh-space-3);
-}
-.ru__access-btn {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-  padding: var(--kh-space-4);
-  border: 1px solid var(--kh-border);
-  border-radius: var(--kh-radius);
-  background: var(--kh-surface);
-  cursor: pointer;
-  color: var(--kh-text-secondary);
-  transition: all var(--kh-transition-fast);
-}
-.ru__access-btn:hover:not(:disabled) {
-  border-color: var(--kh-primary-border);
-  color: var(--kh-primary);
-}
-.ru__access-btn.is-active {
-  border-color: var(--kh-primary);
-  background: var(--kh-primary-soft);
-  color: var(--kh-primary-strong);
-}
-.ru__access-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
 .ru__notice {
   padding: 8px 12px;
   background: var(--kh-warn-soft, rgba(245, 158, 11, 0.1));
@@ -871,9 +792,6 @@ onMounted(async () => {
     flex-basis: 100%;
   }
   .ru__type-group {
-    flex-direction: column;
-  }
-  .ru__access-group {
     flex-direction: column;
   }
 }

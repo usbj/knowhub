@@ -34,6 +34,12 @@ public class ProjectQuarry {
     /** 创建人(负责人账号)过滤 */
     private String createBy;
 
+    /**
+     * 作者 userId 过滤（"我的项目"场景，controller 按当前用户注入，强制只返回本人创建的项目）。
+     * 不可由前端 query string 传入——前台 /authoring/project/list 才会设它，admin 不设（保持原"参与/有权看"召回口径）。
+     */
+    private Long authorId;
+
     /** 创建时间区间起（含）；前端 daterange 传 yyyy-MM-dd，ISO.DATE 显式声明避免依赖 Spring 默认转换器 */
     @DateTimeFormat(iso = DateTimeFormat.ISO.DATE)
     private Date beginTime;
@@ -100,6 +106,14 @@ public class ProjectQuarry {
         this.createBy = createBy;
     }
 
+    public Long getAuthorId() {
+        return authorId;
+    }
+
+    public void setAuthorId(Long authorId) {
+        this.authorId = authorId;
+    }
+
     public Date getBeginTime() {
         return beginTime;
     }
@@ -141,6 +155,7 @@ public class ProjectQuarry {
                 ", status='" + status + '\'' +
                 ", reviewStatus='" + reviewStatus + '\'' +
                 ", createBy='" + createBy + '\'' +
+                ", authorId=" + authorId +
                 ", beginTime=" + beginTime +
                 ", endTime=" + endTime +
                 ", userViewLevel=" + userViewLevel +

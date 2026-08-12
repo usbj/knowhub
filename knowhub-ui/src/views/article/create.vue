@@ -85,7 +85,8 @@ const canEditNow = computed(() => ['DRAFT', 'REJECTED', 'REVOKED', ''].includes(
 const buildPayload = (): ArticleAuthoringPayload => ({
   articleId: form.value.articleId,
   title: form.value.title.trim(),
-  summary: form.value.summary.trim() || undefined,
+  // 前言/摘要强制必填（validate 已挡空），传 trim 后的 markdown 原文，后端落库非空
+  summary: form.value.summary.trim(),
   coverObjectKey: form.value.coverObjectKey.trim() || undefined,
   level: form.value.level,
   visibility: form.value.visibility,
@@ -95,6 +96,11 @@ const buildPayload = (): ArticleAuthoringPayload => ({
 const validate = (): boolean => {
   if (!form.value.title.trim()) {
     ElMessage.warning('请输入文章标题')
+    return false
+  }
+  // 前言/摘要强制必填（ article.summary 数据库列已改非空）：文档导言，列表/卡片/搜索摘要均依赖此字段
+  if (!form.value.summary.trim()) {
+    ElMessage.warning('请写文章前言（文档导言），用作摘要展示')
     return false
   }
   return true

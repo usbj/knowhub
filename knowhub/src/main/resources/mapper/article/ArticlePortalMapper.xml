@@ -150,6 +150,18 @@
         limit #{size}
     </select>
 
+    <!--
+      按 ID 集合取前台可见文章 VO（"我的收藏"列表用）。
+      照前台铁律过滤未发布/越级文章，IN 给定的 articleIds。不排序——service 按收藏时间倒序的 articleIds 顺序拼装。
+    -->
+    <select id="listByIds" resultMap="ArticlePortalVoMap">
+        select <include refid="articlePortalColumns"/>
+        <include refid="articlePortalJoins"/>
+        where <include refid="portalArticleWhere"/>
+          and a.article_id in
+          <foreach collection="articleIds" item="aid" open="(" separator="," close=")">#{aid}</foreach>
+    </select>
+
     <!-- 相关推荐：同 tag（命中任一所选 tag 即可），排除自身，按热度，limit size -->
     <select id="relatedArticles" resultMap="ArticlePortalVoMap">
         select <include refid="articlePortalColumns"/>
@@ -256,6 +268,25 @@
     <!-- 用户浏览过的文章ID（推荐召回排除已浏览；未登录 userId=null 不应调用） -->
     <select id="viewedArticleIdsByUser" resultType="long">
         select biz_id from user_view_history where user_id = #{userId} and biz_type = 'ARTICLE'
+    </select>
+
+    <!--
+      前台文库全量统计（/portal/article/stats）：三段独立 count 子查询一次返回。
+      - publishedDocCount：article 前台铁律（deleted=0 AND status='PUBLISHED' AND level<=userViewLevel）
+      - totalChapters：chapter join article 应用文章铁律（chapter 自身 deleted=0 AND status='PUBLISHED'），
+        即只数"当前用户可见文章下的已发布章节"
+      - tagCount：tag deleted=0 AND status=1 全量启用标签数（与 /portal/tag/hot 的 tag 过滤口径一致，
+        hot 只回有关联内容的 Top-N，全量数在此给）
+      固定口径，与搜索/翻页/标签过滤互不影响——统计是"全库当前可见数"而非"当前筛选结果数"。
+    -->
+    <select id="getPortalStats" parameterType="int" resultType="com.knowhub.pojo.article.vo.PortalArticleStatsVo">
+        select
+            (select count(*) from article a
+                where a.deleted = 0 and a.status = 'PUBLISHED' and a.level &lt;= #{userViewLevel}) as publishedDocCount,
+            (select count(*) from chapter c inner join article a on a.article_id = c.article_id
+                where c.deleted = 0 and c.status = 'PUBLISHED'
+                  and a.deleted = 0 and a.status = 'PUBLISHED' and a.level &lt;= #{userViewLevel}) as totalChapters,
+            (select count(*) from tag t where t.deleted = 0 and t.status = 1) as tagCount
     </select>
 
 </mapper>

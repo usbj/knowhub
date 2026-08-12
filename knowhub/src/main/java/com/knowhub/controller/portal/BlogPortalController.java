@@ -4,6 +4,7 @@ import com.github.pagehelper.PageInfo;
 import com.knowhub.pojo.blog.quarry.BlogPortalSearchQuarry;
 import com.knowhub.pojo.blog.vo.BlogPortalDetailVo;
 import com.knowhub.pojo.blog.vo.BlogPortalVo;
+import com.knowhub.pojo.blog.vo.PortalBlogStatsVo;
 import com.knowhub.pojo.tag.vo.HotTagVo;
 import com.knowhub.pojo.tag.vo.TagOptionVo;
 import com.knowhub.service.blog.impl.BlogPortalService;
@@ -45,6 +46,12 @@ public class BlogPortalController {
             @RequestParam(required = false) Long excludeBlogId) {
         List<BlogPortalVo> list = blogPortalService.recommend(size, excludeBlogId);
         return Result.success(list);
+    }
+
+    @GetMapping("/blog/stats")
+    @Operation(summary = "前台博客全量统计（已发布博客数+累计阅读+标签数，固定口径，不受搜索/过滤影响）")
+    public Result<PortalBlogStatsVo> getStats() {
+        return Result.success(blogPortalService.getStats());
     }
 
     @GetMapping("/blog/{blogId}")

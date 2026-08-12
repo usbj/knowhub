@@ -174,6 +174,31 @@
     </select>
 
     <!--
+      按 ID 集合取前台可见资源 VO（"我的收藏"列表用）。
+      照前台铁律 deleted=0 AND status='PUBLISHED' 过滤（资源无 level 等级概念），IN 给定的 resourceIds。
+      复用列表 VO 全字段 + inline 互动计数（与 recommendHot 同口径）。
+      不排序——service 拿到后按收藏时间倒序的 resourceIds 顺序拼装，保留"最近收藏在前"语义。
+    -->
+    <select id="listByIds" resultMap="ResourcePortalVoMap">
+        select r.resource_id, r.author_id, u.nick_name as author_nickname,
+               r.resource_type, r.resource_category_id, c.category_name as category_name,
+               r.title, r.summary, r.link_url, r.link_icon, r.file_object_id,
+               f.original_name as original_name, f.content_length as content_length, f.content_type as content_type,
+               r.publish_time, r.view_count, r.download_count,
+               (select count(*) from resource_like rl where rl.resource_id = r.resource_id) as like_count,
+               (select count(*) from resource_collect rc where rc.resource_id = r.resource_id) as collect_count,
+               (select coalesce(round(avg(rating.score), 2), 0) from resource_rating rating where rating.resource_id = r.resource_id) as rating_avg,
+               (select count(*) from resource_rating rating where rating.resource_id = r.resource_id) as rating_count
+        from resource r
+                left join sys_user u on r.author_id = u.user_id
+                left join resource_category c on r.resource_category_id = c.category_id and c.deleted = 0
+                left join file_object f on r.file_object_id = f.object_id and f.deleted = 0
+        where <include refid="portalResourceWhere"/>
+          and r.resource_id in
+          <foreach collection="resourceIds" item="rid" open="(" separator="," close=")">#{rid}</foreach>
+    </select>
+
+    <!--
       详情：按主键取未删已发布资源，含 description 大字段 + join 带出展示字段 + inline 互动计数。
       非 PUBLISHED（草稿/待审/驳回/撤回）返回 null（controller 404 语义）。
     -->

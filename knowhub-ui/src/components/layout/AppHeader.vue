@@ -6,7 +6,7 @@
   公告下拉用 el-popover，展示系统公告列表，"查看全部公告"跳 /notices。
 -->
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, nextTick, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   Search,
@@ -23,9 +23,9 @@ import { formatDateTime } from '@/utils/format'
 /** 主导航项：个人中心不在导航，从用户下拉进入 */
 const navItems: { to: string; label: string; exact?: boolean }[] = [
   { to: '/', label: '首页', exact: true },
-  { to: '/notes', label: '笔记导航' },
+  { to: '/blogs', label: '笔记导航' },
   { to: '/projects', label: '项目展示' },
-  { to: '/docs', label: '文档学习' },
+  { to: '/articles', label: '文档学习' },
   { to: '/resources', label: '资源推荐' },
 ]
 
@@ -97,14 +97,26 @@ const goNotices = () => {
   router.push('/notices')
 }
 
+/** 顶栏搜索框触发：跳全局搜索结果页 */
+const goSearch = () => router.push('/search')
+
 /**
- * 点某条公告：标记已读（乐观，未读才请求），然后跳公告列表页。
- * 失败由 store 内 next fetch 纠正，不阻塞跳转。
+ * 点某条公告：先收起下拉（noticeVisible=false），等一帧让下拉的收起过渡与详情弹窗的展开过渡错开，
+ * 避免两套动画同帧竞争导致卡顿；再标记已读（乐观，未读才请求）+ 开全局详情弹窗。
+ * 详情弹窗挂在 AppLayout 的 <KhNoticeDetailDialog>，store.openDetail 注入当前 notice。
+ * 失败由 store 内 next fetch 纠正，不阻塞弹窗。
  */
 const openNotice = async (noticeId: number) => {
   noticeVisible.value = false
-  await noticeStore.markAsRead(noticeId)
-  router.push('/notices')
+  await nextTick()
+  const notice = noticeStore.getNoticeById(noticeId)
+  if (notice) {
+    void noticeStore.markAsRead(noticeId)
+    noticeStore.openDetail(notice)
+  } else {
+    // 兜底：store 已清/未加载，跳公告列表页保证有反馈
+    router.push('/notices')
+  }
 }
 
 /**
@@ -146,7 +158,7 @@ const handleLogout = () => {
 
       <!-- 右侧操作 -->
       <div class="kh-actions">
-        <button class="kh-search-trigger" type="button" aria-label="搜索">
+        <button class="kh-search-trigger" type="button" aria-label="搜索" @click="goSearch">
           <el-icon><Search /></el-icon>
           <span class="kh-search-trigger__hint">搜索内容…</span>
           <kbd>⌘K</kbd>

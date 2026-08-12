@@ -57,6 +57,8 @@ const props = withDefaults(
     projectId?: number
     canEdit?: boolean
     canDownload?: boolean
+    /** 项目等级（1/2/3）：决定上传文件 access 语义，L1→PUBLIC（公开）/L2/L3→PRIVATE（私有） */
+    level?: number
     /** 当前渲染的节点（递归时由父层传入；顶层不传则按 projectId 拉全树） */
     node?: ProjectFileTreeNode
     /** 是否递归子层（true=作为递归节点渲染单个 node；false=作为容器拉树渲染根列表） */
@@ -237,7 +239,10 @@ const handleFileChange = async (event: Event) => {
     const result = await presignedUploadFlow({
       file,
       businessType: PROJECT_BUSINESS_TYPE.DOC,
-      access: 'PRIVATE',
+      /** access 按项目等级派生：L1（及未知等级）→PUBLIC（公开）/L2/L3→PRIVATE（私有）。项目层已 canDownload 鉴权，
+       *  文件层走 bizAuthorized=true 跳过 owner 闸；access 仅决定 PUBLIC 直 /file/public vs PRIVATE 走 /file/proxy。
+       *  level 缺省按最低等级 L1=公开处理。 */
+      access: props.level != null && props.level >= 2 ? 'PRIVATE' : 'PUBLIC',
       onProgress: (percent) => {
         uploadPercent.value = percent
       },
@@ -344,6 +349,7 @@ const handleDownload = async (node: ProjectFileTreeNode) => {
         :recursive="true"
         :can-edit="canEdit"
         :can-download="canDownload"
+        :level="level"
       />
     </div>
   </div>
@@ -368,6 +374,7 @@ const handleDownload = async (node: ProjectFileTreeNode) => {
           :recursive="true"
           :can-edit="canEdit"
           :can-download="canDownload"
+          :level="level"
         />
       </template>
       <ElEmpty v-else-if="!loading" description="暂无文件" :image-size="48" />

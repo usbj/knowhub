@@ -40,6 +40,13 @@ public interface ResourcePortalMapper {
     ResourcePortalDetailVo getPortalResourceDetail(@Param("resourceId") Long resourceId);
 
     /**
+     * 按 ID 集合取前台可见资源 VO（前台铁律过滤：deleted=0 AND status='PUBLISHED'）。
+     * 供"我的收藏"列表用：service 传收藏 ID 集，取"收藏 ∩ 前台可见"全量 VO，再按收藏时间倒序排。
+     * 资源无 level 等级，故无 userViewLevel 参数（与 article/blog/project 的 listByIds 差异点）。
+     */
+    List<ResourcePortalVo> listByIds(@Param("resourceIds") List<Long> resourceIds);
+
+    /**
      * 相关推荐：同 resource_category_id 其它公开资源（排除自身），按热度排 limit size。
      * -1=其他类时同分类语义弱，SQL 内退化为"按热度全量"补足（service 不需特判）。
      */

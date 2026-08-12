@@ -13,6 +13,7 @@ import com.knowhub.enums.common.ReviewAction;
 import com.knowhub.enums.common.ReviewStatus;
 import com.knowhub.mapper.storage.FileObjectMapper;
 import com.knowhub.mapper.project.ProjectCompetitionMapper;
+import com.knowhub.mapper.project.ProjectCollectMapper;
 import com.knowhub.mapper.project.ProjectFileMapper;
 import com.knowhub.mapper.project.ProjectMapper;
 import com.knowhub.mapper.project.ProjectMemberMapper;
@@ -20,6 +21,7 @@ import com.knowhub.mapper.project.ProjectReviewLogMapper;
 import com.knowhub.pojo.project.entity.Project;
 import com.knowhub.pojo.project.entity.ProjectFile;
 import com.knowhub.pojo.project.entity.ProjectMember;
+import com.knowhub.pojo.project.entity.ProjectCollect;
 import com.knowhub.pojo.project.entity.ProjectReviewLog;
 import com.knowhub.pojo.project.quarry.ProjectQuarry;
 import com.knowhub.pojo.common.vo.BindVo;
@@ -78,6 +80,9 @@ public class ProjectServiceImpl implements ProjectService {
 
     @Autowired
     private ProjectCompetitionMapper projectCompetitionMapper;
+
+    @Autowired
+    private ProjectCollectMapper projectCollectMapper;
 
     @Autowired
     private ProjectMemberMapper projectMemberMapper;
@@ -696,6 +701,32 @@ public class ProjectServiceImpl implements ProjectService {
                     .warn("项目 {} 下载计数 +1 失败，不影响下载链接下发", exist.getProjectId(), e);
         }
         return downloadVo != null ? downloadVo.getDownloadUrl() : null;
+    }
+
+    @Override
+    @Transactional
+    public Boolean toggleCollect(Long projectId, Boolean collected) {
+        // 照 BlogServiceImpl.toggleCollect 范式：校验存在 → 取当前用户 → 收藏=插入 ignore+计数 +1，取消=删除+计数 -1
+        Project exist = projectMapper.getProjectInfoById(projectId);
+        if (exist == null) {
+            throw new ServiceException(500, "项目不存在");
+        }
+        Long userId = currentUser().getUserId();
+        ProjectCollect record = new ProjectCollect(projectId, userId);
+        if (Boolean.TRUE.equals(collected)) {
+            ProjectCollect old = projectCollectMapper.getProjectCollect(record);
+            projectCollectMapper.addProjectCollect(record);
+            if (old == null) {
+                projectMapper.incrCollectCount(projectId, 1);
+            }
+        } else {
+            ProjectCollect old = projectCollectMapper.getProjectCollect(record);
+            projectCollectMapper.deleteProjectCollect(record);
+            if (old != null) {
+                projectMapper.incrCollectCount(projectId, -1);
+            }
+        }
+        return true;
     }
 
     // ============================ 私有辅助 ============================

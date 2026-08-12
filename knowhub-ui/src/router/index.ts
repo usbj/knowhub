@@ -24,27 +24,27 @@ const router = createRouter({
       meta: { title: '首页' },
     },
     {
-      path: '/notes',
-      name: 'notes',
-      component: () => import('@/views/notes/index.vue'),
+      path: '/blogs',
+      name: 'blog',
+      component: () => import('@/views/blog/index.vue'),
       meta: { title: '笔记导航' },
     },
     {
       path: '/projects',
-      name: 'projects',
-      component: () => import('@/views/projects/index.vue'),
+      name: 'project',
+      component: () => import('@/views/project/index.vue'),
       meta: { title: '项目展示' },
     },
     {
-      path: '/docs',
-      name: 'docs',
-      component: () => import('@/views/docs/index.vue'),
+      path: '/articles',
+      name: 'articles',
+      component: () => import('@/views/article/index.vue'),
       meta: { title: '文档学习' },
     },
     {
       path: '/resources',
       name: 'resources',
-      component: () => import('@/views/resources/index.vue'),
+      component: () => import('@/views/resource/index.vue'),
       meta: { title: '资源推荐' },
     },
     {
@@ -54,10 +54,22 @@ const router = createRouter({
       meta: { title: '个人中心', requiresAuth: true },
     },
     {
+      path: '/profile/edit',
+      name: 'profile-edit',
+      component: () => import('@/views/profile/edit.vue'),
+      meta: { title: '编辑资料', requiresAuth: true },
+    },
+    {
       path: '/notices',
       name: 'notices',
       component: () => import('@/views/notices/index.vue'),
       meta: { title: '系统公告' },
+    },
+    {
+      path: '/search',
+      name: 'search',
+      component: () => import('@/views/search/index.vue'),
+      meta: { title: '搜索结果' },
     },
     {
       path: '/login',
@@ -98,7 +110,7 @@ const router = createRouter({
     {
       path: '/article/:id/chapter/edit',
       name: 'article-chapter-edit',
-      component: () => import('@/views/article/chapter-edit.vue'),
+      component: () => import('@/views/article/chapter/edit.vue'),
       meta: { title: '写章节', requiresAuth: true },
     },
     {
@@ -114,16 +126,16 @@ const router = createRouter({
       meta: { title: '项目详情' },
     },
     {
-      path: '/docs/:id',
-      name: 'doc-detail',
-      component: () => import('@/views/doc/detail.vue'),
-      meta: { title: '文档详情' },
+      path: '/article/:id',
+      name: 'article-detail',
+      component: () => import('@/views/article/detail.vue'),
+      meta: { title: '文章详情' },
     },
     {
-      path: '/docs/:id/read/:chapterId',
-      name: 'doc-read',
-      component: () => import('@/views/doc/read.vue'),
-      meta: { title: '文档阅读' },
+      path: '/article/:id/read/:chapterId',
+      name: 'article-read',
+      component: () => import('@/views/article/chapter/read.vue'),
+      meta: { title: '章节阅读' },
     },
     {
       path: '/resource/upload',
@@ -142,6 +154,18 @@ const router = createRouter({
       name: 'history',
       component: () => import('@/views/history/index.vue'),
       meta: { title: '浏览历史', requiresAuth: true },
+    },
+    {
+      path: '/403',
+      name: 'forbidden',
+      component: () => import('@/views/error/Forbidden.vue'),
+      meta: { title: '无权访问' },
+    },
+    {
+      path: '/:pathMatch(.*)*',
+      name: 'not-found',
+      component: () => import('@/views/error/NotFound.vue'),
+      meta: { title: '页面不存在' },
     },
   ],
   scrollBehavior(_to, _from, saved) {

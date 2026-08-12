@@ -5,6 +5,7 @@ import com.knowhub.pojo.article.quarry.ArticlePortalSearchQuarry;
 import com.knowhub.pojo.article.vo.ArticlePortalDetailVo;
 import com.knowhub.pojo.article.vo.ArticlePortalVo;
 import com.knowhub.pojo.article.vo.ChapterContentVo;
+import com.knowhub.pojo.article.vo.PortalArticleStatsVo;
 import com.knowhub.service.article.impl.ArticlePortalService;
 import com.rookie.common.pojo.Result;
 import io.swagger.v3.oas.annotations.Operation;
@@ -37,6 +38,12 @@ public class ArticlePortalController {
     public Result<PageInfo<ArticlePortalVo>> search(ArticlePortalSearchQuarry quarry) {
         PageInfo<ArticlePortalVo> page = articlePortalService.search(quarry);
         return Result.success(page);
+    }
+
+    @GetMapping("/stats")
+    @Operation(summary = "前台文库全量统计（已发布文档数+章节数+标签数，固定口径，不受搜索/过滤影响）")
+    public Result<PortalArticleStatsVo> getStats() {
+        return Result.success(articlePortalService.getStats());
     }
 
     @GetMapping("/recommend")

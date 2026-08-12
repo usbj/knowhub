@@ -12,6 +12,7 @@
 import { get, getPage, post, put } from '@/utils/http'
 import type { ApiResult, NormalizedPageResult } from '@/types/api/common'
 import type { BlogAuthoringPayload, BlogAuthoringDetail, BlogRecord, MyBlogListQuery } from '@/types/api/knowhub/authoring'
+import type { BlogPortalRecord } from '@/types/api/knowhub/blog'
 
 /** 前台新建博客草稿（复用 addBlogInfo，含分级创作闸）。返回后端 boolean。 */
 export const draftBlogApi = (data: BlogAuthoringPayload) =>
@@ -52,6 +53,14 @@ export const collectBlogApi = (blogId: number, collected = true) =>
  */
 export const getMyBlogsApi = (query: MyBlogListQuery) =>
   getPage<BlogRecord>('/authoring/blog/list', { params: query })
+
+/**
+ * 我的博客收藏列表（GET /authoring/blog/collect/list，按收藏时间倒序，仅前台可见口径的已发布博客）。
+ * BlogPortalRecord 口径。后端 listMyCollected 照 article 范式实现：取"收藏 ∩ 前台可见"再按收藏顺序排。
+ * 后端实际是一次性返回可见收藏全量（pageNum/pageSize 被忽略），前端取 records+total 用即可。
+ */
+export const listMyCollectedBlogsApi = (pageNum = 1, pageSize = 20) =>
+  getPage<BlogPortalRecord>('/authoring/blog/collect/list', { params: { pageNum, pageSize } })
 
 /** 类型再导出，供页面直接用 */
 export type { BlogAuthoringPayload, BlogAuthoringDetail, BlogRecord, MyBlogListQuery }

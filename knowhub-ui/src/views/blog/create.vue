@@ -81,11 +81,51 @@ const canEditNow = computed(() =>
   ['DRAFT', 'REJECTED', 'REVOKED', ''].includes(blogStatus.value),
 )
 
+/** 摘要自动截取长度：留空时从正文提取纯文本前 N 字符兜底 */
+const SUMMARY_AUTO_LEN = 100
+
+/**
+ * 从 markdown 正文提取纯文本摘要：去标题/强调/代码/链接/图片/列表/引用/HTML 等标记，
+ * 压缩空白（含换行）后取前 N 字符。用于摘要留空时自动兜底，避免把 `# ** ![]()` 等语法塞进摘要。
+ * 仅做轻量正则剥离，不渲染成 DOM（性能/体积友好，创作页调用频次低且文本量小）。
+ */
+const extractTextFromMd = (md: string, len: number): string => {
+  if (!md) return ''
+  return md
+    // 代码块（``` 围栏 / ~~~）整块去掉（避免代码塞进摘要）
+    .replace(/```[\s\S]*?```/g, '')
+    .replace(/~~~[\s\S]*?~~~/g, '')
+    // 行内代码 `xxx`
+    .replace(/`[^`]*`/g, '')
+    // 图片 ![alt](url)
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, '')
+    // 链接 [text](url) → text
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
+    // HTML 标签
+    .replace(/<[^>]+>/g, '')
+    // ATX 标题前缀 #
+    .replace(/^#{1,6}\s+/gm, '')
+    // 引用 >
+    .replace(/^>\s+/gm, '')
+    // 列表标记 - + * 和有序列表 1.
+    .replace(/^\s*[-+*]\s+/gm, '')
+    .replace(/^\s*\d+\.\s+/gm, '')
+    // 强调 * ** _ __ ~~
+    .replace(/[*_~]{1,3}/g, '')
+    // 分割线 --- / ***
+    .replace(/^[-*_]{3,}\s*$/gm, '')
+    // 压缩所有空白（含换行）为单空格
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, len)
+}
+
 const buildPayload = (): BlogAuthoringPayload => ({
   blogId: form.value.blogId,
   title: form.value.title.trim(),
   content: form.value.content,
-  summary: form.value.summary.trim() || undefined,
+  // 摘要留空时自动从正文前 100 字符提取纯文本兜底（用户要求），避免摘要为空影响列表/卡片展示
+  summary: form.value.summary.trim() || extractTextFromMd(form.value.content, SUMMARY_AUTO_LEN) || undefined,
   coverUrl: form.value.coverUrl.trim() || undefined,
   level: form.value.level,
   tagIds: form.value.tagIds.length ? form.value.tagIds : undefined,

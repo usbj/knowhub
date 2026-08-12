@@ -86,10 +86,50 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(Exception.class)
     public Result exceptionHandle(Exception e) {
+        // 客户端断开/中止连接（浏览器刷新、快速导航、前端并发请求后页面切走都会触发）：
+        // Spring 6 把这种"写到一半 client 已关掉流"的 IOException 包成
+        // AsyncRequestNotUsableException / ClientAbortException。属良性，服务无状态污染、
+        // 也不该被当"未知错误"写进 sys_error_log 噪音化错误看板——只 debug 记一行即可。
+        // （Tomcat 的 ClientAbortException 同理，无直接类型依赖故按类名判断。）
+        if (isClientAbort(e)) {
+            log.debug("客户端断开连接，请求路径:{} >>> {}", ServletUtil.getRequestCompleteURL(), e.getMessage());
+            return null;
+        }
         log.error("系统发生了一个未知错误，请求路径:{} >>> {}", ServletUtil.getRequestCompleteURL(), e.getMessage());
         printExceptionLocation(e);
         recordErrorLog(e, ServletUtil.getRequestCompleteURL());
         return Result.error();
+    }
+
+    /**
+     * 判定异常是否由"客户端断开/中止连接"引起（不依赖具体容器类型）。
+     * Spring 6+ 的 org.springframework.web.context.request.async.AsyncRequestNotUsableException
+     * 和 Tomcat 的 org.apache.catalina.connector.ClientAbortException 都因下游 IOException 判定。
+     * 按类名前缀/包含 + cause 链递归，避免对可选容器运行时的硬依赖。
+     */
+    private boolean isClientAbort(Throwable e) {
+        Throwable cur = e;
+        int depth = 0;
+        while (cur != null && depth++ < 10) {
+            String name = cur.getClass().getName();
+            if (name.endsWith("AsyncRequestNotUsableException")
+                    || name.contains("ClientAbortException")) {
+                return true;
+            }
+            // 兜底：cause 链里出现明确的 "broken pipe" / "连接被中止"/ "connection abort" 文案也认
+            String msg = cur.getMessage();
+            if (msg != null) {
+                String low = msg.toLowerCase();
+                if (low.contains("broken pipe")
+                        || low.contains("connection was cancelled")
+                        || low.contains("connection abort")
+                        || low.contains("软件中止了一个已建立的连接")) {
+                    return true;
+                }
+            }
+            cur = cur.getCause();
+        }
+        return false;
     }
 
     private void printExceptionLocation(Exception e) {

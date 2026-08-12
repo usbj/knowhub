@@ -24,6 +24,8 @@ const AUTH_EXPIRED_CODE = 401
 declare module 'axios' {
   export interface AxiosRequestConfig {
     skipAuthRedirect?: boolean
+    /** 静默失败：首页等信息流请求失败时不弹 ElMessage 红条刷屏，由页面以空态兜底 */
+    silentError?: boolean
   }
 }
 
@@ -114,7 +116,9 @@ http.interceptors.response.use(
         return Promise.reject(new Error(payload.msg || '登录状态已失效'))
       }
 
-      ElMessage.error(payload.msg || '请求失败')
+      if (!response.config?.silentError) {
+        ElMessage.error(payload.msg || '请求失败')
+      }
       return Promise.reject(new Error(payload.msg || '请求失败'))
     }
 
@@ -133,12 +137,14 @@ http.interceptors.response.use(
       return Promise.reject(error)
     }
 
-    const message =
-      error.response?.data && typeof error.response.data === 'object' && 'msg' in error.response.data
-        ? String((error.response.data as { msg: unknown }).msg)
-        : error.message || '网络请求异常'
+    if (!error.config?.silentError) {
+      const message =
+        error.response?.data && typeof error.response.data === 'object' && 'msg' in error.response.data
+          ? String((error.response.data as { msg: unknown }).msg)
+          : error.message || '网络请求异常'
 
-    ElMessage.error(message)
+      ElMessage.error(message)
+    }
     return Promise.reject(error)
   },
 )

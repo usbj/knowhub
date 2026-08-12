@@ -16,6 +16,7 @@ import com.knowhub.pojo.article.vo.ArticlePortalVo;
 import com.knowhub.pojo.article.vo.ChapterContentVo;
 import com.knowhub.pojo.article.vo.ChapterOutlineVo;
 import com.knowhub.pojo.article.vo.MatchedChapterVo;
+import com.knowhub.pojo.article.vo.PortalArticleStatsVo;
 import com.knowhub.pojo.tag.entity.Tag;
 import com.knowhub.service.article.impl.ArticlePortalService;
 import com.knowhub.service.history.impl.ViewHistoryService;
@@ -92,6 +93,11 @@ public class ArticlePortalServiceImpl implements ArticlePortalService {
     }
 
     @Override
+    public PortalArticleStatsVo getStats() {
+        return articlePortalMapper.getPortalStats(resolveUserViewLevel());
+    }
+
+    @Override
     public List<ArticlePortalVo> recommend(int size, Long excludeArticleId) {
         Integer userViewLevel = resolveUserViewLevel();
         UserInfo user = currentUserOrNull();
@@ -156,6 +162,7 @@ public class ArticlePortalServiceImpl implements ArticlePortalService {
         if (level != null && level > userViewLevel) {
             meta.setLocked(true);
             meta.setLockReason("需 L" + level + " 权限查看完整内容");
+            fillCurrentUserInteract(meta, articleId);
             fillTagsForOne(meta);
             fillChapterCountForOne(meta);
             return meta;
@@ -167,6 +174,7 @@ public class ArticlePortalServiceImpl implements ArticlePortalService {
         if (user != null) {
             viewHistoryService.recordView(user.getUserId(), ViewBizType.ARTICLE.getCode(), articleId);
         }
+        fillCurrentUserInteract(meta, articleId);
         fillTagsForOne(meta);
         fillChapterCountForOne(meta);
         return meta;
@@ -272,13 +280,12 @@ public class ArticlePortalServiceImpl implements ArticlePortalService {
         if (articleIds == null || articleIds.isEmpty()) {
             return new PageInfo<>(Collections.emptyList());
         }
-        // 按 user_view_history 防刷无关——收藏列表直接按收藏时间倒序的 articleIds，
-        // 用 recommendHot 的同口径 SQL（前台铁律）取这些文章的 VO（不再分页，前端展示通常不大；如需分页由 PageHelper 包裹）
-        // 为复用前台铁律过滤，走 recommendHot 取"收藏列表 ∩ 前台可见"，再按收藏顺序排
+        // listByIds 按"收藏 ID 集 ∩ 前台可见"取全量 VO（前台铁律过滤未发布/越级），不排序——
+        // service 按收藏时间倒序的 articleIds 顺序拼装，还原"最近收藏在前"语义。
+        // 2026-08-12 修正：原实现误调 recommendHot(全局热门 topN, size=收藏数) 再求交集——收藏文章不在
+        // 全局热门 topN 里即被丢，越级/冷门收藏列表为空。改为 listByIds 精确召回。
         Integer userViewLevel = resolveUserViewLevel();
-        // 直接逐批取：用 recommendHot 排除空集取全部，再按 articleIds 顺序排
-        List<ArticlePortalVo> all = articlePortalMapper.recommendHot(
-                userViewLevel, null, Collections.emptyList(), articleIds.size());
+        List<ArticlePortalVo> all = articlePortalMapper.listByIds(userViewLevel, articleIds);
         Map<Long, ArticlePortalVo> voMap = new HashMap<>();
         for (ArticlePortalVo vo : all) {
             voMap.put(vo.getArticleId(), vo);
@@ -385,6 +392,20 @@ public class ArticlePortalServiceImpl implements ArticlePortalService {
             }
             vo.setTagNames(names);
         }
+    }
+
+    /**
+     * 详情回填当前用户的点赞/收藏态（登录态查 article_like/article_collect 事实表，未登录置 null 不查库）。
+     * 与 ResourcePortalServiceImpl.fillCurrentUserInteract / BlogPortalServiceImpl 同范式：
+     * Boolean 包装类型，未登录留 null 让前端按游客态渲染按钮。
+     */
+    private void fillCurrentUserInteract(ArticlePortalDetailVo vo, Long articleId) {
+        UserInfo user = currentUserOrNull();
+        if (user == null) {
+            return; // 未登录：hasLiked/hasCollected 留 null
+        }
+        vo.setHasLiked(articleLikeMapper.getArticleLike(new ArticleLike(articleId, user.getUserId())) != null);
+        vo.setHasCollected(articleCollectMapper.getArticleCollect(new ArticleCollect(articleId, user.getUserId())) != null);
     }
 
     /** 单条回填 tagIds + tagNames（详情用） */

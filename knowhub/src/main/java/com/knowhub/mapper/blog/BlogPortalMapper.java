@@ -3,6 +3,7 @@ package com.knowhub.mapper.blog;
 import com.knowhub.pojo.blog.quarry.BlogPortalSearchQuarry;
 import com.knowhub.pojo.blog.vo.BlogPortalDetailVo;
 import com.knowhub.pojo.blog.vo.BlogPortalVo;
+import com.knowhub.pojo.blog.vo.PortalBlogStatsVo;
 import com.knowhub.pojo.tag.vo.HotTagVo;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
@@ -36,6 +37,13 @@ public interface BlogPortalMapper {
                                      @Param("excludeBlogIds") List<Long> excludeBlogIds,
                                      @Param("size") int size);
 
+    /**
+     * 按 ID 集合取前台可见博客 VO（前台铁律过滤：deleted=0 AND status='PUBLISHED' AND level<=userViewLevel）。
+     * 供"我的收藏"列表用：service 传收藏博客 ID 集，取"收藏 ∩ 前台可见"全量 VO，再按收藏时间倒序排。
+     */
+    List<BlogPortalVo> listByIds(@Param("userViewLevel") Integer userViewLevel,
+                                  @Param("blogIds") List<Long> blogIds);
+
     /** 详情元数据（含 level，不含 content，无 level 过滤——service 据此判越级锁态） */
     BlogPortalDetailVo getPortalBlogMeta(@Param("blogId") Long blogId);
 
@@ -62,4 +70,10 @@ public interface BlogPortalMapper {
 
     /** 用户浏览过的博客ID列表（推荐召回时排除已浏览，未登录返回空） */
     List<Long> viewedBlogIdsByUser(@Param("userId") Long userId);
+
+    /**
+     * 前台博客全量统计（/portal/blog/stats 出参）：已发布且越权过滤后的博客数 + 这些博客的累计阅读数 + 启用标签总数。
+     * 固定口径，与搜索/翻页/标签过滤无关。totalReads 走 sum(b.view_count) 应用博客铁律。
+     */
+    PortalBlogStatsVo getPortalStats(@Param("userViewLevel") Integer userViewLevel);
 }

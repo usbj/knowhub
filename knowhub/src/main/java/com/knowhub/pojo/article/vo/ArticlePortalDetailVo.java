@@ -22,6 +22,12 @@ public class ArticlePortalDetailVo extends ArticlePortalVo {
     /** 锁态原因提示（如"需 L2 权限查看完整内容"，正常态为 null） */
     private String lockReason;
 
+    /** 当前用户是否已点赞（登录态回填，未登录为 null；对齐 ResourcePortalDetailVo.hasLiked） */
+    private Boolean hasLiked;
+
+    /** 当前用户是否已收藏（登录态回填，未登录为 null；对齐 ResourcePortalDetailVo.hasCollected） */
+    private Boolean hasCollected;
+
     public List<ChapterOutlineVo> getChapterList() {
         return chapterList;
     }
@@ -44,5 +50,21 @@ public class ArticlePortalDetailVo extends ArticlePortalVo {
 
     public void setLockReason(String lockReason) {
         this.lockReason = lockReason;
+    }
+
+    public Boolean getHasLiked() {
+        return hasLiked;
+    }
+
+    public void setHasLiked(Boolean hasLiked) {
+        this.hasLiked = hasLiked;
+    }
+
+    public Boolean getHasCollected() {
+        return hasCollected;
+    }
+
+    public void setHasCollected(Boolean hasCollected) {
+        this.hasCollected = hasCollected;
     }
 }

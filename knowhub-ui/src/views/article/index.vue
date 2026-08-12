@@ -1,21 +1,24 @@
 <!--
-  文档学习 /docs（总览）
+  <!--
+  文档学习 /articles（总览）
   ------------------------------------------------------------------
   定位：系统化章节式学习文档（文章）+ 专门搜索（覆盖标题/简介/章节内容，命中章节标出）。
-  照搬笔记导航 /notes 范式：搜索 + 标签云/排行（复用 /portal/tag/hot，与笔记导航共用）+
-  推荐侧栏（/portal/article/recommend）+ 文档卡片网格 + 排序栏 + 分页。
-  标签热度与笔记导航共用同一 /portal/tag/hot（跨博客+文章综合，文章分支维度已与博客对齐）。
+  照搬博客导航 /blogs 范式：hero 左搜索+标签云 / 右文库统计卡 + 主体文档卡片网格 + 排序栏 + 分页。
+  分页走后端 PageHelper（PageUtil.startPage 从请求参数读 pageNum/pageSize），前端显式带参翻页真生效。
+  标签云设最大展示数（TAG_LIMIT），超出折叠进"更多"（按标签排行 contentCount 降序，与侧栏标签排行同序）。
+  标签热度与博客导航共用同一 /portal/tag/hot（跨博客+文章综合，文章分支维度已与博客对齐）。
 -->
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
-import { Search } from '@element-plus/icons-vue'
+import { Search, ArrowDown, ArrowUp } from '@element-plus/icons-vue'
 import KhCard from '@/components/common/KhCard.vue'
 import KhSectionTitle from '@/components/common/KhSectionTitle.vue'
 import KhIcon from '@/components/common/KhIcon.vue'
-import DocCard from '@/components/doc/DocCard.vue'
-import { searchArticlesApi, recommendArticlesApi } from '@/api/knowhub/article'
+import KhPagination from '@/components/common/KhPagination.vue'
+import ArticleCard from '@/components/article/ArticleCard.vue'
+import { searchArticlesApi, recommendArticlesApi, getArticleStatsApi } from '@/api/knowhub/article'
 import { hotTagsApi } from '@/api/knowhub/blog'
-import type { ArticlePortalRecord, ArticlePortalSearchQuery } from '@/types/api/knowhub/article'
+import type { ArticlePortalRecord, ArticlePortalSearchQuery, PortalArticleStatsRecord } from '@/types/api/knowhub/article'
 import type { HotTagRecord } from '@/types/api/knowhub/tag'
 import type { NormalizedPageResult } from '@/types/api/common'
 import { formatDateTime } from '@/utils/format'
@@ -37,28 +40,38 @@ const keyword = ref('')
 const hotTags = ref<HotTagRecord[]>([])
 const tagRanking = computed(() => hotTags.value.slice(0, 10))
 
+/** 标签云最大展示数：超出折叠进"更多"（按标签排行 contentCount 降序，与侧栏排行同序） */
+const TAG_LIMIT = 12
+const tagExpanded = ref(false)
+/** 标签云展示项：折叠时只取前 TAG_LIMIT 个（即排行前 N），展开时全部 */
+const visibleTags = computed(() =>
+  tagExpanded.value ? hotTags.value : hotTags.value.slice(0, TAG_LIMIT),
+)
+const hasMoreTags = computed(() => hotTags.value.length > TAG_LIMIT)
+
 const toggleTag = (tagId: number) => {
   const idx = selectedTagIds.value.indexOf(tagId)
   if (idx >= 0) selectedTagIds.value.splice(idx, 1)
   else selectedTagIds.value.push(tagId)
 }
 
-/** 文档列表（真实接口分页） */
+/** 文档列表（真实接口分页：后端 PageUtil.startPage 从请求参数读 pageNum/pageSize） */
 const docList = ref<ArticlePortalRecord[]>([])
 const total = ref(0)
 const pageNum = ref(1)
-const pageSize = 9
+const pageSize = ref(9)
 const loading = ref(false)
 
 /** 侧栏推荐文档（/portal/article/recommend 兜底全局热门，取 6 条） */
 const hotDocs = ref<ArticlePortalRecord[]>([])
 
-/** 概览卡数据（从真实标签榜+列表 total 派生） */
-const publishedDocCount = computed(() => total.value)
-const tagCount = computed(() => hotTags.value.length)
-const totalChapters = computed(() => docList.value.reduce((s, d) => s + (d.chapterCount ?? 0), 0))
+/** 文库统计（独立接口 /portal/article/stats，固定口径，不随搜索/翻页/标签过滤变动） */
+const stats = ref<PortalArticleStatsRecord>({ publishedDocCount: 0, totalChapters: 0, tagCount: 0 })
+const publishedDocCount = computed(() => stats.value.publishedDocCount)
+const totalChapters = computed(() => stats.value.totalChapters)
+const tagCount = computed(() => stats.value.tagCount)
 
-/** 拉取文档列表（搜索/标签/排序/分页变化时触发） */
+/** 拉取文档列表（搜索/标签/排序/分页变化时触发，显式带 pageNum/pageSize 让后端分页真生效） */
 const fetchDocs = async () => {
   loading.value = true
   try {
@@ -67,6 +80,8 @@ const fetchDocs = async () => {
       keyword: keyword.value.trim() || undefined,
       tagIds: selectedTagIds.value.length ? selectedTagIds.value : undefined,
       sort: sortApi,
+      pageNum: pageNum.value,
+      pageSize: pageSize.value,
     }
     const res: NormalizedPageResult<ArticlePortalRecord> = await searchArticlesApi(query)
     docList.value = (res.records ?? []).map((d) => ({
@@ -79,70 +94,108 @@ const fetchDocs = async () => {
   }
 }
 
-/** 翻页 */
-const onPageChange = (p: number) => {
+/** 翻页 / 切每页条数：切 size 时组件已把页码置 1 抛回 */
+const onPageChange = (p: number, sz: number) => {
   pageNum.value = p
+  pageSize.value = sz
   void fetchDocs()
 }
 
-/** 拉取标签云 + 侧栏推荐 */
-const fetchTagsAndHot = async () => {
-  const [tagRes, hotRes] = await Promise.all([
+/** 拉取标签云 + 侧栏推荐 + 文库统计（三个独立口径的数据，进页面拉一次，不随搜索/翻页变） */
+const fetchTagsHotAndStats = async () => {
+  const [tagRes, hotRes, statsRes] = await Promise.all([
     hotTagsApi(50),
     recommendArticlesApi(6),
+    getArticleStatsApi(),
   ])
   hotTags.value = tagRes.data ?? []
   hotDocs.value = (hotRes.data ?? []).map((d) => ({
     ...d,
     publishTime: d.publishTime ? (formatDateTime(d.publishTime) as string) : d.publishTime,
   }))
+  if (statsRes.data) stats.value = statsRes.data
 }
 
-/** 搜索/标签/排序变化时回到第一页重新拉取 */
-watch([keyword, selectedTagIds, sortKey], () => {
+/** 搜索（按钮/回车触发，非实时）：回第一页重新拉取 */
+const onSearch = () => {
+  pageNum.value = 1
+  void fetchDocs()
+}
+
+/** 标签/排序变化时回到第一页重新拉取（搜索走显式按钮触发，不实时） */
+watch([selectedTagIds, sortKey], () => {
   pageNum.value = 1
   void fetchDocs()
 })
 
 onMounted(() => {
-  void fetchTagsAndHot()
+  void fetchTagsHotAndStats()
   void fetchDocs()
 })
 </script>
 
 <template>
   <div class="docs">
+    <!-- hero：左标题+搜索+标签云 / 右文库统计（对标笔记导航概览卡） -->
     <section class="docs__hero">
-      <div class="kh-container kh-container--wide">
-        <h1 class="docs__title">文档学习</h1>
-        <p class="docs__subtitle">系统化的章节式学习文档 · 支持标题 / 简介 / 章节内容全检索，命中章节一键直达</p>
-        <div class="docs__search">
-          <el-icon class="docs__search-icon"><Search /></el-icon>
-          <input
-            v-model="keyword"
-            class="docs__search-input"
-            placeholder="搜索文档标题、简介或章节内容…"
-            @keyup.enter="pageNum = 1; fetchDocs()"
-          />
-          <button class="docs__search-btn" type="button" @click="pageNum = 1; fetchDocs()">搜索</button>
+      <div class="kh-container kh-container--wide docs__hero-grid">
+        <div class="docs__hero-main">
+          <h1 class="docs__title">文档学习</h1>
+          <p class="docs__subtitle">系统化的章节式学习文档 · 支持标题 / 简介 / 章节内容全检索，命中章节一键直达</p>
+          <div class="docs__search">
+            <el-icon class="docs__search-icon"><Search /></el-icon>
+            <input
+              v-model="keyword"
+              class="docs__search-input"
+              placeholder="搜索文档标题、简介或章节内容…"
+              @keyup.enter="onSearch"
+            />
+            <button class="docs__search-btn" type="button" @click="onSearch">搜索</button>
+          </div>
+
+          <!-- 标签云：最多展示 TAG_LIMIT 个，超出折叠进"更多"（按标签排行 contentCount 降序） -->
+          <div class="docs__tagcloud">
+            <span class="docs__tagcloud-label"><KhIcon name="tag" :size="14" /> 全部标签</span>
+            <button
+              v-for="t in visibleTags"
+              :key="t.tagId"
+              class="docs__tagchip"
+              :class="{ 'is-active': selectedTagIds.includes(t.tagId) }"
+              type="button"
+              @click="toggleTag(t.tagId)"
+            >
+              {{ t.tagName }}
+              <span class="docs__tagchip-count">{{ t.contentCount ?? 0 }}</span>
+            </button>
+            <span v-if="!hotTags.length" class="docs__tagcloud-empty">暂无标签，待文档发布后收录</span>
+            <button
+              v-if="hasMoreTags"
+              class="docs__tag-more"
+              type="button"
+              @click="tagExpanded = !tagExpanded"
+            >
+              {{ tagExpanded ? '收起' : `更多 (${hotTags.length - TAG_LIMIT})` }}
+              <el-icon><ArrowDown v-if="!tagExpanded" /><ArrowUp v-else /></el-icon>
+            </button>
+          </div>
         </div>
 
-        <!-- 标签云（公开 /portal/tag/hot，与笔记导航共用同一榜单） -->
-        <div class="docs__tagcloud">
-          <span class="docs__tagcloud-label"><KhIcon name="tag" :size="14" /> 全部标签</span>
-          <button
-            v-for="t in hotTags"
-            :key="t.tagId"
-            class="docs__tagchip"
-            :class="{ 'is-active': selectedTagIds.includes(t.tagId) }"
-            type="button"
-            @click="toggleTag(t.tagId)"
-          >
-            {{ t.tagName }}
-            <span class="docs__tagchip-count">{{ t.contentCount ?? 0 }}</span>
-          </button>
-          <span v-if="!hotTags.length" class="docs__tagcloud-empty">暂无标签，待文档发布后收录</span>
-        </div>
+        <!-- 右：文库统计卡（竖列样式，对标博客导航概览卡布局位置，保留原有竖列数据呈现） -->
+        <aside class="docs__overview">
+          <div class="docs__overview-head">
+            <KhIcon name="doc" :size="16" />
+            <span>文库统计</span>
+          </div>
+          <div class="docs__overview-rows">
+            <div class="docs__overview-row"><span>已发布文档</span><b>{{ publishedDocCount }}</b></div>
+            <div class="docs__overview-row"><span>本章页章节</span><b>{{ totalChapters }}</b></div>
+            <div class="docs__overview-row"><span>收录标签</span><b>{{ tagCount }}</b></div>
+          </div>
+          <div class="docs__overview-hint">
+            <KhIcon name="search" :size="13" />
+            <span>用关键词或标签缩小范围，快速定位章节式文档</span>
+          </div>
+        </aside>
       </div>
     </section>
 
@@ -164,34 +217,20 @@ onMounted(() => {
         </div>
 
         <div v-if="docList.length" class="docs__grid">
-          <DocCard v-for="d in docList" :key="d.articleId" :doc="d" />
+          <ArticleCard v-for="d in docList" :key="d.articleId" :doc="d" />
         </div>
         <KhCard v-else-if="!loading" padding="lg" class="docs__empty">
           <KhIcon name="search" :size="40" :stroke="1.4" />
           <p>没有匹配的文档，换个关键词或标签试试</p>
         </KhCard>
 
-        <div v-if="docList.length && total > pageSize" class="docs__pager">
-          <el-pagination
-            layout="prev, pager, next"
-            :total="total"
-            :page-size="pageSize"
-            :current-page="pageNum"
-            background
-            @current-change="onPageChange"
-          />
+        <div v-if="docList.length" class="docs__pager">
+          <KhPagination v-model:current="pageNum" v-model:page-size="pageSize" :total="total" @change="onPageChange" />
         </div>
       </div>
 
-      <!-- 侧栏：统计 + 标签排行 + 热门文档 -->
+      <!-- 侧栏：标签排行 + 热门文档（统计已挪到 hero 右侧） -->
       <aside class="docs__aside">
-        <KhCard padding="md" class="docs__stat">
-          <div class="docs__stat-title">文档库统计</div>
-          <div class="docs__stat-row"><span>已发布文档</span><b>{{ publishedDocCount }}</b></div>
-          <div class="docs__stat-row"><span>本章页章节数</span><b>{{ totalChapters }}</b></div>
-          <div class="docs__stat-row"><span>收录标签</span><b>{{ tagCount }}</b></div>
-        </KhCard>
-
         <KhCard padding="md" class="docs__panel">
           <KhSectionTitle title="标签排行" />
           <ol v-if="tagRanking.length" class="docs__rank">
@@ -213,7 +252,7 @@ onMounted(() => {
         <KhCard padding="md" class="docs__panel">
           <KhSectionTitle title="近期热门" subtitle="推荐文档" />
           <ul v-if="hotDocs.length" class="docs__hot">
-            <li v-for="(d, i) in hotDocs" :key="d.articleId" class="docs__hot-item" @click="$router.push(`/docs/${d.articleId}`)">
+            <li v-for="(d, i) in hotDocs" :key="d.articleId" class="docs__hot-item" @click="$router.push(`/article/${d.articleId}`)">
               <span class="docs__hot-no" :class="{ 'is-top': i < 3 }">{{ i + 1 }}</span>
               <div class="docs__hot-text">
                 <div class="docs__hot-title kh-line-clamp-2">{{ d.title }}</div>
@@ -233,12 +272,24 @@ onMounted(() => {
 
 <style scoped>
 .docs__hero {
+  position: relative;
   padding: var(--kh-space-12) 0 var(--kh-space-10);
   background: var(--kh-gradient-hero);
+  overflow: hidden;
+}
+.docs__hero-grid {
+  display: grid;
+  grid-template-columns: 1fr 240px;
+  gap: var(--kh-space-8);
+  align-items: center;
+}
+.docs__hero-main {
+  min-width: 0;
 }
 .docs__title {
   font-size: var(--kh-font-size-4xl);
   font-weight: 700;
+  letter-spacing: -0.01em;
 }
 .docs__subtitle {
   margin-top: var(--kh-space-3);
@@ -248,15 +299,14 @@ onMounted(() => {
 .docs__search {
   display: flex;
   align-items: center;
-  gap: var(--kh-space-3);
+  gap: var(--kh-space-2);
   margin-top: var(--kh-space-5);
   height: 48px;
-  padding: 0 var(--kh-space-4);
+  padding: 0 6px 0 var(--kh-space-4);
   background: var(--kh-surface);
   border: 1px solid var(--kh-border);
   border-radius: var(--kh-radius-pill);
   box-shadow: var(--kh-shadow-sm);
-  max-width: 760px;
 }
 .docs__search-icon { color: var(--kh-text-tertiary); }
 .docs__search-input {
@@ -276,6 +326,72 @@ onMounted(() => {
   font-weight: 600;
   font-size: var(--kh-font-size-sm);
   cursor: pointer;
+}
+
+/* —— 右侧文库统计卡（竖列数据样式，保留原有呈现） —— */
+.docs__overview {
+  position: relative;
+  padding: var(--kh-space-5);
+  background: var(--kh-surface);
+  border: 1px solid var(--kh-border-soft);
+  border-radius: var(--kh-radius-lg);
+  box-shadow: var(--kh-shadow-sm);
+  display: flex;
+  flex-direction: column;
+  gap: var(--kh-space-3);
+}
+.docs__overview::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: var(--kh-radius-lg);
+  background: var(--kh-gradient-card);
+  pointer-events: none;
+}
+.docs__overview-head {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--kh-text-secondary);
+  font-size: var(--kh-font-size-sm);
+  font-weight: 600;
+  margin-bottom: var(--kh-space-2);
+}
+.docs__overview-rows {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+.docs__overview-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 0;
+  font-size: 12px;
+  color: var(--kh-text-secondary);
+  border-bottom: 1px dashed var(--kh-border-soft);
+}
+.docs__overview-row:last-child {
+  border-bottom: none;
+}
+.docs__overview-row b {
+  font-family: var(--kh-font-display);
+  font-size: var(--kh-font-size-md);
+  color: var(--kh-primary);
+  font-weight: 700;
+}
+.docs__overview-hint {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: var(--kh-space-3);
+  border-radius: var(--kh-radius);
+  background: var(--kh-primary-soft);
+  color: var(--kh-primary-strong);
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 /* 标签云 */
@@ -315,6 +431,22 @@ onMounted(() => {
 .docs__tagchip.is-active .docs__tagchip-count { color: rgba(255, 255, 255, 0.8); }
 .docs__tagchip-count { font-family: var(--kh-font-mono); font-size: 10px; color: var(--kh-text-tertiary); }
 .docs__tagcloud-empty { font-size: 12px; color: var(--kh-text-tertiary); padding: 4px 0; }
+.docs__tag-more {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 5px 12px;
+  border: 1px dashed var(--kh-border);
+  border-radius: var(--kh-radius-pill);
+  background: transparent;
+  color: var(--kh-text-secondary);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all var(--kh-transition-fast);
+}
+.docs__tag-more:hover { border-color: var(--kh-primary-border); color: var(--kh-primary); }
+.docs__tag-more .el-icon { font-size: 11px; }
 
 .docs__body {
   display: grid;
@@ -380,18 +512,6 @@ onMounted(() => {
   position: sticky;
   top: calc(var(--kh-header-height) + var(--kh-space-4));
 }
-.docs__stat-title { font-size: var(--kh-font-size-sm); font-weight: 600; color: var(--kh-text); margin-bottom: var(--kh-space-3); }
-.docs__stat-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 8px 0;
-  font-size: 12px;
-  color: var(--kh-text-secondary);
-  border-bottom: 1px dashed var(--kh-border-soft);
-}
-.docs__stat-row:last-child { border-bottom: none; }
-.docs__stat-row b { font-family: var(--kh-font-display); font-size: var(--kh-font-size-md); color: var(--kh-primary); font-weight: 700; }
 
 /* 标签排行 */
 .docs__rank { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--kh-space-3); }
@@ -414,6 +534,7 @@ onMounted(() => {
 .docs__panel-empty p { font-size: 12px; }
 
 @media (max-width: 1024px) {
+  .docs__hero-grid { grid-template-columns: 1fr; }
   .docs__body { grid-template-columns: 1fr; }
   .docs__aside { position: static; }
 }

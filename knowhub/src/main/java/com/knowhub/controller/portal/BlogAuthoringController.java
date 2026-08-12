@@ -2,7 +2,9 @@ package com.knowhub.controller.portal;
 
 import com.github.pagehelper.PageInfo;
 import com.knowhub.pojo.blog.quarry.BlogQuarry;
+import com.knowhub.pojo.blog.vo.BlogPortalVo;
 import com.knowhub.pojo.blog.vo.BlogVo;
+import com.knowhub.service.blog.impl.BlogPortalService;
 import com.knowhub.service.blog.impl.BlogService;
 import com.knowhub.support.BlogPermissionResolver;
 import com.rookie.common.annotation.Log;
@@ -36,6 +38,9 @@ public class BlogAuthoringController {
 
     @Autowired
     BlogService blogService;
+
+    @Autowired
+    BlogPortalService blogPortalService;
 
     @GetMapping("/level")
     @Operation(summary = "当前用户博客 view 等级（创作页等级选择器权限感知，0/1/2/3）")
@@ -122,5 +127,15 @@ public class BlogAuthoringController {
                                           @RequestParam(required = false, defaultValue = "true") Boolean collected) {
         Boolean b = blogService.toggleCollect(blogId, collected);
         return Result.success(b);
+    }
+
+    @GetMapping("/collect/list")
+    @Operation(summary = "我的博客收藏列表（按收藏时间倒序，仅前台可见口径的已发布博客）")
+    @PreAuthorize("isAuthenticated()")
+    public Result<PageInfo<BlogPortalVo>> myCollected(
+            @RequestParam(defaultValue = "1") int pageNum,
+            @RequestParam(defaultValue = "20") int pageSize) {
+        PageInfo<BlogPortalVo> page = blogPortalService.listMyCollected(pageNum, pageSize);
+        return Result.success(page);
     }
 }

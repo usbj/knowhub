@@ -38,6 +38,13 @@ public interface ProjectPortalMapper {
                                         @Param("size") int size);
 
     /**
+     * 按 ID 集合取前台可见项目 VO（前台铁律过滤：deleted=0 AND status='PUBLISHED' AND level<=userViewLevel）。
+     * 供"我的收藏"列表用：service 传收藏项目 ID 集，取"收藏 ∩ 前台可见"全量 VO，再按收藏时间倒序排。
+     */
+    List<ProjectPortalVo> listByIds(@Param("userViewLevel") Integer userViewLevel,
+                                     @Param("projectIds") List<Long> projectIds);
+
+    /**
      * 详情元数据（含 level + 各计数，不含 description 大字段；无 level 过滤——service 据此判越级锁态）。
      * 加 status='PUBLISHED' 约束避免泄草稿/驳回态（service 锁态后再按等级限正文）。
      */

@@ -750,7 +750,7 @@ Accept-Ranges: none
 
 **权限**：`knowhub:resource:info`
 
-**响应**：`Result<ResourceVo>`，比列表多回填：description(大字段)/hasLiked/hasCollected/myScore(当前用户态)/downloadUrl(FILE类型按访问模式回填,中转/file/proxy/{objectId}或预签名，调 `getDownloadUrl(id, true)` 跳过 owner 闸)/originalName/contentLength/contentType/**fileAccess**(join file_object.access 带出，PUBLIC/PRIVATE，编辑回填前端上传表单回显访问语义)。
+**响应**：`Result<ResourceVo>`，比列表多回填：description(大字段)/hasLiked/hasCollected/myScore(当前用户态)/downloadUrl(FILE类型按访问模式回填,中转/file/proxy/{objectId}或预签名，调 `getDownloadUrl(id, true)` 跳过 owner 闸)/originalName/contentLength/contentType。
 
 #### `POST /resource` — 新增资源（草稿）
 
@@ -832,7 +832,7 @@ Accept-Ranges: none
 
 **权限**：`knowhub:resource:download`
 
-**逻辑**：校验 PUBLISHED + FILE 类型 + fileObjectId 非空；`download_count+1`（原子自增）；调 `FileService.getDownloadUrl(fileObjectId, true)`（bizAuthorized=true 跳过文件底座 owner 闸——资源层已校验 PUBLISHED 业务可见性，登录非上传人/无 `knowhub:file:review` 的普通用户也可下别人上传的 PUBLISHED 资源）取下载链接（中转模式 /file/proxy/{objectId}；直链模式带 attachment;filename 预签名）。LINK 类型不走此接口（前端直接用 linkUrl 外链打开）。资源文件 access（PUBLIC/PRIVATE）由上传表单的"访问语义"单选决定，落 `file_object.access`；下载统一走本业务接口（公开资源也经鉴权计数，不走匿名 `/file/public` 直链）。
+**逻辑**：校验 PUBLISHED + FILE 类型 + fileObjectId 非空；`download_count+1`（原子自增）；调 `FileService.getDownloadUrl(fileObjectId, true)`（bizAuthorized=true 跳过文件底座 owner 闸——资源层已校验 PUBLISHED 业务可见性，登录非上传人/无 `knowhub:file:review` 的普通用户也可下别人上传的 PUBLISHED 资源）取下载链接（中转模式 /file/proxy/{objectId}；直链模式带 attachment;filename 预签名）。LINK 类型不走此接口（前端直接用 linkUrl 外链打开）。资源文件 access 当前固定 PRIVATE（`RESOURCE_FILE` 枚举默认），后期以 L1~L3 等级落地（语义：L1 公开/非 L1 私有），届时 `access` 不再走枚举默认。
 
 **响应**：`Result<String>`（下载链接字符串）
 
@@ -1061,7 +1061,7 @@ Accept-Ranges: none
 
 **请求体**：`ProjectFileVo`（projectId/name/objectId 必填/parentId/sort）
 
-**逻辑**：is_dir=0，关联 file_object.object_id（前端先走预签名上传流程拿 objectId 再调本接口）；`canOp(edit)` 校验；绑 file_object.biz_ref_id=projectId（级联删依据）。
+**逻辑**：is_dir=0，关联 file_object.object_id（前端先走预签名上传流程拿 objectId 再调本接口）；`canOp(edit)` 校验；绑 file_object.biz_ref_id=projectId（级联删依据）。**上传文件 access 按项目等级派生**（前端 `presignedUploadFlow` 透传）：L1→PUBLIC（公开，走 `/file/public` 直链）、L2/L3 及未知等级→PRIVATE（私有，走 `/file/proxy` 中转，下载仍由项目层 `canOp(download)` 鉴权后 `getDownloadUrl(objectId, true)` 跳过文件底座 owner 闸）；与资源模块的"后期再加 L1~L3 权限"方向一致（非 L1 即私有），项目模块先行落地。
 
 **响应**：`Result<Boolean>`
 

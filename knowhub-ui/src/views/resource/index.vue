@@ -9,10 +9,11 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { Search } from '@element-plus/icons-vue'
-import { ElOption, ElSelect, ElPagination } from 'element-plus'
+import { ElOption, ElSelect } from 'element-plus'
 import KhCard from '@/components/common/KhCard.vue'
 import KhIcon from '@/components/common/KhIcon.vue'
 import KhSectionTitle from '@/components/common/KhSectionTitle.vue'
+import KhPagination from '@/components/common/KhPagination.vue'
 import ResourceCard from '@/components/resource/ResourceCard.vue'
 import { useRouter } from 'vue-router'
 import { searchResourcesApi, getResourceCategoryTreeApi } from '@/api/knowhub/resource-portal'
@@ -141,8 +142,9 @@ const onSearchClear = () => {
   void fetchList()
 }
 
-const onPageChange = (p: number) => {
+const onPageChange = (p: number, sz: number) => {
   pageNum.value = p
+  pageSize.value = sz
   void fetchList()
 }
 const goDetail = (id: number) => router.push(`/resource/${id}`)
@@ -272,14 +274,12 @@ void toast
 
         <!-- 分页：始终展示，便于用户翻页（即使当前页数=1组件内部会自适应） -->
         <div class="res__pager">
-          <ElPagination
-            layout="prev, pager, next, total"
-            :current-page="pageNum"
-            :page-size="pageSize"
+          <KhPagination
+            v-model:current="pageNum"
+            v-model:page-size="pageSize"
             :total="total"
-            :hide-on-single-page="false"
-            background
-            @current-change="onPageChange"
+            :page-sizes="[12, 24, 36, 60]"
+            @change="onPageChange"
           />
         </div>
       </div>

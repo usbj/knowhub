@@ -36,6 +36,8 @@ export interface ProjectPortalDetailRecord extends ProjectPortalRecord {
   lockReason?: string | null
   /** 当前用户对该项目的下载权限态（前端据此控制文件树下载按钮显隐） */
   canDownload?: boolean
+  /** 当前用户是否已收藏（登录态回填，未登录为 null；项目无点赞链路，仅收藏） */
+  hasCollected?: boolean | null
 }
 
 /**

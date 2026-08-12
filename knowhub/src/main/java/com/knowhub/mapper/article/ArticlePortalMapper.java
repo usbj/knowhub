@@ -6,6 +6,7 @@ import com.knowhub.pojo.article.vo.ArticlePortalVo;
 import com.knowhub.pojo.article.vo.ChapterContentVo;
 import com.knowhub.pojo.article.vo.ChapterOutlineVo;
 import com.knowhub.pojo.article.vo.MatchedChapterVo;
+import com.knowhub.pojo.article.vo.PortalArticleStatsVo;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
@@ -34,6 +35,14 @@ public interface ArticlePortalMapper {
                                        @Param("excludeArticleId") Long excludeArticleId,
                                        @Param("excludeArticleIds") List<Long> excludeArticleIds,
                                        @Param("size") int size);
+
+    /**
+     * 按 ID 集合取前台可见文章 VO（前台铁律过滤：deleted=0 AND status='PUBLISHED' AND level<=userViewLevel）。
+     * 供"我的收藏"列表用：service 传收藏文章 ID 集，取"收藏 ∩ 前台可见"全量 VO，再按收藏时间倒序排。
+     * 越级文章（level>userViewLevel）自然被过滤——前台铁律，不泄越级内容。
+     */
+    List<ArticlePortalVo> listByIds(@Param("userViewLevel") Integer userViewLevel,
+                                    @Param("articleIds") List<Long> articleIds);
 
     /** 相关推荐：同 tag 文章排除自身，按热度，limit size */
     List<ArticlePortalVo> relatedArticles(@Param("articleId") Long articleId,
@@ -65,4 +74,10 @@ public interface ArticlePortalMapper {
 
     /** 批量回填章节数量（防 N+1，service 层分组） */
     List<Map<String, Object>> getChapterCountByArticleIds(@Param("articleIds") List<Long> articleIds);
+
+    /**
+     * 前台文库全量统计（/portal/article/stats 出参）：已发布且越权过滤后的文章数 + 这些文章下的已发布章节数 + 启用标签总数。
+     * 固定口径，与搜索/翻页/标签过滤无关。章节数走 chapter join article 应用文章铁律（status PUBLISHED + level<=userViewLevel）。
+     */
+    PortalArticleStatsVo getPortalStats(@Param("userViewLevel") Integer userViewLevel);
 }

@@ -5,6 +5,7 @@
  * 非发布资源前台根本不下发（详情查不到返 404 语义）。推荐 feed 退化为全局热门兜底（无用户偏好源）。
  * 侧栏"热门下载榜""最近上传榜"直接复用 search 接口带 sort=HOT/LATEST + pageSize，不单独建榜接口。
  */
+import type { AxiosRequestConfig } from 'axios'
 import { get, getPage } from '@/utils/http'
 import type { ApiResult } from '@/types/api/common'
 import type { NormalizedPageResult } from '@/types/api/common'
@@ -38,15 +39,16 @@ const portalSearchParamsSerializer = (params: Record<string, unknown>): string =
   return sp.toString()
 }
 
-export const searchResourcesApi = (query: ResourcePortalSearchQuery) =>
-  getPage<ResourcePortalRecord>('/portal/resource/search', { params: query, paramsSerializer: portalSearchParamsSerializer })
+export const searchResourcesApi = (query: ResourcePortalSearchQuery, config?: AxiosRequestConfig) =>
+  getPage<ResourcePortalRecord>('/portal/resource/search', { params: query, paramsSerializer: portalSearchParamsSerializer, ...config })
 
 /**
  * 前台资源推荐 feed（全局热门兜底，资源无用户偏好源；详情页相关推荐时排除当前 resourceId）。
  */
-export const recommendResourcesApi = (size = 10, excludeResourceId?: number) =>
+export const recommendResourcesApi = (size = 10, excludeResourceId?: number, config?: AxiosRequestConfig) =>
   get<ApiResult<ResourcePortalRecord[]>>('/portal/resource/recommend', {
     params: { size, excludeResourceId },
+    ...config,
   })
 
 /**

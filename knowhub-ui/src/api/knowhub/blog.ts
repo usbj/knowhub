@@ -4,6 +4,7 @@
  * 列表/搜索/推荐/相关/标签榜走 get + getPage；详情越级锁态由后端返回 locked 字段。
  * 作者创作（/authoring/blog/**）走 authenticated，需登录态，见 authoring.ts。
  */
+import type { AxiosRequestConfig } from 'axios'
 import { get, getPage } from '@/utils/http'
 import type { ApiResult } from '@/types/api/common'
 import type { NormalizedPageResult } from '@/types/api/common'
@@ -11,6 +12,7 @@ import type {
   BlogPortalRecord,
   BlogPortalDetailRecord,
   BlogPortalSearchQuery,
+  PortalBlogStatsRecord,
 } from '@/types/api/knowhub/blog'
 import type { HotTagRecord, TagRecord } from '@/types/api/knowhub/tag'
 
@@ -21,10 +23,15 @@ import type { HotTagRecord, TagRecord } from '@/types/api/knowhub/tag'
 export const searchBlogsApi = (query: BlogPortalSearchQuery) =>
   getPage<BlogPortalRecord>('/portal/blog/search', { params: query })
 
+/** 前台博客全量统计（已发布博客数+累计阅读+标签数，固定口径，不受搜索/过滤影响） */
+export const getBlogStatsApi = () =>
+  get<ApiResult<PortalBlogStatsRecord>>('/portal/blog/stats')
+
 /** 前台个性化推荐 feed（登录用户按偏好 tag，未登录/无行为走全局热门兜底） */
-export const recommendBlogsApi = (size = 10, excludeBlogId?: number) =>
+export const recommendBlogsApi = (size = 10, excludeBlogId?: number, config?: AxiosRequestConfig) =>
   get<ApiResult<BlogPortalRecord[]>>('/portal/blog/recommend', {
     params: { size, excludeBlogId },
+    ...config,
   })
 
 /** 前台博客详情（越级锁态降级，locked=true 时 content 为 null） */
@@ -38,8 +45,8 @@ export const relatedBlogsApi = (blogId: number, size = 10) =>
   })
 
 /** 标签热度榜（统计 blog_tag + article_tag） */
-export const hotTagsApi = (size = 20) =>
-  get<ApiResult<HotTagRecord[]>>('/portal/tag/hot', { params: { size } })
+export const hotTagsApi = (size = 20, config?: AxiosRequestConfig) =>
+  get<ApiResult<HotTagRecord[]>>('/portal/tag/hot', { params: { size }, ...config })
 
 /** 全部启用标签（创作页标签选择器数据源，仅 tagId+tagName，后端 TagOptionVo） */
 export const listEnabledTagsApi = () =>

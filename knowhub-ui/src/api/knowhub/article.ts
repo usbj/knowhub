@@ -12,6 +12,7 @@ import type {
   ArticlePortalDetailRecord,
   ArticlePortalSearchQuery,
   ChapterContentRecord,
+  PortalArticleStatsRecord,
 } from '@/types/api/knowhub/article'
 
 /**
@@ -20,6 +21,10 @@ import type {
  */
 export const searchArticlesApi = (query: ArticlePortalSearchQuery) =>
   getPage<ArticlePortalRecord>('/portal/article/search', { params: query })
+
+/** 前台文库全量统计（已发布文档数+章节数+标签数，固定口径，不受搜索/过滤影响） */
+export const getArticleStatsApi = () =>
+  get<ApiResult<PortalArticleStatsRecord>>('/portal/article/stats')
 
 /** 前台文章个性化推荐 feed（标签命中×5+收藏×3+点赞×2+浏览×1+时间衰减多维打分） */
 export const recommendArticlesApi = (size = 10, excludeArticleId?: number) =>
@@ -65,5 +70,6 @@ export type {
   ArticlePortalDetailRecord,
   ArticlePortalSearchQuery,
   ChapterContentRecord,
+  PortalArticleStatsRecord,
 }
 export type { NormalizedPageResult }

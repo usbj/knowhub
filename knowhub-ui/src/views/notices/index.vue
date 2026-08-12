@@ -1,44 +1,93 @@
 <!--
   公告列表页 /notices
   ------------------------------------------------------------------
-  顶栏公告下拉"查看全部"的落脚页。顶部分类筛选 + 公告卡片列表。
-  demo 阶段用本地 mock，真实接口：缺面向访客的公开公告接口（见计划）。
+  顶栏公告下拉"查看全部"的落脚页。顶部分类筛选 + 公告卡片列表 + 分页器。
+  接 /portal/notice/list 公开公告接口（群发+已发布，未登录访客可读），点"查看详情"开固定大小弹窗，
+  正文用 v-md-preview 渲染 markdown（与博客详情同款 github 主题）。
+  noticeType 字典 code（NOTICE/NOTIFY/REMIND）内联映射，不引字典预加载（公开页可能未登录）。
 -->
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import KhCard from '@/components/common/KhCard.vue'
 import KhTag from '@/components/common/KhTag.vue'
 import KhIcon from '@/components/common/KhIcon.vue'
-import { notices } from '@/mock/notice'
+import { getPublicNoticesApi } from '@/api/system/notice-portal'
+import type { NoticePortalRecord } from '@/types/api/notice-portal'
+import { useNoticeStore } from '@/stores/notice'
+import { formatDateTime } from '@/utils/format'
 
-type FilterKey = 'ALL' | '系统' | '活动' | '维护' | '更新'
+const noticeStore = useNoticeStore()
+
+type FilterKey = 'ALL' | 'NOTICE' | 'NOTIFY' | 'REMIND'
 const filterKey = ref<FilterKey>('ALL')
-const filters: { key: FilterKey; label: string; tone?: string }[] = [
+const filters: { key: FilterKey; label: string }[] = [
   { key: 'ALL', label: '全部' },
-  { key: '更新', label: '更新' },
-  { key: '活动', label: '活动' },
-  { key: '维护', label: '维护' },
-  { key: '系统', label: '系统' },
+  { key: 'NOTICE', label: '公告' },
+  { key: 'NOTIFY', label: '通知' },
+  { key: 'REMIND', label: '提醒' },
 ]
 
-const tagType: Record<string, 'primary' | 'warm' | 'warning' | 'info'> = {
-  更新: 'primary',
-  活动: 'warm',
-  维护: 'warning',
-  系统: 'info',
+const noticeTypeMap: Record<string, string> = { NOTICE: '公告', NOTIFY: '通知', REMIND: '提醒' }
+const noticeTagType: Record<string, 'warm' | 'success' | 'primary' | 'info'> = {
+  NOTICE: 'warm',
+  NOTIFY: 'success',
+  REMIND: 'primary',
+}
+const resolveNoticeType = (code: string) => noticeTypeMap[code] ?? code
+const resolveTagType = (code: string) => noticeTagType[code] ?? 'info'
+
+/** 公告列表 + 分页态 */
+const notices = ref<NoticePortalRecord[]>([])
+const total = ref(0)
+const pageNum = ref(1)
+const pageSize = ref(10)
+const loading = ref(false)
+
+/** 按当前筛选 + 分页拉取公告列表（失败兜底空，公开页不弹错） */
+const fetchNotices = async () => {
+  loading.value = true
+  try {
+    const page = await getPublicNoticesApi({
+      pageNum: pageNum.value,
+      pageSize: pageSize.value,
+      noticeType: filterKey.value === 'ALL' ? undefined : filterKey.value,
+    })
+    notices.value = page.records ?? []
+    total.value = page.total ?? 0
+  } catch {
+    notices.value = []
+    total.value = 0
+  } finally {
+    loading.value = false
+  }
 }
 
-/** 置顶优先，再按时间倒序 */
-const sortedNotices = computed(() => {
-  const list = [...notices].sort((a, b) => b.publishTime.localeCompare(a.publishTime))
-  return list.sort((a, b) => Number(!!b.pinned) - Number(!!a.pinned))
-})
+/** 切类型筛选：重置回首页再拉 */
+const changeFilter = (key: FilterKey) => {
+  filterKey.value = key
+  pageNum.value = 1
+  void fetchNotices()
+}
 
-const filtered = computed(() =>
-  filterKey.value === 'ALL'
-    ? sortedNotices.value
-    : sortedNotices.value.filter((n) => n.type === filterKey.value),
-)
+/** 切页码 */
+const changePage = (p: number) => {
+  pageNum.value = p
+  void fetchNotices()
+}
+
+/** 各分类计数（仅当前已加载页的近似计数，用于 tab 角标；总数以分页 total 为准） */
+const countFor = (key: FilterKey) =>
+  key === 'ALL' ? total.value : notices.value.filter((n) => n.noticeType === key).length
+
+/** 点卡片"查看详情"：开全局详情弹窗（store.openDetail 注入 currentNotice，由 AppLayout 的 <KhNoticeDetailDialog> 渲染） */
+const openDetail = (n: NoticePortalRecord) => {
+  noticeStore.openDetail(n)
+}
+
+/** 公告列表已按置顶优先+时间倒序返回，前端不再二次排序 */
+const sortedNotices = computed(() => notices.value)
+
+void fetchNotices()
 </script>
 
 <template>
@@ -62,12 +111,10 @@ const filtered = computed(() =>
             class="notices__filter"
             :class="{ 'is-active': filterKey === f.key }"
             type="button"
-            @click="filterKey = f.key"
+            @click="changeFilter(f.key)"
           >
             {{ f.label }}
-            <span class="notices__filter-count">
-              {{ f.key === 'ALL' ? notices.length : notices.filter((n) => n.type === f.key).length }}
-            </span>
+            <span class="notices__filter-count">{{ countFor(f.key) }}</span>
           </button>
         </div>
       </div>
@@ -75,38 +122,52 @@ const filtered = computed(() =>
 
     <!-- 公告列表 -->
     <section class="kh-container kh-container--wide notices__body">
-      <div v-if="filtered.length" class="notices__list">
+      <div v-if="sortedNotices.length" class="notices__list">
         <KhCard
-          v-for="n in filtered"
-          :key="n.id"
+          v-for="n in sortedNotices"
+          :key="n.noticeId"
           padding="lg"
           class="notice-card"
-          :class="{ 'is-pinned': n.pinned }"
+          :class="{ 'is-pinned': Number(n.isTop) === 1 }"
         >
           <div class="notice-card__head">
-            <KhTag size="sm" :type="tagType[n.type] ?? 'info'">{{ n.type }}</KhTag>
-            <span v-if="n.pinned" class="notice-card__pin"><KhIcon name="star" :size="12" /> 置顶</span>
+            <KhTag size="sm" :type="resolveTagType(n.noticeType)">{{ resolveNoticeType(n.noticeType) }}</KhTag>
+            <span v-if="Number(n.isTop) === 1" class="notice-card__pin"><KhIcon name="star" :size="12" /> 置顶</span>
             <span class="notice-card__time">
-              <KhIcon name="clock" :size="12" /> {{ n.publishTime }}
+              <KhIcon name="clock" :size="12" /> {{ formatDateTime(n.publishTime) }}
             </span>
           </div>
           <h2 class="notice-card__title">{{ n.title }}</h2>
           <p class="notice-card__content">{{ n.content }}</p>
           <div class="notice-card__foot">
             <span class="notice-card__publisher">
-              <KhIcon name="user" :size="12" /> {{ n.publisher }}
+              <KhIcon name="user" :size="12" /> {{ n.createBy ?? '系统' }}
             </span>
-            <button class="notice-card__more" type="button">
+            <button class="notice-card__more" type="button" @click="openDetail(n)">
               查看详情 <KhIcon name="arrow-right" :size="13" />
             </button>
           </div>
         </KhCard>
       </div>
-      <KhCard v-else padding="lg" class="notices__empty">
+      <KhCard v-else-if="!loading" padding="lg" class="notices__empty">
         <KhIcon name="megaphone" :size="40" :stroke="1.4" />
         <p>该分类下暂无公告</p>
       </KhCard>
+
+      <!-- 分页器 -->
+      <div v-if="total > pageSize" class="notices__pagination">
+        <el-pagination
+          background
+          layout="prev, pager, next"
+          :current-page="pageNum"
+          :page-size="pageSize"
+          :total="total"
+          @current-change="changePage"
+        />
+      </div>
     </section>
+
+    <!-- 详情弹窗已提取为全局组件 <KhNoticeDetailDialog> 挂在 AppLayout，点"查看详情"经 noticeStore.openDetail 触发 -->
   </div>
 </template>
 
@@ -248,6 +309,11 @@ const filtered = computed(() =>
   font-size: var(--kh-font-size-sm);
   color: var(--kh-text-secondary);
   line-height: 1.7;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 .notice-card__foot {
   display: flex;
@@ -285,5 +351,12 @@ const filtered = computed(() =>
   flex-direction: column;
   align-items: center;
   gap: var(--kh-space-3);
+}
+
+/* —— 分页器 —— */
+.notices__pagination {
+  display: flex;
+  justify-content: center;
+  margin-top: var(--kh-space-8);
 }
 </style>

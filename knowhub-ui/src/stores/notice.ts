@@ -10,6 +10,15 @@ import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 import { getMyNoticesApi, markAsReadApi } from '@/api/system/notice'
 import type { SysNoticeRecord } from '@/types/api/notice'
+import type { NoticePortalRecord } from '@/types/api/notice-portal'
+
+/**
+ * 通知详情弹窗可承载的记录类型。
+ * - SysNoticeRecord：通知下拉来源（/sys/notice/my，含 hasRead，无 needConfirm/hasConfirmed）。
+ * - NoticePortalRecord：公开公告列表来源（/portal/notice/list，含 needConfirm/hasConfirmed，无 hasRead）。
+ * 两者展示字段 title/content/noticeType/isTop/createBy/publishTime 兼容；确认按钮仅后者有数据支撑。
+ */
+export type NoticeDetailRecord = SysNoticeRecord | NoticePortalRecord
 
 export const useNoticeStore = defineStore('notice', () => {
   const myNotices = ref<SysNoticeRecord[]>([])
@@ -63,12 +72,34 @@ export const useNoticeStore = defineStore('notice', () => {
     await markAsReadApi(noticeId)
   }
 
+  // ---- 全局通知详情弹窗态（顶栏下拉 + 公告列表页共用 <KhNoticeDetailDialog>）----
+  /** 弹窗可见性：v-model:visible 双向绑定挂载在 AppLayout 的全局组件 */
+  const detailVisible = ref(false)
+  /** 当前展开详情的通知（下拉源 SysNoticeRecord 或列表源 NoticePortalRecord） */
+  const currentNotice = ref<NoticeDetailRecord | null>(null)
+
+  /**
+   * 打开通知详情弹窗。任意来源（顶栏下拉 / 公告列表卡）统一入口。
+   * 调用方先自行 markAsRead（若需要），再 openDetail(notice)。
+   */
+  const openDetail = (notice: NoticeDetailRecord) => {
+    currentNotice.value = notice
+    detailVisible.value = true
+  }
+
+  /** 关闭弹窗：不动 currentNotice（避免关闭瞬态闪空），下次 openDetail 自然覆盖。 */
+  const closeDetail = () => {
+    detailVisible.value = false
+  }
+
   /**
    * 退出登录或登录态失效时清空通知状态，避免残留旧账号数据。
    */
   const resetNoticeState = () => {
     myNotices.value = []
     loaded.value = false
+    detailVisible.value = false
+    currentNotice.value = null
   }
 
   return {
@@ -79,5 +110,9 @@ export const useNoticeStore = defineStore('notice', () => {
     getNoticeById,
     markAsRead,
     resetNoticeState,
+    detailVisible,
+    currentNotice,
+    openDetail,
+    closeDetail,
   }
 })

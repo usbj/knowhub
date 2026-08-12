@@ -1,11 +1,12 @@
 <!--
-  文章介绍页 /docs/:id（文档详情）
+  <!--
+  文章介绍页 /article/:id（文档详情）
   ------------------------------------------------------------------
   标题信息卡（封面色条 + 标题 + 摘要 + 作者/难度/章节/阅读/时间 + 标签 + 右"开始阅读"）。
   下方两栏：左文章简介正文（v-md-preview 渲染 summary 前言）/ 右章节大纲卡（点章节进阅读页对应章）。
   越级锁态：locked=true 时仍给元数据+章节大纲（章节大纲只含章节名不泄正文），章节正文接口也会锁态拒发；
   顶部弹出 lockReason 提示，"开始阅读"按钮置灰禁用（无权看正文）。
-  返回按钮：回上一级 /docs（文档学习页）。
+  返回按钮：回上一级 /articles（文档学习页）。
 -->
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
@@ -18,28 +19,43 @@ import KhAvatar from '@/components/common/KhAvatar.vue'
 import KhStatPill from '@/components/common/KhStatPill.vue'
 import KhIcon from '@/components/common/KhIcon.vue'
 import KhSectionTitle from '@/components/common/KhSectionTitle.vue'
-import { getArticleDetailApi } from '@/api/knowhub/article'
+import KhLoading from '@/components/common/KhLoading.vue'
+import { getArticleDetailApi, likeArticleApi, collectArticleApi } from '@/api/knowhub/article'
 import type { ArticlePortalDetailRecord } from '@/types/api/knowhub/article'
 import { viewLevelTagType, getViewLevelLabel } from '@/utils/viewLevel'
 import { formatDateTime } from '@/utils/format'
+import { useUserStore } from '@/stores/user'
+import toast from '@/utils/toast'
+import { Collection } from '@element-plus/icons-vue'
 
 const route = useRoute()
 const router = useRouter()
+const userStore = useUserStore()
 
 const docId = computed(() => Number(route.params.id))
 const doc = ref<ArticlePortalDetailRecord | null>(null)
+/** 首屏取数加载态：loading 期间显 KhLoading 占位，替代 v-if="doc" 的纯空白帧 */
+const loading = ref(true)
+/** 点赞/收藏交互态：interacting 期间禁用按钮防重复点击 */
+const interacting = ref(false)
 
 const fetchDetail = async () => {
-  const res = await getArticleDetailApi(docId.value)
-  const d = res.data
-  if (!d) {
-    ElMessage.error('文档不存在或已下架')
-    return
-  }
-  if (d.publishTime) d.publishTime = formatDateTime(d.publishTime) as string
-  doc.value = d
-  if (d.locked) {
-    ElMessage.warning(d.lockReason ?? '当前内容需更高权限查看')
+  loading.value = true
+  try {
+    const res = await getArticleDetailApi(docId.value)
+    const d = res.data
+    if (!d) {
+      // 文档不存在或已下架：跳专门 404 页（404 页文案自带描述，不再弹红条避免重复提示）
+      router.replace({ name: 'not-found' })
+      return
+    }
+    if (d.publishTime) d.publishTime = formatDateTime(d.publishTime) as string
+    doc.value = d
+    if (d.locked) {
+      ElMessage.warning(d.lockReason ?? '当前内容需更高权限查看')
+    }
+  } finally {
+    loading.value = false
   }
 }
 
@@ -48,13 +64,47 @@ const startReading = (chapterId?: number) => {
   if (doc.value?.locked) return
   const ch = chapterId ?? doc.value?.chapterList?.[0]?.chapterId
   if (!ch) return
-  router.push(`/docs/${docId.value}/read/${ch}`)
+  router.push(`/article/${docId.value}/read/${ch}`)
 }
 
 /** 返回上一级：文档学习页 */
-const goUp = () => router.push('/docs')
+const goUp = () => router.push('/articles')
 
 const displayTags = computed<string[]>(() => doc.value?.tagNames ?? [])
+
+/** 点赞/收藏：未登录跳登录 + redirect 回填来源；登录态乐观更新 hasLiked/hasCollected + 计数（对齐 resource 详情范式） */
+const requireAuth = (): boolean => {
+  if (!userStore.isAuthenticated) {
+    toast('请先登录后再操作')
+    router.push({ path: '/login', query: { redirect: route.fullPath } })
+    return false
+  }
+  return true
+}
+const handleLike = async () => {
+  if (!doc.value || !requireAuth()) return
+  interacting.value = true
+  try {
+    const liked = !doc.value.hasLiked
+    await likeArticleApi(docId.value, liked)
+    doc.value.hasLiked = liked
+    doc.value.likeCount = Math.max(0, (doc.value.likeCount ?? 0) + (liked ? 1 : -1))
+  } finally {
+    interacting.value = false
+  }
+}
+const handleCollect = async () => {
+  if (!doc.value || !requireAuth()) return
+  interacting.value = true
+  try {
+    const collected = !doc.value.hasCollected
+    await collectArticleApi(docId.value, collected)
+    doc.value.hasCollected = collected
+    doc.value.collectCount = Math.max(0, (doc.value.collectCount ?? 0) + (collected ? 1 : -1))
+  } finally {
+    interacting.value = false
+  }
+}
 
 onMounted(() => void fetchDetail())
 watch(docId, () => void fetchDetail())
@@ -69,13 +119,16 @@ watch(docId, () => void fetchDetail())
       </button>
       <RouterLink to="/">首页</RouterLink>
       <el-icon class="di__crumb-sep"><KhIcon name="chevron-right" :size="12" /></el-icon>
-      <RouterLink to="/docs">文档学习</RouterLink>
+      <RouterLink to="/articles">文档学习</RouterLink>
       <el-icon class="di__crumb-sep"><KhIcon name="chevron-right" :size="12" /></el-icon>
       <span class="di__crumb-current">{{ doc?.title }}</span>
     </div>
 
+    <!-- 首屏取数加载占位：loading 期间显 KhLoading，替代头卡"加载中…"文案 + 主体空白帧 -->
+    <KhLoading v-if="loading" title="正在加载文档…" />
+
     <!-- 标题信息卡 -->
-    <div class="kh-container kh-container--wide">
+    <div v-else class="kh-container kh-container--wide">
       <KhCard v-if="doc" padding="none" class="di__head">
         <div class="di__head-cover" :style="{ background: doc.coverUrl ? `url(${doc.coverUrl}) center/cover` : 'linear-gradient(135deg,#2563eb,#0ea5e9)' }">
           <KhIcon name="doc" :size="32" class="di__head-cover-icon" />
@@ -99,12 +152,20 @@ watch(docId, () => void fetchDetail())
             </div>
           </div>
 
-          <!-- 右：开始阅读（越级锁态置灰禁用） -->
+          <!-- 右：开始阅读（越级锁态置灰禁用） + 点赞/收藏 -->
           <div class="di__head-action">
             <button class="di__read-btn" type="button" :disabled="doc.locked" @click="startReading()">
               <el-icon><Reading /></el-icon> 开始阅读
             </button>
             <span class="di__read-hint">共 {{ doc.chapterCount ?? 0 }} 章</span>
+            <div class="di__interact">
+              <button class="di__action" :class="{ 'is-active': doc.hasLiked }" type="button" :disabled="interacting" @click="handleLike">
+                <KhIcon name="heart" :size="14" /> {{ doc.likeCount ?? 0 }}
+              </button>
+              <button class="di__action" :class="{ 'is-active': doc.hasCollected }" type="button" :disabled="interacting" @click="handleCollect">
+                <el-icon><Collection /></el-icon> 收藏
+              </button>
+            </div>
           </div>
         </div>
       </KhCard>
@@ -236,6 +297,34 @@ watch(docId, () => void fetchDetail())
 .di__read-btn:disabled { opacity: 0.5; cursor: not-allowed; box-shadow: none; }
 .di__read-btn--block { width: 100%; margin-top: var(--kh-space-4); }
 .di__read-hint { font-size: 11px; color: var(--kh-text-tertiary); }
+/* 点赞/收藏按钮（与博客详情 .bd__action 同款 pill，复用主色 is-active 高亮） */
+.di__interact { display: flex; gap: 8px; margin-top: var(--kh-space-1); }
+.di__action {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 36px;
+  padding: 0 var(--kh-space-4);
+  border: 1px solid var(--kh-border);
+  border-radius: var(--kh-radius-pill);
+  background: var(--kh-surface);
+  color: var(--kh-text-secondary);
+  font-size: var(--kh-font-size-sm);
+  font-weight: 500;
+  cursor: pointer;
+  transition: all var(--kh-transition-fast);
+}
+.di__action:hover:not(:disabled) {
+  border-color: var(--kh-primary-border);
+  color: var(--kh-primary);
+  background: var(--kh-primary-soft);
+}
+.di__action.is-active {
+  background: var(--kh-primary);
+  border-color: var(--kh-primary);
+  color: #fff;
+}
+.di__action:disabled { opacity: 0.6; cursor: not-allowed; }
 
 .di__layout {
   display: grid;

@@ -10,9 +10,9 @@ const groups = [
   {
     title: '内容',
     links: [
-      { label: '笔记导航', to: '/notes' },
+      { label: '笔记导航', to: '/blogs' },
       { label: '项目展示', to: '/projects' },
-      { label: '文档学习', to: '/docs' },
+      { label: '文档学习', to: '/articles' },
       { label: '资源推荐', to: '/resources' },
     ],
   },

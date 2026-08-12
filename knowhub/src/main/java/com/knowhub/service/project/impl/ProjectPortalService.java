@@ -72,4 +72,11 @@ public interface ProjectPortalService {
      * 空文件树返回 entries 为空列表（controller 打空 zip）。
      */
     com.knowhub.pojo.project.vo.ProjectPackageBundle listProjectPackageEntries(Long projectId);
+
+    /**
+     * 我的项目收藏列表（按收藏时间倒序，仅前台可见口径已发布项目）。
+     * 取"收藏 ∩ 前台可见"的 VO 再按收藏顺序排。照 ArticlePortalService.listMyCollected 范式。
+     * 未登录防御返空（authoring controller 已 isAuthenticated 兜底，此处双保险）。
+     */
+    PageInfo<ProjectPortalVo> listMyCollected(int pageNum, int pageSize);
 }

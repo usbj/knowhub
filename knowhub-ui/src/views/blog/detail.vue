@@ -21,11 +21,14 @@ import KhStatPill from '@/components/common/KhStatPill.vue'
 import KhSectionTitle from '@/components/common/KhSectionTitle.vue'
 import KhContentToc from '@/components/common/KhContentToc.vue'
 import KhIcon from '@/components/common/KhIcon.vue'
+import KhLoading from '@/components/common/KhLoading.vue'
 import { getBlogDetailApi, relatedBlogsApi } from '@/api/knowhub/blog'
+import { likeBlogApi, collectBlogApi } from '@/api/knowhub/authoring'
 import type { BlogPortalDetailRecord, BlogPortalRecord } from '@/types/api/knowhub/blog'
 import { useStickyBottom } from '@/utils/use-footer-visible'
 import { formatDateTime } from '@/utils/format'
 import { useUserStore } from '@/stores/user'
+import toast from '@/utils/toast'
 
 const route = useRoute()
 const router = useRouter()
@@ -39,6 +42,8 @@ const stickyBottom = computed(() => `${footerVisible.value}px`)
 const blogId = computed(() => Number(route.params.id))
 const blog = ref<BlogPortalDetailRecord | null>(null)
 const related = ref<BlogPortalRecord[]>([])
+/** 首屏取数加载态：loading 期间显 KhLoading 占位，替代 v-if="blog" 的纯空白帧 */
+const loading = ref(true)
 
 /** 是否认当前作者本人（详情页编辑按钮显示条件：前台公开 VO 无 isAuthor，靠 userId===authorId 比对） */
 const isMyBlog = computed(
@@ -52,20 +57,26 @@ const goEdit = () => {
 
 /** 拉取详情 + 相关推荐 */
 const fetchDetail = async () => {
-  const res = await getBlogDetailApi(blogId.value)
-  const b = res.data
-  if (!b) {
-    ElMessage.error('博客不存在或已下架')
-    return
+  loading.value = true
+  try {
+    const res = await getBlogDetailApi(blogId.value)
+    const b = res.data
+    if (!b) {
+      // 博客不存在或已下架：跳专门 404 页（404 页文案自带描述，不再弹红条避免重复提示）
+      router.replace({ name: 'not-found' })
+      return
+    }
+    if (b.publishTime) b.publishTime = formatDateTime(b.publishTime) as string
+    blog.value = b
+    // 锁态提示：越级访问只给元数据，正文不下发
+    if (b.locked) {
+      ElMessage.warning(b.lockReason ?? '当前内容需更高权限查看完整正文')
+    }
+    // 正文 v-md-preview 异步渲染，等下一帧再计算 scroll spy 初值
+    nextTick(computeActive)
+  } finally {
+    loading.value = false
   }
-  if (b.publishTime) b.publishTime = formatDateTime(b.publishTime) as string
-  blog.value = b
-  // 锁态提示：越级访问只给元数据，正文不下发
-  if (b.locked) {
-    ElMessage.warning(b.lockReason ?? '当前内容需更高权限查看完整正文')
-  }
-  // 正文 v-md-preview 异步渲染，等下一帧再计算 scroll spy 初值
-  nextTick(computeActive)
 }
 
 const fetchRelated = async () => {
@@ -149,9 +160,41 @@ const displayTags = computed<string[]>(() => blog.value?.tagNames ?? [])
 
 const goBack = () => router.back()
 
-/** 点赞/收藏状态（demo 交互占位，复用既有 PUT /blog/like|collect 接口接入留后续） */
-const liked = computed(() => ({ value: false }))
-const collected = computed(() => ({ value: false }))
+/** 点赞/收藏交互态：interacting 期间禁用按钮防重复点击。状态来自详情 VO hasLiked/hasCollected（登录态回填）。 */
+const interacting = ref(false)
+const isLoggedIn = computed(() => userStore.isAuthenticated)
+const requireAuth = (): boolean => {
+  if (!isLoggedIn.value) {
+    toast('请先登录后再操作')
+    router.push({ path: '/login', query: { redirect: route.fullPath } })
+    return false
+  }
+  return true
+}
+const handleLike = async () => {
+  if (!blog.value || !requireAuth()) return
+  interacting.value = true
+  try {
+    const liked = !blog.value.hasLiked
+    await likeBlogApi(blogId.value, liked)
+    blog.value.hasLiked = liked
+    blog.value.likeCount = Math.max(0, (blog.value.likeCount ?? 0) + (liked ? 1 : -1))
+  } finally {
+    interacting.value = false
+  }
+}
+const handleCollect = async () => {
+  if (!blog.value || !requireAuth()) return
+  interacting.value = true
+  try {
+    const collected = !blog.value.hasCollected
+    await collectBlogApi(blogId.value, collected)
+    blog.value.hasCollected = collected
+    blog.value.collectCount = Math.max(0, (blog.value.collectCount ?? 0) + (collected ? 1 : -1))
+  } finally {
+    interacting.value = false
+  }
+}
 
 onMounted(() => {
   void fetchDetail()
@@ -172,12 +215,13 @@ watch(blogId, () => {
       </button>
       <RouterLink to="/">首页</RouterLink>
       <el-icon class="bd__crumb-sep"><KhIcon name="chevron-right" :size="12" /></el-icon>
-      <RouterLink to="/notes">笔记导航</RouterLink>
+      <RouterLink to="/blogs">笔记导航</RouterLink>
       <el-icon class="bd__crumb-sep"><KhIcon name="chevron-right" :size="12" /></el-icon>
       <span class="bd__crumb-current">{{ blog?.title }}</span>
     </div>
 
-    <div v-if="blog" class="kh-container kh-container--wide bd__layout">
+    <KhLoading v-if="loading" title="正在加载博客…" />
+    <div v-else-if="blog" class="kh-container kh-container--wide bd__layout">
       <!-- 主体 -->
       <article class="bd__main">
         <!-- 头部信息 -->
@@ -217,10 +261,10 @@ watch(blogId, () => {
 
         <!-- 底部操作 -->
         <div class="bd__actions">
-          <button class="bd__action" :class="{ 'is-active': liked.value }" type="button">
+          <button class="bd__action" :class="{ 'is-active': blog.hasLiked }" type="button" :disabled="interacting" @click="handleLike">
             <KhIcon name="heart" :size="14" /> {{ blog.likeCount ?? 0 }}
           </button>
-          <button class="bd__action" :class="{ 'is-active': collected.value }" type="button">
+          <button class="bd__action" :class="{ 'is-active': blog.hasCollected }" type="button" :disabled="interacting" @click="handleCollect">
             <el-icon><Collection /></el-icon> 收藏
           </button>
           <button class="bd__action" type="button">
