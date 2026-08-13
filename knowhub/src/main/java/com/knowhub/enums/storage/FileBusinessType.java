@@ -31,6 +31,9 @@ public enum FileBusinessType {
     /** 插件市场插件包：access=PRIVATE，类型 .jar，上限 50MB */
     PLUGIN_JAR("PLUGIN_JAR", "插件市场插件包", FileAccess.PRIVATE),
 
+    /** 审计票据附件：access=PRIVATE，类型图片/PDF，上限 5MB（流水票据/凭证，biz_ref_id 承 flow_id） */
+    AUDIT_VOUCHER("AUDIT_VOUCHER", "审计票据附件", FileAccess.PRIVATE),
+
     /** 文章封面图：access=PUBLIC，类型图片，上限 5MB（对齐 BLOG_COVER，biz_ref_id=article_id） */
     ARTICLE_COVER("ARTICLE_COVER", "文章封面图", FileAccess.PUBLIC);
 

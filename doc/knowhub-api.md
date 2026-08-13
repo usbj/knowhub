@@ -1456,6 +1456,57 @@ Accept-Ranges: none
 | PUT | `/authoring/resource/{resourceId}/rating` | 资源评分 1-5（一人一资源一条，upsert 事实表，均值读时聚合） | `Result<Boolean>`，query: score |
 | GET | `/authoring/resource/collect/list` | 我的资源收藏列表（按收藏时间倒序，仅返回前台可见口径的已发布资源） | `Result<PageInfo<ResourcePortalVo>>`，query: pageNum/pageSize |
 
+## 审计管理模块（后台 admin，纯后台无前台对接）
+
+实验室花销记录与事项管理（资金池模型）。纯后台 admin，权限不分等级（按钮键 `knowhub:audit:{module}:{action}` 无 `:l1-3`）。经费 = 资金池主体 `audit_subject`，三流合一 `audit_fund_flow`（BUDGET 预算/INCOME 收账/EXPENSE 花销）：BUDGET/INCOME 免审事务内累加 budgetTotal/incomeTotal；EXPENSE 走阈值审批（≤ sys_config 阈值自动 APPROVED 记 SUBMIT+APPROVE 双痕，>阈值 PENDING 记 SUBMIT）；余额查时算（incomeTotal − 历史 APPROVED 花销聚合）。借出 `audit_loan` 走审批（开关），借用人为外部人员（内联 borrower_name/phone/org/remark，非 sys_user），归还损耗 >0 自动插一条 EXPENSE 损耗流水；流水票据在弹窗内直传（businessType=AUDIT_VOUCHER，图片/PDF ≤5MB）。月度/周记 `audit_period_report` 合一由定时任务生成 + 通知负责人，重算仅允许已结束期（period_end < now，当期前端 disabled + 后端拒绝）；可手动选主体+周期类型+具体周期生成。对应 README.dev §8 / 初稿 §7/§10.2。
+
+### 花销主体接口 `/audit/subject`
+
+| 方法 | 路径 | 说明 | 响应 / 参数 |
+| --- | --- | --- | --- |
+| GET | `/audit/subject/list` | 主体分页列表（回填 balance 余额 + monthExpense 当月已花聚合 + handlerNickname/projectName） | `Result<PageInfo<AuditSubjectVo>>`，query: pageNum/pageSize/name/scope/status/handlerName(昵称 LIKE)/beginTime/endTime |
+| GET | `/audit/subject/{subjectId}` | 主体详情 | `Result<AuditSubjectVo>` |
+| POST | `/audit/subject` | 新增主体 | `Result<Void>`，body: AuditSubjectVo |
+| PUT | `/audit/subject` | 编辑主体（budgetTotal/incomeTotal 置空防覆盖累计列） | `Result<Void>`，body: AuditSubjectVo |
+| DELETE | `/audit/subject/{subjectId}` | 删除主体 | `Result<Void>` |
+
+### 资金流水接口 `/audit/flow`
+
+| 方法 | 路径 | 说明 | 响应 / 参数 |
+| --- | --- | --- | --- |
+| GET | `/audit/flow/list` | 流水分页（回填 subjectName/handlerNickname/categoryLabel） | `Result<PageInfo<AuditFundFlowVo>>`，query: pageNum/pageSize/subjectId(精确，周期流水明细弹窗用)/subjectName(主体名 LIKE)/flowType/category/status/reviewStatus/handlerId(精确)/handlerName(经办人昵称 LIKE)/beginTime/endTime |
+| GET | `/audit/flow/{flowId}` | 流水详情 | `Result<AuditFundFlowVo>` |
+| POST | `/audit/flow` | 新增流水（BUDGET/INCOME 免审累加；EXPENSE 走阈值审批分流） | `Result<Void>`，body: AuditFundFlowVo |
+| PUT | `/audit/flow` | 编辑流水 | `Result<Void>`，body: AuditFundFlowVo |
+| DELETE | `/audit/flow/{flowId}` | 删除流水 | `Result<Void>` |
+| POST | `/audit/flow/submit` | 提交花销审核 | `Result<Void>`，body: ReviewVo(blogId=flowId) |
+| POST | `/audit/flow/approve` | 审核通过（含 handler_id 回避） | `Result<Void>`，body: ReviewVo |
+| POST | `/audit/flow/reject` | 审核驳回（advice 必填，含回避） | `Result<Void>`，body: ReviewVo |
+| POST | `/audit/flow/revoke` | 撤销已通过流水（APPROVED→REVOKED） | `Result<Void>`，body: ReviewVo |
+| GET | `/audit/flow/review-log/{flowId}` | 花销审核历史流水（只追加） | `Result<List<AuditFlowReviewLogVo>>` |
+
+### 物品借出接口 `/audit/loan`
+
+| 方法 | 路径 | 说明 | 响应 / 参数 |
+| --- | --- | --- | --- |
+| GET | `/audit/loan/list` | 借出分页（回填 subjectName；借用人四字段内联 borrowerName/Phone/Org/Remark；pendingReturn=true 仅看待归还） | `Result<PageInfo<AuditLoanVo>>`，query: pageNum/pageSize/subjectName(主体名 LIKE)/itemType/status/borrowerName(借用人姓名 LIKE)/itemName/beginTime/endTime/pendingReturn |
+| GET | `/audit/loan/{loanId}` | 借出详情 | `Result<AuditLoanVo>` |
+| POST | `/audit/loan` | 新增借出（按 isLoanApprovalEnabled 分流：true→REQUEST 待审，false→免审直 BORROWED；borrowerName/borrowerPhone 必填） | `Result<Void>`，body: AuditLoanVo |
+| PUT | `/audit/loan` | 编辑借出 | `Result<Void>`，body: AuditLoanVo |
+| DELETE | `/audit/loan/{loanId}` | 删除借出 | `Result<Void>` |
+| POST | `/audit/loan/approve` | 审核通过 | `Result<Void>`，body: ReviewVo(blogId=loanId) |
+| POST | `/audit/loan/reject` | 审核驳回（advice 必填） | `Result<Void>`，body: ReviewVo |
+| POST | `/audit/loan/return` | 归还（wearLossAmount>0 自动插 EXPENSE 损耗流水走阈值审批，回写 related_flow_id） | `Result<Void>`，body: AuditLoanVo |
+| GET | `/audit/loan/review-log/{loanId}` | 借出审核历史流水 | `Result<List<AuditLoanReviewLogVo>>` |
+
+### 周期报表接口 `/audit/report`
+
+| 方法 | 路径 | 说明 | 响应 / 参数 |
+| --- | --- | --- | --- |
+| GET | `/audit/report/list` | 报表分页（回填 subjectName/handlerNickname/periodEnded） | `Result<PageInfo<AuditPeriodReportVo>>`，query: pageNum/pageSize/subjectName(主体名 LIKE)/periodType/periodKey/beginTime/endTime |
+| GET | `/audit/report/{reportId}` | 报表详情（expenseByCategory 为 JSON 字符串，前端 JSON.parse 展示花销分类汇总） | `Result<AuditPeriodReportVo>` |
+| POST | `/audit/report/regenerate` | 手动重算报表（仅已结束期，当期后端拒绝抛"当前期未结束，不可重算"） | `Result<Void>`，body: ReportRegeneratePayload(subjectId/periodType/periodKey) |
+
 ### 接口更新日志
 
 #### 2026-08-08 资源推荐前台门户 + 创作接口新增（15 接口）
@@ -1555,3 +1606,23 @@ Accept-Ranges: none
 - **章节正文配图**：预签名直传 businessType 暂复用 `BLOG_BODY`（PUBLIC 公开读语义同 Markdown 正文插图），后端 FileBusinessType 枚举暂无 CHAPTER_BODY，将来需区分时再补（属正当后续，已在 chapter-edit.vue 注释标记）。
 - **前端**：knowhub-ui 新增 `types/api/knowhub/article-authoring.ts`+`api/knowhub/article-authoring.ts`；`views/article/create.vue`（文章创作页，照 blog/create.vue 范式，正文区改"文章前言"v-md-editor+元信息折叠含可见性按钮组+"章节管理"跳转按钮）；`views/article/chapters.vue`（章节管理页 /article/:id/chapters，列表+状态徽标+编辑/发布/撤回/删除/新增章节）；`views/article/chapter-edit.vue`（章节创作/编辑页 /article/:id/chapter/edit?cid=，名+排序+正文精简表单）；`components/article/ArticleCoverUploader.vue`（照 BlogCoverUploader 换 ARTICLE_COVER）；路由 3 条 `/article/create`、`/article/:id/chapters`、`/article/:id/chapter/edit`（均 requiresAuth）；profile「我的文章」tab 接真接口（getMyArticlesApi）+「新建」按钮 +「创作文章」下拉项 to。
 - 校验：mvn -pl knowhub -am compile BUILD SUCCESS；knowhub-ui npm run type-check 通过。
+
+#### 2026-08-12 审计管理模块落地（资金池三流合一 + 借出 + 周期报表，纯后台）
+
+审计模块（实验室花销/借出/经费核算）批次1-4 全量落地，纯后台 admin 无前台对接，权限不分等级（按钮键 `knowhub:audit:{module}:{action}` 无 `:l1-3`）。属 README.dev §8「审计模块」/ 初稿 §7/§10.2 经费支出记录/事项登记/台账归档。定稿方案见 `C:\Users\wyt\.claude\plans\radiant-tickling-stonebraker.md`。
+
+- **资金模型**：经费 = 资金池主体 `audit_subject`，三流合一 `audit_fund_flow`（BUDGET/INCOME/EXPENSE）。BUDGET/INCOME 免审，事务内累加 budgetTotal/incomeTotal；EXPENSE 走阈值审批（≤ sys_config `knowhub.audit.expense_approval_threshold` 自动 APPROVED 记 SUBMIT+APPROVE 双痕，>阈值 PENDING 记 SUBMIT）。余额查时算 = `incomeTotal − SUM(amount WHERE flowType=EXPENSE AND status=APPROVED)`，不存 expenseTotal/balance 冗余列。
+- **借出审批 + 归还损耗扣费**：`audit_loan` 按开关 `knowhub.audit.loan_approval_enabled` 分流 REQUEST 待审 / 免审直 BORROWED。归还 `returnLoan` 若 wearLossAmount>0 自动插一条 flowType=EXPENSE category=损耗 流水走 `shouldAutoApprove` 阈值审批，回写 audit_loan.related_flow_id 指向该损耗流水。**借用人改外部人员**（批次5）：废弃 `borrower_id`(原 sys_user.user_id)，内联 `borrower_name`(必填)/`borrower_phone`(必填)/`borrower_org`(选填)/`borrower_remark`(选填) 四列，借用人不一定是系统用户；approve/reject 不再有借用人本人回避比对（无 sys_user 映射）。
+- **月周报表 + 通知**：`audit_period_report` 合一存 MONTH/WEEK，UNIQUE(subjectId, periodType, periodKey) 重算覆盖。定时任务 `AuditMonthlyReportTask`（每月1日00:10）/`AuditWeeklyReportTask`（每周一00:10）按开关生成上一期报表 + 通知负责人。通知无登录态直走 `SysNoticeMapper.addSysNotice` + `SysNoticeUserRelMapper.insertSysNoticeUserRel`，不走 addSysNoticeInfo。balanceEnd 用历史快照（as-of periodEnd 的 historicIncome − historicExpense，非 subject.incomeTotal，防已结束期被期后 INCOME 污染）。
+- **重算仅已结束期**：`regenerateReport` 后端校验 `periodEnd < now`，当期拒绝抛"当前期未结束，不可重算"；前端行内重算按钮 periodEnded===false 时 disabled 灰显，详情弹窗内 ElTooltip 提示原因。
+- **逾期扫描**：`AuditLoanOverdueTask` fixedDelay（默认 30 分钟，sys_config 可配）扫 status=BORROWED AND expected_return_date<now 自动改 OVERDUE。
+- **新增接口（30）**：subject 5（quarry/info/add/edit/delete）+ flow 11（CRUD + submit/approve/reject/revoke + review-log）+ loan 9（quarry/info/add/edit/delete/approve/reject/return + review-log）+ report 3（quarry/info/regenerate），统一裸前缀 `/audit`，写操作带 @Log + @PreAuthorize 照菜单 perm_key。详见上方「审计管理模块」章节。
+- **新增后端**：6 枚举（SubjectScope/FlowType/FlowStatus/LoanItemType/LoanStatus/PeriodType）+ 6 实体 + 6 Vo + 4 Quarry + 6 Mapper+XML + 4 Service+Impl + `AuditConfigReader`（对齐 BlogConfigReader，阈值用 getString+BigDecimal 防 Long 丢小数）+ 3 定时任务（Monthly/Weekly Report + LoanOverdue）；`AuditController` 承 subject/flow/loan/report 四组。`yml` 加 `knowhub.audit.overdue-scan-interval-minutes: 30`。
+- **SQL `sql/knowhub-audit.sql`**：6 表 + 7 字典（dict_id 35-41）+ 26 字典数据（dict_data_id 144-169）+ 34 菜单（menu_id 162-195，挂 knowhub63 下二级「审计管理」）+ 5 sys_config。落库前查现网 MAX，从 162/35/144 起续编无冲突。用户自跑。
+- **批次5 SQL**（用户自跑，落库前查 MAX 续编不写死）：
+  - `sql/knowhub-audit-loan-borrower.sql`：ALTER TABLE audit_loan，DROP `idx_audit_loan_borrower`+`borrower_id`，ADD `borrower_name`/`borrower_phone`/`borrower_org`/`borrower_remark` + `idx_audit_loan_borrower_name`。
+  - `sql/knowhub-audit-voucher-filetype.sql`：file_business_type 加 AUDIT_VOUCHER；file_size_limit 加 AUDIT_VOUCHER=5(MB)；file_type_whitelist 加 AUDIT_VOUCHER=image/png,image/jpeg,image/gif,image/webp,application/pdf。
+- **批次5 前端**：rookie-ui knowhub 命名空间内新增 `flow/components/VoucherUploader.vue`（票据图片/PDF 弹窗内直传，≤5MB，支持拖拽上传）+ `report/components/ReportRegenerateDialog.vue`（主体 + 周期类型 + 具体周期选择，ISO 周手撸前端无 date-fns）+ `report/components/PeriodFlowListDialog.vue`（本期 APPROVED 流水明细）；筛选区主体名/经办人/借用人姓名姓名化（后端 LIKE）；前端验证仅 `vue-tsc --build` 通过。
+- **批次5 修复 date-only 反序列化崩溃**：POST `/audit/flow` 报 `Cannot deserialize java.util.Date from "2026-03-12"`——全局 `spring.jackson.date-format=yyyy-MM-dd HH:mm:ss`(SimpleDateFormat 严格解析)拒收 date-only 字符串，而审计日期字段(occurDate / borrowDate / expectedReturnDate / actualReturnDate / periodStart / periodEnd)前端用 el-date-picker ISO DATE 仅发 `yyyy-MM-dd`。于 `AuditFundFlow`/`AuditLoan`/`AuditPeriodReport` 三实体 + `AuditFundFlowVo`/`AuditLoanVo`/`AuditPeriodReportVo` 三 VO 的 date-only 字段加 `@JsonFormat(pattern="yyyy-MM-dd")`，输入解析与输出序列化双方统一 date-only；`@DateTimeFormat`(quarry GET 走表单绑定)对 `@RequestBody` JSON 无效故不依赖；createTime/updateTime/generateTime 仍走全局 timestamp 格式（非业务日期）。
+- **前端**：rookie-ui 后台新增 `api/knowhub/audit.ts` + `types/api/knowhub/audit.ts` + `constants/systemPermissions.ts` 加 knowhub.audit 块（4 模块嵌套按钮键，无 :l1-3）+ 4 页面 `views/knowhub/audit/{subject,flow,loan,report}/index.vue+config.ts` + 2 对话框（FlowReviewDialog/LoanReviewDialog/LoanReturnDialog），照 blog/resource 范式抄 SharedTablePanel/SearchFilterPanel/BaseCard/DictTag。前端验证仅 `vue-tsc --build` 通过（按要求不启 dev server，浏览器自验由用户本地跑）。
+- 校验：mvn 全量 253 源文件 compile 通过，6 audit XML 打包到 target/classes/mapper/audit/；rookie-ui npm run type-check 通过。

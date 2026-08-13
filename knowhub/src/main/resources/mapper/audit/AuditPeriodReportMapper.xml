@@ -1,0 +1,242 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.knowhub.mapper.audit.AuditPeriodReportMapper">
+
+    <!--
+      周期报表结果映射。
+      含 join 带出的展示字段：
+      - subjectName：join audit_subject on subject_id，LEFT JOIN 防丢行
+      - handlerNickname：join sys_user on subject.handler_id = u.user_id，经 subject 二次 join
+        报表本身不存 handler_id，负责人取自关联回主体，便于报表直接展示负责人。
+    -->
+    <resultMap id="AuditPeriodReportResultMap" type="com.knowhub.pojo.audit.entity.AuditPeriodReport">
+        <id property="reportId" column="report_id"/>
+        <result property="subjectId" column="subject_id"/>
+        <result property="periodType" column="period_type"/>
+        <result property="periodKey" column="period_key"/>
+        <result property="periodStart" column="period_start"/>
+        <result property="periodEnd" column="period_end"/>
+        <result property="budgetAmount" column="budget_amount"/>
+        <result property="incomeAmount" column="income_amount"/>
+        <result property="expenseAmount" column="expense_amount"/>
+        <result property="expenseByCategory" column="expense_by_category"/>
+        <result property="balanceEnd" column="balance_end"/>
+        <result property="loanOutCount" column="loan_out_count"/>
+        <result property="loanUnreturned" column="loan_unreturned"/>
+        <result property="generateTime" column="generate_time"/>
+        <result property="createBy" column="create_by"/>
+        <result property="createTime" column="create_time"/>
+        <result property="updateBy" column="update_by"/>
+        <result property="updateTime" column="update_time"/>
+        <result property="deleted" column="deleted"/>
+        <!-- join 带出的展示字段（非表字段） -->
+        <result property="subjectName" column="subject_name"/>
+        <result property="handlerNickname" column="handler_nickname"/>
+    </resultMap>
+
+    <!--
+      列表片段：join audit_subject(subject_name) + sys_user(handler_nickname via subject)。
+      支持按 subjectName 模糊、periodType、periodKey、generate_time 区间过滤。
+      按 period_end desc, report_id desc 排序（最近周期在前）。
+    -->
+    <sql id="reportListColumns">
+        r.report_id, r.subject_id, r.period_type, r.period_key, r.period_start, r.period_end,
+        r.budget_amount, r.income_amount, r.expense_amount, r.expense_by_category, r.balance_end,
+        r.loan_out_count, r.loan_unreturned, r.generate_time,
+        r.create_by, r.create_time, r.update_by, r.update_time, r.deleted,
+        s.name as subject_name,
+        u.nick_name as handler_nickname
+    </sql>
+
+    <select id="quarryAuditPeriodReport" parameterType="com.knowhub.pojo.audit.quarry.AuditPeriodReportQuarry" resultMap="AuditPeriodReportResultMap">
+        select <include refid="reportListColumns"/>
+        from audit_period_report r
+                left join audit_subject s on r.subject_id = s.subject_id
+                left join sys_user u on s.handler_id = u.user_id
+        where r.deleted = 0
+        <if test="subjectName != null and subjectName != ''">and s.name like concat('%', #{subjectName}, '%')</if>
+        <if test="periodType != null and periodType != ''">and r.period_type = #{periodType}</if>
+        <if test="periodKey != null and periodKey != ''">and r.period_key = #{periodKey}</if>
+        <if test="beginTime != null">and r.generate_time &gt;= #{beginTime}</if>
+        <if test="endTime != null">and r.generate_time &lt;= #{endTime}</if>
+        order by r.period_end desc, r.report_id desc
+    </select>
+
+    <!-- 详情：按主键取未删除报表，含 subject_name/handler_nickname -->
+    <select id="getAuditPeriodReportInfo" parameterType="long" resultMap="AuditPeriodReportResultMap">
+        select <include refid="reportListColumns"/>
+        from audit_period_report r
+                left join audit_subject s on r.subject_id = s.subject_id
+                left join sys_user u on s.handler_id = u.user_id
+        where r.report_id = #{reportId} and r.deleted = 0
+    </select>
+
+    <!-- 按三键取已存在报表（重算前查覆盖用，含软删行） -->
+    <select id="getBySubjectPeriod" resultMap="AuditPeriodReportResultMap">
+        select <include refid="reportListColumns"/>
+        from audit_period_report r
+                left join audit_subject s on r.subject_id = s.subject_id
+                left join sys_user u on s.handler_id = u.user_id
+        where r.subject_id = #{subjectId}
+          and r.period_type = #{periodType}
+          and r.period_key = #{periodKey}
+        limit 1
+    </select>
+
+    <!-- 新增报表，动态列 -->
+    <insert id="insertAuditPeriodReport" parameterType="com.knowhub.pojo.audit.entity.AuditPeriodReport" useGeneratedKeys="true" keyProperty="reportId">
+        insert into audit_period_report
+        <trim prefix="(" suffix=")" suffixOverrides=",">
+            <if test="subjectId != null">subject_id,</if>
+            <if test="periodType != null">period_type,</if>
+            <if test="periodKey != null">period_key,</if>
+            <if test="periodStart != null">period_start,</if>
+            <if test="periodEnd != null">period_end,</if>
+            <if test="budgetAmount != null">budget_amount,</if>
+            <if test="incomeAmount != null">income_amount,</if>
+            <if test="expenseAmount != null">expense_amount,</if>
+            <if test="expenseByCategory != null">expense_by_category,</if>
+            <if test="balanceEnd != null">balance_end,</if>
+            <if test="loanOutCount != null">loan_out_count,</if>
+            <if test="loanUnreturned != null">loan_unreturned,</if>
+            <if test="generateTime != null">generate_time,</if>
+            create_by, create_time, update_by, update_time
+        </trim>
+        values
+        <trim prefix="(" suffix=")" suffixOverrides=",">
+            <if test="subjectId != null">#{subjectId},</if>
+            <if test="periodType != null">#{periodType},</if>
+            <if test="periodKey != null">#{periodKey},</if>
+            <if test="periodStart != null">#{periodStart},</if>
+            <if test="periodEnd != null">#{periodEnd},</if>
+            <if test="budgetAmount != null">#{budgetAmount},</if>
+            <if test="incomeAmount != null">#{incomeAmount},</if>
+            <if test="expenseAmount != null">#{expenseAmount},</if>
+            <if test="expenseByCategory != null">#{expenseByCategory},</if>
+            <if test="balanceEnd != null">#{balanceEnd},</if>
+            <if test="loanOutCount != null">#{loanOutCount},</if>
+            <if test="loanUnreturned != null">#{loanUnreturned},</if>
+            <if test="generateTime != null">#{generateTime},</if>
+            #{createBy}, now(), #{updateBy}, now()
+        </trim>
+    </insert>
+
+    <!-- 按主键更新报表（重算覆盖同键用，动态列；deleted 也复位为 0 恢复软删行） -->
+    <update id="updateAuditPeriodReport" parameterType="com.knowhub.pojo.audit.entity.AuditPeriodReport">
+        update audit_period_report
+        <set>
+            <if test="periodStart != null">period_start = #{periodStart},</if>
+            <if test="periodEnd != null">period_end = #{periodEnd},</if>
+            <if test="budgetAmount != null">budget_amount = #{budgetAmount},</if>
+            <if test="incomeAmount != null">income_amount = #{incomeAmount},</if>
+            <if test="expenseAmount != null">expense_amount = #{expenseAmount},</if>
+            <if test="expenseByCategory != null">expense_by_category = #{expenseByCategory},</if>
+            <if test="balanceEnd != null">balance_end = #{balanceEnd},</if>
+            <if test="loanOutCount != null">loan_out_count = #{loanOutCount},</if>
+            <if test="loanUnreturned != null">loan_unreturned = #{loanUnreturned},</if>
+            <if test="generateTime != null">generate_time = #{generateTime},</if>
+            <if test="deleted != null">deleted = #{deleted},</if>
+            update_by = #{updateBy},
+            update_time = now()
+        </set>
+        where report_id = #{reportId}
+    </update>
+
+    <!-- 软删报表（deleted=1） -->
+    <update id="deleteAuditPeriodReport" parameterType="long">
+        update audit_period_report set deleted = 1, update_time = now() where report_id = #{reportId}
+    </update>
+
+    <!-- ============================ 聚合查询（供 generateReport 内部组合） ============================ -->
+
+    <!--
+      按期聚合某 flow_type 的流水合计。
+      BUDGET/INCOME 全计入（status 恒 APPROVED）；EXPENSE 仅计 status=APPROVED。
+      按 occur_date 落在 [periodStart, periodEnd] 内过滤（含两端）。
+    -->
+    <select id="sumFlowByType" resultType="java.math.BigDecimal">
+        select ifnull(sum(amount), 0)
+        from audit_fund_flow
+        where subject_id = #{subjectId}
+          and flow_type = #{flowType}
+          and deleted = 0
+        <choose>
+            <when test="flowType == 'EXPENSE'">
+                and status = 'APPROVED'
+            </when>
+            <otherwise>
+                <!-- BUDGET/INCOME 恒 APPROVED，不再加 status 过滤（兼容早期脏行也可取全部） -->
+                and status = 'APPROVED'
+            </otherwise>
+        </choose>
+          and occur_date &gt;= #{periodStart}
+          and occur_date &lt;= #{periodEnd}
+    </select>
+
+    <!--
+      按期聚合 EXPENSE 各分类合计（仅 status=APPROVED）。
+      返回每行 {category, total}，Service 拼 JSON。
+      mapUnderscoreToCamelCase 对 List&lt;Map&gt; 的 column 名不影响（仍是数据库列名），
+      Service 用 category/total 小写键取出（MySQL 列别名小写）。
+    -->
+    <select id="sumExpenseByCategory" resultType="java.util.Map">
+        select category, ifnull(sum(amount), 0) as total
+        from audit_fund_flow
+        where subject_id = #{subjectId}
+          and flow_type = 'EXPENSE'
+          and status = 'APPROVED'
+          and deleted = 0
+          and occur_date &gt;= #{periodStart}
+          and occur_date &lt;= #{periodEnd}
+        group by category
+    </select>
+
+    <!-- 聚合截至截止日的历史已通过 EXPENSE 合计（算 balanceEnd 用） -->
+    <select id="sumApprovedExpenseUntil" resultType="java.math.BigDecimal">
+        select ifnull(sum(amount), 0)
+        from audit_fund_flow
+        where subject_id = #{subjectId}
+          and flow_type = 'EXPENSE'
+          and status = 'APPROVED'
+          and deleted = 0
+          and occur_date &lt;= #{periodEnd}
+    </select>
+
+    <!--
+      聚合截至截止日的历史 INCOME 合计（算 balanceEnd 用，截至 periodEnd 实到）。
+      INCOME 恒 APPROVED，按 occur_date <= periodEnd 累加全部未删 INCOME，
+      不用 subject.income_total 当前增量列（避免期后新增 INCOME 污染已结束期报表结余快照）。
+    -->
+    <select id="sumIncomeUntil" resultType="java.math.BigDecimal">
+        select ifnull(sum(amount), 0)
+        from audit_fund_flow
+        where subject_id = #{subjectId}
+          and flow_type = 'INCOME'
+          and status = 'APPROVED'
+          and deleted = 0
+          and occur_date &lt;= #{periodEnd}
+    </select>
+
+    <!-- 本期借出笔数（borrow_date 落在期内） -->
+    <select id="countLoanOut" resultType="java.lang.Integer">
+        select ifnull(count(*), 0)
+        from audit_loan
+        where subject_id = #{subjectId}
+          and deleted = 0
+          and borrow_date &gt;= #{periodStart}
+          and borrow_date &lt;= #{periodEnd}
+    </select>
+
+    <!-- 本期末未归还笔数（status IN BORROWED/OVERDUE 且 borrow_date <= periodEnd） -->
+    <select id="countLoanUnreturned" resultType="java.lang.Integer">
+        select ifnull(count(*), 0)
+        from audit_loan
+        where subject_id = #{subjectId}
+          and deleted = 0
+          and status in ('BORROWED', 'OVERDUE')
+          and borrow_date &lt;= #{periodEnd}
+    </select>
+
+</mapper>

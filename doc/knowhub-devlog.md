@@ -1013,3 +1013,178 @@ knowhub 项目管理模块开发，详见 `doc/knowhub-project-design.md`。项�
 **校验**：knowhub-ui `npm run type-check` 通过（本次改动零新增错误，剩 6 个 pre-existing project/doc 模块 ViewLevel/accent/DefaultRow/null 报错非本次引入，尊重既有改动未动）；后端无改动，无需 mvn。
 
 **待用户人工验证**：① L1 项目上传文件 → `file_object.access` 落 `PUBLIC`，下载走 `/file/public` 直链（无需鉴权直下）；② L2/L3 项目上传文件 → 落 `PRIVATE`，下载走 `/file/proxy` 中转，项目层 `canOp(download)`/`canDownload` 鉴权后能下（非上传人成员不再被 owner 闸挡，沿用 bizAuthorized 重载）；③ 等级未取到（level=null/undefined，如详情未加载完先上传）兜底按 L1=PUBLIC 处理，不误落 PRIVATE 挡下载；④ 文件树组件深层目录（子文件夹内）上传同样正确派生（`level` 递归透传无误）。
+## 2026-08-12
+
+### 20:11 审计模块批次1落地（建表SQL+花销主体与资金流水骨架）
+
+按 `C:\Users\wyt\.claude\plans\radiant-tickling-stonebraker.md` 定稿方案落地审计模块批次1，新增文件均在 `knowhub` 模块内，未改 `rookie-*`。审计模块面向实验室内部管理（花销/借出/经费核算），纯后台 admin，权限不分等级（按钮键 `knowhub:audit:{action}`，无 `:l1-3`），对应初稿 §7/§10.2 经费支出记录/事项登记/台账归档。
+
+**SQL（新建 `sql/knowhub-audit.sql`，UTF-8无BOM，首行SET NAMES utf8mb4，建表DROP IF EXISTS，字典菜单sys_config用INSERT IGNORE）**
+- 建 6 表：`audit_subject`(资金池主体,LAB/PROJECT级,budget_total/income_total累计列,balance查时算不存)/`audit_fund_flow`(三流合一BUDGET/INCOME/EXPENSE,花销走阈值审批)/`audit_flow_review_log`(花销审批流水只追加不改不删,照blog_review_log范式)/`audit_loan`(物品借出)/`audit_loan_review_log`(借出审批流水)/`audit_period_report`(月度周记报表合一,UNIQUE(subject_id,period_type,period_key)重算覆盖)。落库前查现网MAX(menu_id)=161/MAX(dict_id)=34/MAX(dict_data_id)=143/MAX(config_id)=12，本脚本从162/35/144起续编，config_id自增。
+- 菜单 menu_id 162-195（34条）：162审计目录(挂knowhub63下)+主体页163+5按钮/流水页169+11按钮/借出页180+12按钮/报表页192+3按钮，权限键三段式 `knowhub:audit:{module}:{action}` 无等级。
+- 字典 dict_id 35-41（7个）：audit_subject_scope/audit_flow_type/audit_flow_status/audit_expense_category/audit_loan_item_type/audit_loan_status/audit_period_type，dict_data_id 144-169（26行）+170续编file_business_type加AUDIT_VOUCHER(审计票据附件,PRIVATE)。
+- sys_config 5项：knowhub.audit.expense_approval_enabled/threshold/loan_approval_enabled/monthly_report_enabled/weekly_report_enabled。
+- 导入数据库验证通过：6表建成、34菜单、26字典数据、5 config、AUDIT_VOUCHER续编170、中文无乱码、ID无冲突。
+
+**枚举（`knowhub/.../enums/audit/`）**
+- `SubjectScope.java`(LAB/PROJECT)/`FlowType.java`(BUDGET/INCOME/EXPENSE)/`FlowStatus.java`(DRAFT/PENDING/APPROVED/REJECTED/REVOKED)，照enums/storage/FileAccess范式code+label+ofCode。
+
+**实体（`pojo/audit/entity/`）**
+- `AuditSubject.java` extends BaseEntity，字段照audit_subject表+非表字段balance/monthExpense/handlerNickname/projectName(注释标非表字段)，全参构造器super传审计四列。
+- `AuditFundFlow.java` extends BaseEntity，字段照audit_fund_flow表+非表subjectName/handlerNickname/categoryLabel，金额BigDecimal时间Date。
+- `AuditFlowReviewLog.java` 不继承BaseEntity照BlogReviewLog，只有createTime+操作人昵称非表字段，便捷构造器(flowId,action,operatorId,operator,role,advice)。
+
+**VO（`pojo/audit/vo/`）**：AuditSubjectVo/AuditFundFlowVo（对齐实体含非表字段，时间Date金额BigDecimal）/AuditFlowReviewLogVo（含flowId+action+operatorId+operator+operatorNickname+role+advice+createTime，照ReviewLogVo同构换flowId）。
+
+**Quarry（`pojo/audit/quarry/`，不继承分页基类）**：AuditSubjectQuarry(name模糊/scope/status/handlerId/beginTime/endTime)/AuditFundFlowQuarry(subjectId/flowType/category/status/reviewStatus/handlerId/occur_date区间)，时间字段@DateTimeFormat(iso=DATE)。
+
+**Mapper（`mapper/audit/`）+XML（`resources/mapper/audit/`）**：AuditSubjectMapper(addBudgetTotal/addIncomeTotal原子累加sumApprovedExpense/sumMonthExpense聚合IFNULL兜底)/AuditFundFlowMapper(listReviewLogByFlowId直返VO)/AuditFlowReviewLogMapper。XML insert一律`<trim>`+`<if>`动态列、update用`<set>`动态、LEFT JOIN sys_user带handlerNickname/operatorNickname防丢行、resultMap全限定名。
+
+**Service（`service/audit/`，接口与impl同包扁平无impl/子目录）**：
+- AuditSubjectServiceImpl：CRUD+getBalance(income−历史APPROVED花销聚合)+getMonthExpense(年月聚合)+列表/详情回填balance/monthExpense，edit置空budgetTotal/incomeTotal防覆盖累计列。
+- AuditFundFlowServiceImpl：三流合一addFundFlow(BUDGET/INCOME免审事务内addBudgetTotal/addIncomeTotal+记SUBMIT留痕；EXPENSE阈值分流≤阈值自动APPROVED记SUBMIT+APPROVE双痕/>阈值PENDING记SUBMIT)+submit/approve/reject/revoke状态机前置校验+审核员回避(handler_id==操作人userId拒绝,admin走UserInfo.isAdmin短路)+advice驳回必填+全程@Transactional+writeReviewLog catch吞异常仅warn(对齐BlogServiceImpl状态优先历史容错)。审批动作复用enums/common/ReviewAction+ReviewStatus未新建枚举。
+- AuditFlowReviewLogServiceImpl：listByFlowId实体→VO拷贝。
+
+**Controller（`controller/admin/AuditController.java`，裸前缀/audit）**：实现subject(quarry/info/add/edit/delete+balance看板)+flow(quarry/info/add/edit/delete/submit/approve/reject/revoke/review-log)两组，各方法@Operation+@Log(title,businessType INSERT/UPDATE/DELETE)+@PreAuthorize照菜单perm_key，统一Result.success返回。复用pojo/common/vo/ReviewVo(blogId承载flowId)。loan/report两组留TODO注释指明批次2/3。
+
+**TODO留批次2/3接的点**：
+1. 审批阈值硬编码`AuditFundFlowServiceImpl.EXPENSE_THRESHOLD=new BigDecimal("500.00")`+注释批次2建AuditConfigReader后接isExpenseApprovalEnabled+getExpenseThreshold替换。
+2. AuditConfigReader未建（对齐BlogConfigReader范式，批次2建）。
+3. loan/report controller组TODO批次2/3。
+4. categoryLabel字典翻译留前端做（本批次不接字典翻译工具）。
+5. 主体删除前置校验暂不查关联流水（留注释sumApprovedExpense>0可拒删后续加）。
+6. scope=PROJECT时projectName回填留空（项目模块对接后join带出）。
+
+**文件清单**：sql/knowhub-audit.sql；3 enums；3 entities；3 VOs；2 Quarries；3 Mappers+3 XMLs；3 Services+3 Impls；1 Controller = 共19个文件。
+
+未跑mvn编译验证（按要求，用户自验）；已核对import/签名/类型对齐现网blog/resource范式。
+
+### 22:40 审计模块批次2/3/4落地（借出+报表+定时任务+前端管理台）
+
+延续 `radiant-tickling-stonebraker.md` 定稿方案，落地审计模块批次2/3/4，新增文件均在 `knowhub` 模块与 `rookie-ui` 的 knowhub 命名空间内，未改 rookie-* 原有组件与 package.json。后端三批共 253 源文件全量 `mvn compile` 通过，6 个 audit XML 均打包到 `target/classes/mapper/audit/`。
+
+**批次2 借出 + 逾期任务 + AuditConfigReader**
+- `config/AuditConfigReader.java`（对齐 BlogConfigReader 范式）：读 sys_config 5 项开关/阈值。因 `SysConfigUtil.getNumber` 返 Long 丢小数，阈值用 `getString` + `new BigDecimal` 取值；`shouldAutoApprove(amount)` 封装开关+阈值判断，供 flow/loan 共用。
+- 批次1硬编码的 `AuditFundFlowServiceImpl.EXPENSE_THRESHOLD=new BigDecimal("500.00")` 已替换为注入 `AuditConfigReader.shouldAutoApprove`，TODO 第1点闭环。
+- `enums/audit/LoanItemType.java`(ASSET/CONSUMABLE)/`LoanStatus.java`(REQUEST/BORROWED/RETURNED/OVERDUE/REJECTED)，照 FileStatus code+label+ofCode。
+- `pojo/audit/entity/AuditLoan.java` extends BaseEntity 全字段 + 非表 subjectName/borrowerNickname；`AuditLoanReviewLog.java` 照 AuditFlowReviewLog 范式（loanId 关联，不继承 BaseEntity，便捷构造器给 service 写）。
+- `pojo/audit/vo/AuditLoanVo.java` 带 `wearLossAmount`(BigDecimal, 非表，仅 return 入参用，>0 触发损耗扣费)；`AuditLoanReviewLogVo.java`；`pojo/audit/quarry/AuditLoanQuarry.java`(subjectId/itemType/status/borrowerId/itemName/borrowDate 区间/pendingReturn)。
+- `mapper/audit/AuditLoanMapper`+XML：resultMap LEFT JOIN 带 subjectName/borrowerNickname；`listOverdueLoans(now)` 扫 status=BORROWED AND expected_return_date&lt;now；动态 insert/update。`AuditLoanReviewLogMapper`+XML insert/listByLoanId。
+- `service/audit/AuditLoanService`+Impl：`addLoan` 按 `isLoanApprovalEnabled` 分流（true→REQUEST 待审记 SUBMIT；false→免审直 BORROWED 记 SUBMIT+APPROVE 双痕）；`approveLoan`/`rejectLoan` 含 borrower_id 回避（admin 走 isAdmin 短路）+advice 驳回必填；`returnLoan` status→RETURNED + actualReturnDate，若 wearLossAmount>0 调 `insertWearLossFlow` 插一条 flowType=EXPENSE category=损耗 流水走 `shouldAutoApprove` 阈值审批并回写 related_flow_id；`markOverdue` 供任务调；writeLoanReviewLog/writeFlowReviewLog catch 吞异常仅 warn（对齐 BlogServiceImpl 历史容错）。
+- `task/AuditLoanOverdueTask.java`：`@Scheduled(fixedDelayString = "#{${knowhub.audit.overdue-scan-interval-minutes:30} * 60 * 1000}", initialDelay = 60000)` 扫 listOverdueLoans 调 markOverdue，try/catch + 日志。
+- `rookie-admin/application.yml`：加 `knowhub.audit.overdue-scan-interval-minutes: 30`。
+
+**批次3 报表 + 月周定时任务 + 通知**
+- `enums/audit/PeriodType.java`(MONTH/WEEK)；`pojo/audit/entity/AuditPeriodReport.java` extends BaseEntity 全字段 + 非表 subjectName/handlerNickname；`pojo/audit/vo/AuditPeriodReportVo.java` 带 `periodEnded`(Boolean 非表回填，前端据此禁当期重算)；`pojo/audit/quarry/AuditPeriodReportQuarry.java`。
+- `mapper/audit/AuditPeriodReportMapper`+XML：resultMap 双 JOIN（audit_subject + sys_user via subject.handler_id）带主体名/负责人昵称；聚合 6 法：`sumFlowByType`(status=APPROVED 过滤)/`sumExpenseByCategory`(group by category 返 Map{category,total})/`sumApprovedExpenseUntil`&`sumIncomeUntil`(occur_date &lt;= periodEnd as-of 快照)/`countLoanOut`/`countLoanUnreturned`。
+- `service/audit/AuditPeriodReportService`+Impl：`generateReport` 聚合 6 指标 + UPSERT（getBySubjectPeriod 存在→update 且 deleted=0 复位，否则 insert）；**balanceEnd 用历史快照** `nullToZero(historicIncome).subtract(nullToZero(historicExpense))`（as-of periodEnd，非 subject.incomeTotal，防已结束期被期后 INCOME 污染）；`parsePeriodRange` MONTH 走 YearMonth、WEEK 走 Jan-4 校准 ISO 周一锚点；`regenerateReport` 校验 range.end.before(now) 否则抛"当前期未结束，不可重算"；`generateForPreviousPeriod` 算上月/上周 periodKey 遍历 `listActiveSubjects` 生成 + `notifyReportReady`。
+- 通知无登录态直走 `SysNoticeMapper.addSysNotice`（useGeneratedKeys 回填 noticeId）+ `SysNoticeUserRelMapper.insertSysNoticeUserRel(Collections.singletonList(rel))`，不走 addSysNoticeInfo；SYSTEM_OPERATOR="system"；NOTICE_TYPE_SYSTEM/NOTICE_LEVEL_NORMAL/NOTICE_SCOPE_USER/NOTICE_STATUS_PUBLISHED 常量；通知失败仅 warn 不阻断生成。
+- `AuditSubjectMapper`+XML 加 `listActiveSubjects`（status=ACTIVE AND deleted=0）。
+- `task/AuditMonthlyReportTask.java`（`@Scheduled(cron = "0 10 0 1 * *", initialDelay = 60000)` 每月1日00:10，查 isMonthlyReportEnabled 后 generateForPreviousPeriod("MONTH")）；`task/AuditWeeklyReportTask.java`（`@Scheduled(cron = "0 10 0 ? * MON", initialDelay = 60000)` 每周一00:10，查 isWeeklyReportEnabled 后 WEEK）；均照 ArticleReviewReconcileTask 范式 try/catch + 日志。
+- `controller/admin/AuditController.java` 补 loan 组（quarry/info/add/edit/delete/approve/reject/return/review-log）+ report 组（quarry/info/regenerate），修掉误增的重复闭合大括号，类 Javadoc 更新。
+
+**批次4 前端管理台（rookie-ui，跑 `npm run type-check` 通过）**
+- `src/api/knowhub/audit.ts`：subject/flow/loan/report 全模块接口方法（report 三法 getAuditReportPageApi/getAuditReportDetailApi/regenerateAuditReportApi）。
+- `src/types/api/knowhub/audit.ts`：Subject/FundFlow/Loan/Report 各 Record/ListQuery/PageResult + ReviewPayload + ReviewLogRecord + ReportRegeneratePayload，对齐后端 VO（ReportRecord 带 periodEnded?: boolean）。
+- `src/constants/systemPermissions.ts`：加 knowhub.audit 块（subject/flow/loan/report 嵌套按钮键，无 :l1-3）。
+- 4 个页面 `src/views/knowhub/audit/{subject,flow,loan,report}/index.vue + config.ts`，照 blog/resource 范式抄 SharedTablePanel/SearchFilterPanel/BaseCard/DictTag + tableActions computed + tablePagination computed + fetchPage/handleSearch/resetQueryForm/handlePaginationChange + 弹窗状态：
+  - 主体页：列表 + 预算/收入看板卡片（balance、当月已花聚合展示）。
+  - 流水页：列表 + 花销审核折叠区（FlowReviewDialog 复用 review_action 时间线）+ 票据附件。
+  - 借出页：列表 + 归还操作（LoanReturnDialog，损耗金额>0 触发扣费）+ 审核（LoanReviewDialog）+ assetNo 按 itemType=ASSET 切 formVisible + 行操作按 status 显隐。
+  - 报表页：按期筛选 + 表格展示 budget/income/expense/balance/loan + 详情弹窗 JSON.parse(expenseByCategory) 花销分类汇总 + 重算按钮当期 disabled（periodEnded===false）+ 详情弹窗内 ElTooltip 提示"当前期未结束"（SharedTablePanel 无原生 tooltip 注入，行内按钮 disabled 灰显 + 详情弹窗复显带 tooltip）；无 add/edit 弹窗（报表由定时任务生成）。
+- 前端验证仅跑 `vue-tsc --build` 通过（按要求不启 dev server，浏览器自验由用户本地跑）。
+
+**文件清单**：批次2 6 enums+5 entities+3 VOs+1 Quarry+2 Mappers+2 XMLs+2 Services+2 Impls+1 ConfigReader+1 Task+1 yml 改动；批次3 1 enum+1 entity+1 Vo+1 Quarry+2 Mappers+2 XMLs（Subject 加法）+1 Service+1 Impl+2 Tasks；批次4 2 api/types+1 permissions+4 页面(config/index)+2 对话框=13 前端文件。
+
+**批次1遗留 TODO 闭环状态**：1(硬编码阈值)✅批次2 AuditConfigReader 替换；2(AuditConfigReader)✅批次2 建；3(loan/report controller TODO)✅批次3 补全；4(categoryLabel 字典翻译)✅前端 DictTag 渲染；5(主体删除查关联流水)留（仍注释，后续按需加）；6(scope=PROJECT projectName 回填)留（项目模块对接后 join）。
+
+### 08-13 审计模块批次5落地（借用人外部化 + 筛选姓名化 + 票据弹窗内传 + 报表重算选择）
+
+延续 `radiant-tickling-stonebraker.md` 定稿方案，按用户实际使用反馈做四项改造，新增文件均在 `knowhub` 模块与 `rookie-ui` 的 knowhub 命名空间内，未改 rookie-* 原有组件与 package.json。前端仅跑 `npm run type-check`（vue-tsc --build）通过，未启 dev server；后端未替跑编译，未启 preview。
+
+**req4 借用人改外部人员（最底层，先做，其余依赖它）**
+- 新 SQL `sql/knowhub-audit-loan-borrower.sql`（ALTER TABLE audit_loan，注释从简、每列 COMMENT 完善）：DROP `idx_audit_loan_borrower`+`borrower_id`；ADD `borrower_name`(VARCHAR64 NOT NULL 借用人姓名)/`borrower_phone`(VARCHAR32 NOT NULL 借用人联系电话)/`borrower_org`(VARCHAR128 NULL 选填 所属单位/部门)/`borrower_remark`(VARCHAR255 NULL 选填 补充备注)；ADD `idx_audit_loan_borrower_name`。执行顺序：先改代码 → type-check 过 → 再跑 SQL（DROP COLUMN 前所有引用已改完）。
+- `pojo/audit/entity/AuditLoan.java` + `vo/AuditLoanVo.java`：删 `borrowerId`/`borrowerNickname`，加 `borrowerName/Phone/Org/Remark` 四字段（含构造器/getter/setter/toString/javadoc），subjectId 保留（借出仍属某主体）。
+- `pojo/audit/quarry/AuditLoanQuarry.java`：删 `borrowerId`(Long)→`borrowerName`(String LIKE)；同时 subjectId(Long)→subjectName(String LIKE)（req1 一道改）。
+- `service/audit/AuditLoanServiceImpl.java`：必填校验从 `borrowerId` 换为 `borrowerName/borrowerPhone`（"借用人姓名不能为空"/"借用人联系电话不能为空"）；**删回避逻辑** —— `approveLoan`/`rejectLoan` 中 `exist.getBorrowerId().equals(userInfo.getUserId())` 借用人本人不能审自己的比对，借用人改外部人后无 sys_user 映射，此回避失效且无意义，直接删两段；审核人本人是否借出创建人的回避走 `createBy` 比对（不变）。
+- `mapper/audit/AuditLoanMapper.xml`：resultMap 映射四新列、去 borrower_id/borrower_nickname；list/detail/overdue 查询去 `left join sys_user u on l.borrower_id = u.user_id` 与 `u.nick_name as borrower_nickname`；list 的 `subjectId` 等值→`subjectName` LIKE on `s.name`（join 已在）；insert/update 动态列四新列。
+- 前端 `types/api/knowhub/audit.ts` LoanRecord 删 `borrowerId`/`borrowerNickname` 加四字段；LoanListQuery `borrowerId`→`borrowerName`。
+- `views/knowhub/audit/loan/{config.ts,index.vue}`：查询表 `subjectId`→`subjectName`、`borrowerId`→`borrowerName`（筛选区 + buildListParams + formModel 透传）；detail 弹模板展示姓名/电话/单位(if)/备注(if)；`LoanReviewDialog.vue`/`LoanReturnDialog.vue` 审核归还弹窗借用人行改姓名+电话+单位(if)。删 `import UserPicker` 与 `#field-borrowerId` 插槽（外部人不再走 user 选人）。
+
+**req1 筛选区 ID 改姓名 LIKE（不动 SearchFilterPanel）**
+- 用户决定 req1：筛选区按 ID 精确查体验差且与弹窗内 UserPicker（搜昵称选 ID）不一致，**改后端按姓名 LIKE 模糊查**，SearchFilterPanel 不支持 `#field-` 插槽转发故不改它，弹窗内 UserPicker 保留不动。
+- 主体筛选 `AuditSubjectQuarry.java` + `AuditSubjectMapper.xml`：`handlerId`(Long)→`handlerName`(String LIKE on `u.nick_name`，join 已在)；前端 `SubjectListQuery`/`SubjectQueryFormState`/`createDefaultSubjectQuery`/`createSubjectQuerySchema`/`handleQueryFormUpdate`/`buildListParams` 切 `handlerName` text。
+- 流水筛选 `AuditFundFlowQuarry.java` + `AuditFundFlowMapper.xml`：**保留** `subjectId`/`handlerId`(Long 精确) —— 周期流水明细弹窗(req3)按 subjectId 精确拉单一主体本期 APPROVED 流水需要；**新增** `subjectName`/`handlerName`(String LIKE on `s.name`/`u.nick_name`，join 已在)；前端 `FundFlowListQuery`/`FundFlowQueryFormState`/`createDefaultFlowQuery`/`createFlowQuerySchema` subjectId→subjectName text，`buildListParams` 切 subjectName。弹窗内 handlerId(UserPicker)不动。
+- 借出筛选：见 req4 段（subjectId→subjectName + borrowerName 已落）。
+- 报表筛选 `AuditPeriodReportQuarry.java` + `AuditPeriodReportMapper.xml`：`subjectId`(Long)→`subjectName`(String LIKE on `s.name`，join 已在)；前端 `ReportListQuery`/`ReportQueryFormState`/`createDefaultReportQuery`/`createReportQuerySchema`/`handleQueryFormUpdate`/`buildListParams` 切 subjectName text。
+
+**req2 流水票据在弹窗内上传**
+- 新 SQL `sql/knowhub-audit-voucher-filetype.sql`（INSERT IGNORE，dict_data_id 落库前查 MAX 续编不写死，列顺序对齐 sys_dict_data 真实表结构 dict_id/dict_key/dict_data_label/dict_data_value/remark/dict_data_sort/tag_type/tag_effect/css_class/ext_json/is_default/status/create_time/create_by/update_time/update_by）：file_business_type 字典加 `AUDIT_VOUCHER`(审计票据附件)；file_size_limit 加 `AUDIT_VOUCHER=5`(MB)；file_type_whitelist 加 `AUDIT_VOUCHER=image/png,image/jpeg,image/gif,image/webp,application/pdf`。三行均按 dict_key 查对应 dict_id 作外键，避开硬编码 id。
+- `enums/storage/FileBusinessType.java` 加 `AUDIT_VOUCHER("AUDIT_VOUCHER", "审计票据附件", FileAccess.PRIVATE)`（PLUGIN_JAR 与 ARTICLE_COVER 之间）。白名单/上限走 sys_config JSON（StorageConfigReader 按 type.code 读），`FileBusinessType.ofCode` 枚举遍历自动覆盖，FileService 无显式 switch 故不改。下载走既有 `getDownloadUrl(objectId, bizAuthorized)`，AuditController 既有权限闸复用，PRIVATE 不外泄露链接。
+- 新组件 `rookie-ui/src/views/knowhub/audit/flow/components/VoucherUploader.vue`（照 ResourceFileUploader 抄）：businessType=AUDIT_VOUCHER 写死、access=PRIVATE 写死；accept `image/png,image/jpeg,image/gif,image/webp,application/pdf`；上传前 `file.size>5*1024*1024`→ElMessage.warning 拦截 + 类型白名单兜底校验；v-model 双向 `number|undefined`(objectId)，已有展示"已上传附件 #{id}"徽标 + 重新上传/清除；PRIVATE 无 publicUrl 不展示缩略图；--rookie-* 变量主题适配。
+- `flow/config.ts` `voucherObjectId` 字段删 inputType:number，label 改"票据凭证"、placeholder"上传图片或PDF"，留 formVisible/formOrder 给插槽接管。
+- `flow/index.vue` 加 `import VoucherUploader` + `<template #field-voucherObjectId="{ modelValue, updateFieldValue }">` 挂 VoucherUploader 回填 objectId。
+
+**req3 周期报表无"新增"，重算弹窗选主体+周期类型+具体周期**
+- 报表是聚合产物不是手建，列表页本就无"新增"语义（批次4 已无 create-button）；本批加独立「重新生成」按钮 + 弹窗选择，生成完毕弹本期流水明细表。
+- 新组件 `rookie-ui/src/views/knowhub/audit/report/components/ReportRegenerateDialog.vue`：props `visible`，emit `update:visible`/`submit({subjectId,periodType,periodKey})`。主体选择 ElSelect remote 按 `name` 搜（`getAuditSubjectPageApi({ name })`，照 UserPicker 风格）回写 subjectId；周期类型 ElRadioGroup MONTH/WEEK；具体周期 ElSelect 下拉随 periodType 动态生成：**MONTH 前推 12 个已结束月（不含当月）** label `2026-07（07-01 ~ 07-31）`；**WEEK 前推 48 个已结束 ISO 周（不含当周）** label `2026-W32（08-03 ~ 08-09）`。periodKey 严格复刻后端：MONTH `yyyy-MM`、WEEK `yyyy-Www`（ISO 周号两位补零）。ISO 周算法无 date-fns 依赖，手撸对齐后端 java.time IsoFields（jan4 anchor + week-based-year + Monday 起）：`isoWeek(date)` 取 Thursday 锚定 weekYear jan4 Monday 算 week 号，`isoWeekRange(weekYear,week)` 反算该周 Monday~Sunday。当期不在候选内，无需禁用；后端 regenerate 复核 period_end&lt;now，前端误传会被拒并弹 message。
+- 新组件 `rookie-ui/src/views/knowhub/audit/report/components/PeriodFlowListDialog.vue`：props `visible`/`subjectId`/`subjectName`/`periodStart`/`periodEnd`/`periodLabel`/摘要六字段(budgetAmount,incomeAmount,expenseAmount,balanceEnd,loanOutCount,loanUnreturned)；打开时调 `getAuditFlowPageApi({ subjectId, status:'APPROVED', beginTime:formatDate(periodStart), endTime:formatDate(periodEnd), pageNum:1, pageSize:100 })`（FundFlowListQuery 支持 subjectId 精确 + status + occur_date 范围）；顶部 6 项摘要数字卡（透传后端报表已算的摘要，Dialog 内不重算）；下方只读 ElTable 展示 flowType( DictTag)/category(DictTag)/amount(formatReportMoney)/occurDate/handlerNickname/note，不用 SharedTablePanel 避免带编辑表单过重。
+- `report/index.vue`：顶部加 BaseCard 内独立「重新生成」ElButton（`usePermission().hasPermission(SYSTEM_PERMISSION_KEYS.audit.report.regenerate)` 控显隐）+ 提示文案；`handleRegenerateSubmit(payload)` 调 `regenerateAuditReportApi` 返 Boolean 后用三键查列表 `getAuditReportPageApi` 取新报表记录 periodStart/periodEnd + 摘要透传打开 `PeriodFlowListDialog`；行内「重算」按钮（当期 disabled 守卫保留）复用同入口 `doRegenerateAndShowFlows`。
+- 后端 `AuditPeriodReportServiceImpl.regenerateReport` 已满足（period_end&lt;now gate + UPSERT），不动；无新增接口（主体搜索复用 `getAuditSubjectPageApi` 既存）。
+
+**文件清单**（批次5）：后端改 1 entity+1 vo+3 quarrys(loan/subject/flow/report)+2 services(LoanServiceImpl 删回避+必填)+4 mapper xmls(loan/subject/flow/report)+1 enum(FileBusinessType 加 AUDIT_VOUCHER)；新 SQL 2(knowhub-audit-loan-borrower.sql + knowhub-audit-voucher-filetype.sql)；前端改 types 1(api/knowhub/audit.ts)+4 页面(config/index loan/subject/flow/report)+2 对话框(LoanReviewDialog/LoanReturnDialog 借用人行)；前端新增 3 组件(flow/components/VoucherUploader.vue + report/components/ReportRegenerateDialog.vue + report/components/PeriodFlowListDialog.vue)。
+
+**验证**：前端 `npm run type-check`(vue-tsc --build) 通过；后端未替跑编译/未启 preview（用户自验）。SQL 由用户跑 `mysql --default-character-set=utf8mb4 < sql/knowhub-audit-loan-borrower.sql` 与 `< sql/knowhub-audit-voucher-filetype.sql` 后 DESC audit_loan 看四新列、SELECT sys_dict_data WHERE dict_data_value='AUDIT_VOUCHER' 在。
+
+### 08-13 审计批次5修复：流水/借出表单主体选择 + date-only 反序列化崩溃
+
+用户实测反馈两处 BUG，本批一并修掉，全程未改 rookie-* 原组件、未跑后端编译、未启 dev server，前端仅 `npm run type-check`(vue-tsc --build) 通过。
+
+**BUG1：流水/借出弹窗表单没有主体选择**
+- 现象：`POST /audit/flow` 与 `POST /audit/loan` 始终校验失败「请输入关联主体ID」——弹窗表单 config 里 `subjectId` 只有 `buildFlowFormRules/buildLoanFormRules` 的必填规则，但 `createFlowSchema/createLoanSchema` 根本没给 `subjectId` 字段配置（既无默认输入也无插槽接管），用户无处选主体。批次5 前面把筛选区 `subjectId` 改 `subjectName` LIKE 时漏了把弹窗表单的 subjectId 接上选人能力。
+- 修：仿 `UserPicker` 新增通选组件 `rookie-ui/src/views/knowhub/audit/components/SubjectPicker.vue`（remote 搜主体名，复用 `getAuditSubjectPageApi({ name })`，编辑回显用 `getAuditSubjectDetailApi` 补占位选项，value=subjectId、label=主体名）。
+- 接线：`flow/config.ts` + `loan/config.ts` 给 `createFlowSchema/createLoanSchema` 补 `subjectId` schema（去 inputType、留 formVisible/formOrder=0 占位给插槽接管，placeholder 改「搜索主体名选择」）；必填提示从「请输入关联主体ID」改为「请选择主体」。`flow/index.vue` + `loan/index.vue` 加 `import SubjectPicker` + `<template #field-subjectId>` 插槽挂 SubjectPicker 回写 subjectId（与 `#field-handlerId` 同范式）。
+
+**BUG2：POST /audit/flow 反序列化 `java.util.Date from "2026-03-12"` 崩溃**
+- 现象：全局 `spring.jackson.date-format=yyyy-MM-dd HH:mm:ss`(SimpleDateFormat 严格解析)拒收 date-only 字符串；审计日期字段(occurDate / borrowDate / expectedReturnDate / actualReturnDate / periodStart / periodEnd)前端 el-date-picker ISO DATE 仅发 `yyyy-MM-dd`，入 `@RequestBody` JSON 反序列化即抛 `Unparseable date`。quarry 上的 `@DateTimeFormat` 仅对 GET 表单绑定有效，对 JSON 无效。
+- 修：于 `AuditFundFlow`/`AuditLoan`/`AuditPeriodReport` 三实体 + `AuditFundFlowVo`/`AuditLoanVo`/`AuditPeriodReportVo` 三 VO 的 date-only 字段加 `@JsonFormat(pattern="yyyy-MM-dd")`，输入解析与输出序列化双方统一 date-only；createTime/updateTime/generateTime 仍走全局 timestamp 格式（非业务日期）。`POST /audit/loan` 与 `/audit/loan/return` 同样隐患一并修掉。
+
+**文件清单**：前端新增 1(SubjectPicker.vue)、前端改 4(flow/config.ts + flow/index.vue + loan/config.ts + loan/index.vue)；后端改 6(3 实体+3 VO 加 @JsonFormat)。无 SQL、无菜单/字典变化。
+**验证**：前端 `npm run type-check` 通过；后端自验需重启编译后新增流水/借出选主体提交、日期反序列化均应通过。doc/knowhub-api.md 已补 date-only @JsonFormat 修复说明。
+
+### 08-13 审计批次5补充：票据/附件点击下载 + 借出附件直传 + 主体流水明细入口 + 报表重新生成归位与明细查看
+
+用户实测反馈四项体验问题，本批一并处理，全程未改 rookie-* 原组件、未跑后端编译、未启 dev server，前端仅 `npm run type-check`(vue-tsc --build) 通过。
+
+**1. 流水详情票据ID→点击下载**
+- 原：流水详情弹窗里「票据附件ID」只显示 objectId 数字，不可下载。修：把该行换成「点击下载」`ElLink`，点击调新增的 `views/knowhub/audit/shared/downloadVoucher.ts`（复用 file/index.vue 的下载范式：getDownloadUrlApi 拿 downloadUrl → 绝对 URL 直接 window.open / 相对中转路径 fetch 带 Token 取 blob 再 a.click()，文件名取 Content-Disposition 或 originalName 兜底）。无 voucherObjectId 时不渲染该行。
+
+**2. 借出附件改为弹窗内上传 + 详情/审核/归还弹窗附件下载**
+- 原：借出弹窗表单 `voucherObjectId` 是 number 手填；审核/归还/详情弹窗不展示附件。修：
+  - `loan/config.ts` `voucherObjectId` 去 inputType:number、留插槽占位、label 改「附件」、span=24。
+  - `loan/index.vue` 加 `import VoucherUploader`（复用流水票据组件）+ `#field-voucherObjectId` 插槽挂 VoucherUploader 直传图片/PDF 回填 objectId。
+  - `loan/index.vue` 详情弹窗：原有「附件ID」行换成 voucherObjectId only 时「附件」+ `ElLink` 点击下载。
+  - `LoanReviewDialog.vue` / `LoanReturnDialog.vue`：loan.voucherObjectId 存在时弹一「附件」行 + `ElLink` 点击下载，供审核员/归还人参考凭证。
+  - 复用同一 `downloadVoucher` 工具，附件走既有 `getDownloadUrl(objectId, bizAuthorized)` 下载，PRIVATE 不直链泄露。
+
+**3. 花销主体表格加「流水明细」入口**
+- 原：主体页行操作只有编辑/删除，无法快速看该主体流水。修：新增 `views/knowhub/audit/subject/components/SubjectFlowListDialog.vue`（按 subjectId 精确拉该主体全部流水 getAuditFlowPageApi，不过滤 status，只读 ElTable 展示类型/分类/金额/发生日期/经办人/状态/备注，金额用 formatAmount 与流水管理页一致）。`subject/index.vue` 加行操作「流水明细」（无权限键，有 quarry 权限即可看）打开该弹窗，透传 subjectId/name。
+
+**4. 报表重新生成归位 + 详情可看明细**
+- 原：重新生成是独立 BaseCard 工具栏一个按钮（"新开"），与列表页"新增"位置不一致；报表详情弹窗只能看摘要看不了该期流水明细（只有重新生成时才会弹流水明细）。
+- 修①："重新生成"从独立 BaseCard 工具栏移到 SearchFilterPanel 的 create-button 位置（`create-button-text="重新生成"` + `:create-permission-key="knowhub:audit:report:regenerate"`，SearchFilterPanel 内 hasPermission 控显隐），原独立 toolbar BaseCard 删除，提示文案降为筛选区下方一行 hint。按钮复用「新增」入口位置，符合用户「放到上面新增位置而不是新开；新增去掉」的诉求（报表本无新增，现仅在新增位承载重新生成）。
+- 修②：报表详情弹窗 footer 加「查看流水明细」按钮（plain），点击透传 detailRecord + periodLabel 打开既有 PeriodFlowListDialog（与重算后同款弹窗），任意已有报表随时可看明细，不再依赖重新生成。重算后自动弹明细的原流程保留。
+
+**文件清单**：前端新增 2(SubjectFlowListDialog.vue + shared/downloadVoucher.ts)；前端改 8(flow/index.vue + loan/index.vue + loan/config.ts + LoanReviewDialog.vue + LoanReturnDialog.vue + subject/index.vue + report/index.vue + flow/index.vue 票据下载行)。无 SQL、无后端、无菜单/字典变化。
+**验证**：前端 `npm run type-check` 通过；后端/下载/上传自验需用户本地跑（下载链路复用 file/index.vue 既有 getDownloadUrlApi，PRIVATE 走中转 fetch 带 Token）。
+
+### 08-13 审计批次5补充-2：主体「流水明细」由弹窗改为跳转资金流水页
+
+用户反馈：上条补充第 3 项的「流水明细」做成主体页内弹窗（SubjectFlowListDialog）体验割裂，应改为**点击直接跳转到「资金流水」页并带筛选条件回填**，和系统字典点击「数据项」跳字典数据管理页同款范式。本批改回跳转，全程未改 rookie-* 原组件、未跑后端编译、未启 dev server，前端仅 `npm run type-check`(vue-tsc --build) 通过。
+
+- 删 `rookie-ui/src/views/knowhub/audit/subject/components/SubjectFlowListDialog.vue`（及空 components 目录），主体页不再留弹窗。
+- `subject/index.vue`：删 SubjectFlowListDialog import 及 `flowListVisible`/`flowListSubject` 状态；加 `useRouter`，「流水明细」行操作改为 `router.push({ path: '/blog/audit/audit-flow', query: { subjectId: row.subjectId?.toString(), subjectName: row.name } })`（路径按动态路由三段拼接：菜单 63 knowhub→route='blog'、162 审计管理→route='audit'、169 资金流水→route='audit-flow'）。
+- `flow/index.vue`：加 `useRoute`，`onMounted` 先 `applyRouteQuery()` 把 `route.query.subjectName` 回填到 `queryForm.subjectName`，再 `fetchPage()`，使跳进来即按主体名 LIKE 过滤首屏（消费方读 route.query，对齐 system/dict-data 范式）。subjectId 透传但不参与查询（流水筛选区已按姓名 LIKE，无 subjectId 精确入参）。
+
+**文件清单**：前端删 1(SubjectFlowListDialog.vue)；前端改 2(subject/index.vue + flow/index.vue)。无 SQL、无后端、无菜单/字典变化。
+**验证**：前端 `npm run type-check` 通过；跳转回填由用户本地双击自验（主体页点「流水明细」→跳资金流水页→筛选区主体名已回填、列表已按该主体过滤）。

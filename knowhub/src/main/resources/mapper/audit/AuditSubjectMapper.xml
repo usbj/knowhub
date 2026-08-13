@@ -1,0 +1,168 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.knowhub.mapper.audit.AuditSubjectMapper">
+
+    <!--
+      花销主体结果映射。
+      仅映射 audit_subject 表列 + join 带出的 handler_nickname（非表字段，LEFT JOIN sys_user）。
+      balance/monthExpense 非表聚合字段不进 resultMap，由 Service 层聚合后 set 回实体/VO（避免 N+1）。
+      projectName 暂不映射（项目模块对接后回填，当前留空）。
+    -->
+    <resultMap id="AuditSubjectResultMap" type="com.knowhub.pojo.audit.entity.AuditSubject">
+        <id property="subjectId" column="subject_id"/>
+        <result property="name" column="name"/>
+        <result property="scope" column="scope"/>
+        <result property="projectId" column="project_id"/>
+        <result property="budgetTotal" column="budget_total"/>
+        <result property="incomeTotal" column="income_total"/>
+        <result property="handlerId" column="handler_id"/>
+        <result property="status" column="status"/>
+        <result property="note" column="note"/>
+        <result property="createBy" column="create_by"/>
+        <result property="createTime" column="create_time"/>
+        <result property="updateBy" column="update_by"/>
+        <result property="updateTime" column="update_time"/>
+        <result property="deleted" column="deleted"/>
+        <!-- join 带出的展示字段（非表字段） -->
+        <result property="handlerNickname" column="handler_nickname"/>
+    </resultMap>
+
+    <!--
+      列表查询：join sys_user 取负责人昵称(handler_nickname)。
+      支持按 name 模糊、scope、status、handlerName 模糊（join sys_user nick_name）、创建时间区间过滤。
+      按 subject_id desc 排序（新建在前）。
+    -->
+    <select id="quarryAuditSubject" parameterType="com.knowhub.pojo.audit.quarry.AuditSubjectQuarry" resultMap="AuditSubjectResultMap">
+        select s.subject_id, s.name, s.scope, s.project_id, s.budget_total, s.income_total,
+               s.handler_id, s.status, s.note,
+               s.create_by, s.create_time, s.update_by, s.update_time, s.deleted,
+               u.nick_name as handler_nickname
+        from audit_subject s
+                left join sys_user u on s.handler_id = u.user_id
+        where s.deleted = 0
+        <if test="name != null and name != ''">and s.name like concat('%', #{name}, '%')</if>
+        <if test="scope != null and scope != ''">and s.scope = #{scope}</if>
+        <if test="status != null and status != ''">and s.status = #{status}</if>
+        <if test="handlerName != null and handlerName != ''">and u.nick_name like concat('%', #{handlerName}, '%')</if>
+        <if test="beginTime != null">and s.create_time &gt;= #{beginTime}</if>
+        <if test="endTime != null">and s.create_time &lt;= #{endTime}</if>
+        order by s.subject_id desc
+    </select>
+
+    <!-- 详情：按主键取未删除主体，含 handler_nickname -->
+    <select id="getAuditSubjectInfo" parameterType="long" resultMap="AuditSubjectResultMap">
+        select s.subject_id, s.name, s.scope, s.project_id, s.budget_total, s.income_total,
+               s.handler_id, s.status, s.note,
+               s.create_by, s.create_time, s.update_by, s.update_time, s.deleted,
+               u.nick_name as handler_nickname
+        from audit_subject s
+                left join sys_user u on s.handler_id = u.user_id
+        where s.subject_id = #{subjectId} and s.deleted = 0
+    </select>
+
+    <!-- 新增主体，动态列（对齐 README.dev「Mapper XML insert 均改为动态列」约定） -->
+    <insert id="insertAuditSubject" parameterType="com.knowhub.pojo.audit.entity.AuditSubject" useGeneratedKeys="true" keyProperty="subjectId">
+        insert into audit_subject
+        <trim prefix="(" suffix=")" suffixOverrides=",">
+            <if test="name != null">name,</if>
+            <if test="scope != null">scope,</if>
+            <if test="projectId != null">project_id,</if>
+            <if test="budgetTotal != null">budget_total,</if>
+            <if test="incomeTotal != null">income_total,</if>
+            <if test="handlerId != null">handler_id,</if>
+            <if test="status != null">status,</if>
+            <if test="note != null">note,</if>
+            create_by, create_time, update_by, update_time
+        </trim>
+        values
+        <trim prefix="(" suffix=")" suffixOverrides=",">
+            <if test="name != null">#{name},</if>
+            <if test="scope != null">#{scope},</if>
+            <if test="projectId != null">#{projectId},</if>
+            <if test="budgetTotal != null">#{budgetTotal},</if>
+            <if test="incomeTotal != null">#{incomeTotal},</if>
+            <if test="handlerId != null">#{handlerId},</if>
+            <if test="status != null">#{status},</if>
+            <if test="note != null">#{note},</if>
+            #{createBy}, now(), #{updateBy}, now()
+        </trim>
+    </insert>
+
+    <!-- 编辑主体（动态列） -->
+    <update id="updateAuditSubject" parameterType="com.knowhub.pojo.audit.entity.AuditSubject">
+        update audit_subject
+        <set>
+            <if test="name != null and name != ''">name = #{name},</if>
+            <if test="scope != null and scope != ''">scope = #{scope},</if>
+            <if test="projectId != null">project_id = #{projectId},</if>
+            <if test="budgetTotal != null">budget_total = #{budgetTotal},</if>
+            <if test="incomeTotal != null">income_total = #{incomeTotal},</if>
+            <if test="handlerId != null">handler_id = #{handlerId},</if>
+            <if test="status != null and status != ''">status = #{status},</if>
+            <if test="note != null">note = #{note},</if>
+            <if test="deleted != null">deleted = #{deleted},</if>
+            update_by = #{updateBy},
+            update_time = now()
+        </set>
+        where subject_id = #{subjectId}
+    </update>
+
+    <!-- 软删主体（deleted=1，回填 updateBy）。注：此 update 走 @Param，不依赖实体 -->
+    <update id="deleteAuditSubject">
+        update audit_subject set deleted = 1, update_by = #{updateBy}, update_time = now()
+        where subject_id = #{subjectId}
+    </update>
+
+    <!-- 原子累加预算累计列（BUDGET 写入时事务内调用） -->
+    <update id="addBudgetTotal">
+        update audit_subject set budget_total = budget_total + #{amount}, update_time = now()
+        where subject_id = #{subjectId}
+    </update>
+
+    <!-- 原子累加实到累计列（INCOME 写入时事务内调用） -->
+    <update id="addIncomeTotal">
+        update audit_subject set income_total = income_total + #{amount}, update_time = now()
+        where subject_id = #{subjectId}
+    </update>
+
+    <!--
+      取所有未删除且 ACTIVE 的主体（供报表定时任务遍历，不带 handler_nickname，轻量）。
+      不含软删/CLOSED 主体（CLOSED 已关账不再生成报表）。
+    -->
+    <select id="listActiveSubjects" resultMap="AuditSubjectResultMap">
+        select s.subject_id, s.name, s.scope, s.project_id, s.budget_total, s.income_total,
+               s.handler_id, s.status, s.note,
+               s.create_by, s.create_time, s.update_by, s.update_time, s.deleted
+        from audit_subject s
+        where s.deleted = 0 and s.status = 'ACTIVE'
+        order by s.subject_id asc
+    </select>
+
+    <!--
+      聚合历史已通过 EXPENSE 合计（算 balance 用：income_total − 此合计 = 结余）。
+      只统计 status=APPROVED 且 deleted=0 的 EXPENSE 流水；IFNULL 兜底无记录返回 0。
+    -->
+    <select id="sumApprovedExpense" resultType="java.math.BigDecimal">
+        select ifnull(sum(amount), 0)
+        from audit_fund_flow
+        where subject_id = #{subjectId} and flow_type = 'EXPENSE'
+          and status = 'APPROVED' and deleted = 0
+    </select>
+
+    <!--
+      聚合当月已花合计（看板月度开销用）。
+      yearMonth 格式 "yyyy-MM"；按 occur_date 落在该月过滤（ BETWEEN 月首 含 / 下月首 不含）。
+      IFNULL 兜底无记录返回 0。
+    -->
+    <select id="sumMonthExpense" resultType="java.math.BigDecimal">
+        select ifnull(sum(amount), 0)
+        from audit_fund_flow
+        where subject_id = #{subjectId} and flow_type = 'EXPENSE'
+          and status = 'APPROVED' and deleted = 0
+          and occur_date &gt;= concat(#{yearMonth}, '-01')
+          and occur_date &lt; date_add(concat(#{yearMonth}, '-01'), interval 1 month)
+    </select>
+
+</mapper>

@@ -166,4 +166,51 @@ export const SYSTEM_PERMISSION_KEYS = {
     info: ['knowhub:chapter:info'],
     quarry: ['knowhub:chapter:quarry'],
   },
+  // ---- 审计模块（花销/借出/经费核算，纯后台 admin，不分等级）----
+  // 权限键三段式 knowhub:audit:{模块}:{动作}，与 sys_menu 中 knowhub:audit:* 行对齐
+  // （菜单 menu_id 162-195，见 sql/knowhub-audit.sql）。
+  // 审计内部使用无 :l1-3 等级；admin 登录时全 perm_key 已塞入，@PreAuthorize 兜底。
+  // flow:review 键即 submit（提交审批同键复用）；loan:review/loan:overdue 键存在但后端路由用 approve/reject/return，
+  //   仍在此声明以备按钮门控的进页面门槛对齐。
+  audit: {
+    subject: {
+      quarry: ['knowhub:audit:subject:quarry'],
+      info: ['knowhub:audit:subject:info'],
+      add: ['knowhub:audit:subject:add'],
+      edit: ['knowhub:audit:subject:edit'],
+      delete: ['knowhub:audit:subject:delete'],
+    },
+    flow: {
+      quarry: ['knowhub:audit:flow:quarry'],
+      info: ['knowhub:audit:flow:info'],
+      add: ['knowhub:audit:flow:add'],
+      edit: ['knowhub:audit:flow:edit'],
+      delete: ['knowhub:audit:flow:delete'],
+      // review 键即 submit（提交审批同键复用）
+      review: ['knowhub:audit:flow:review'],
+      approve: ['knowhub:audit:flow:approve'],
+      reject: ['knowhub:audit:flow:reject'],
+      revoke: ['knowhub:audit:flow:revoke'],
+      reviewLog: ['knowhub:audit:flow:reviewLog'],
+    },
+    loan: {
+      quarry: ['knowhub:audit:loan:quarry'],
+      info: ['knowhub:audit:loan:info'],
+      add: ['knowhub:audit:loan:add'],
+      edit: ['knowhub:audit:loan:edit'],
+      delete: ['knowhub:audit:loan:delete'],
+      approve: ['knowhub:audit:loan:approve'],
+      reject: ['knowhub:audit:loan:reject'],
+      return: ['knowhub:audit:loan:return'],
+      reviewLog: ['knowhub:audit:loan:reviewLog'],
+      // 声明性按钮键，后端路由未直接用，备前端按钮门控对齐
+      review: ['knowhub:audit:loan:review'],
+      overdue: ['knowhub:audit:loan:overdue'],
+    },
+    report: {
+      quarry: ['knowhub:audit:report:quarry'],
+      info: ['knowhub:audit:report:info'],
+      regenerate: ['knowhub:audit:report:regenerate'],
+    },
+  },
 } as const

@@ -102,3 +102,8 @@ knowhub:
     # 对账间隔走 yml（@Scheduled 注解在 Bean 创建时解析，只能读 yml/环境变量），改需重启。
     # 注意：此开关只管文章系统审核；章节作者审核是 visibility=SEMIPUBLIC 固有机制，不受此开关影响。
     reconcile-interval-minutes: 5
+  audit:
+    # 借出逾期对账定时任务扫描间隔（分钟）：扫 expected_return_date < now AND status=BORROWED 的借出置 OVERDUE
+    # 频率走 yml（@Scheduled 注解在 Bean 创建时解析，只能读 yml/环境变量），改需重启。
+    # 借出审批/月度周记报表开关本身走 sys_config(knowhub.audit.*，默认关闭），可后台改即时生效
+    overdue-scan-interval-minutes: 30
