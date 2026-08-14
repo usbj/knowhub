@@ -3,16 +3,15 @@ import { onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Lock, Postcard, User } from '@element-plus/icons-vue'
-import { registerApi } from '@/api/system/login'
-import { useSysConfigStore } from '@/stores/system-config'
+import { getRegisterEnabledApi, registerApi } from '@/api/system/login'
 import type { RegisterRequestData } from '@/types/api/system/login'
 
 const router = useRouter()
-const sysConfigStore = useSysConfigStore()
 
 /**
- * 注册是否开放：由系统设置 sys.user.registerEnabled（BOOLEAN）控制。
- * 游客态通过公共读取接口按 key 获取；读取失败按"未开放"处理（与后端默认关闭一致）。
+ * 注册是否开放：由后端公开接口 GET /register/enabled 返回
+ * （后端读系统设置 sys.user.registerEnabled，BOOLEAN，默认 false）。
+ * 前端不直接读取系统设置接口；请求失败按"未开放"处理（与后端默认关闭一致）。
  */
 const registerEnabled = ref(false)
 
@@ -36,7 +35,7 @@ const form = reactive({
 
 /**
  * 方法效果：
- * 拉取系统设置 sys.user.registerEnabled 判断注册开关是否开放。
+ * 调用公开接口 GET /register/enabled 判断注册开关是否开放。
  * 参数：
  * - 无。
  * 返回值：
@@ -44,8 +43,8 @@ const form = reactive({
  */
 const loadRegisterEnabled = async () => {
   try {
-    const value = await sysConfigStore.fetchSysConfig('sys.user.registerEnabled')
-    registerEnabled.value = value === 'true'
+    const result = await getRegisterEnabledApi()
+    registerEnabled.value = result.data === true
   } catch {
     registerEnabled.value = false
   }

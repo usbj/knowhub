@@ -3,7 +3,7 @@
  * 集中管理系统登录与注册相关的后端接口请求方法，
  * 当前先承接 /login 与 /register 的调用。
  */
-import { post } from '@/utils/http'
+import { get, post } from '@/utils/http'
 import type {
   ApiResult,
   LoginRequestData,
@@ -25,3 +25,10 @@ export const loginApi = (data: LoginRequestData) =>
  */
 export const registerApi = (data: RegisterRequestData) =>
   post<ApiResult<boolean>, RegisterRequestData>('/register', data)
+
+/**
+ * 调用后端注册开关查询接口（公开接口，无需登录）。
+ * 后端读取系统设置 sys.user.registerEnabled（BOOLEAN，默认 false）返回。
+ * 前端注册入口/注册页据此显隐与提示；不直接读取系统设置接口。
+ */
+export const getRegisterEnabledApi = () => get<ApiResult<boolean>>('/register/enabled')
