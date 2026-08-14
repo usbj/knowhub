@@ -15,11 +15,11 @@
 
 ## 接口更新日志
 
-### 2026-08-14 — 公告详情公开 + 用户自助注册 + 系统设置按 key 读取公开
+### 2026-08-14 — 公告详情公开 + 用户自助注册 + 注册开关专用接口
 
 - `GET /sys/notice/{noticeId}` 消息通知详情：移除 `@PreAuthorize("system:notice:info")`，改为**公开接口**（游客可访问，公告详情门户场景）。SecurityConfig 用 `RegexRequestMatcher` 按 `GET /sys/notice/{数字ID}` 精确放行，`/list`、`/my`、`/read`、`/confirm` 仍要求认证（`/list` 的方法级 `@PreAuthorize` 不变）。
 - 新增 `POST /register` 用户自助注册（公开接口，`@Log` 记录）。受系统设置 `sys.user.registerEnabled`（BOOLEAN，默认 false）控制：未开启时返回"注册功能未开放"；开启后校验参数与唯一性（用户名 ≤12 位字母数字下划线、密码 6-20 位、手机号 11 位），密码 BCrypt 加密入库，绑定系统默认角色（`getDefaultRole()`，`sys_role.is_default=1`），注册即启用、不自动登录。注册开关配置项见 `sql/sys_config_register.sql`（无主键增量插入，rookie 与二开项目通用）。
-- `GET /sys/system-config/configKey/{configKey}` 系统设置按 key 读取：由"仅需登录"改为**公开接口**（游客可读取单个配置值，供注册页/登录页判断注册开关等公开场景；仍只返回 `configValue` 字符串，不暴露元信息）。
+- 新增 `GET /register/enabled` 注册开关状态查询（公开接口）：供登录页/注册页判断注册入口显隐。**前端不直接读取系统设置接口**——`/sys/system-config/configKey/{configKey}` 保持"仅需登录"，不放宽给游客（避免游客任意获取系统设置）。
 
 ### 2026-08-14 — 个人中心修复与修改密码独立接口
 
@@ -370,6 +370,42 @@
   "code": 500,
   "msg": "注册功能未开放",
   "data": null
+}
+```
+
+---
+
+### 7. 获取注册开关状态
+
+#### 7.1 基本信息
+**请求接口：** `/register/enabled`
+**请求方式：** GET
+**所需权限：** 公开（无需登录）
+**基本信息：** 返回注册开关状态（登录页/注册页据此显隐注册入口与提示）。后端读取系统设置 `sys.user.registerEnabled`（BOOLEAN，默认 false），未配置或停用时视为关闭。**前端不直接读取系统设置接口**（`/sys/system-config/configKey/**` 保持仅需登录，避免游客任意获取系统设置）
+
+#### 7.2 请求头
+无
+
+#### 7.3 请求体
+无
+
+#### 7.4 响应示例
+
+**开启时：**
+```json
+{
+  "code": 200,
+  "msg": "请求成功",
+  "data": true
+}
+```
+
+**关闭时：**
+```json
+{
+  "code": 200,
+  "msg": "请求成功",
+  "data": false
 }
 ```
 
@@ -1941,11 +1977,13 @@ PUBLISHED → REVOKED | **响应：** `Result<Boolean>`
 #### 7.1 基本信息
 **请求接口：** `/sys/system-config/configKey/{configKey}`
 **请求方式：** GET
-**所需权限：** 公开（无需登录；放开给游客用于注册开关等公开场景判断，仅返回单个 `configValue` 字符串，不暴露 valueType/isSystem/remark 等元信息，对标若依 `GET /system/config/configKey/{configKey}`）
+**所需权限：** 需要登录（不加按钮权限，公共读取，对标若依 `GET /system/config/configKey/{configKey}`；不放宽给游客，游客侧公开配置读取走专用接口，如注册开关 `GET /register/enabled`）
 **基本信息：** 按设置键返回当前设置值，供前端按需读取运用，避免全量拉取暴露关键设置。只返回 `configValue` 字符串，不暴露 valueType/isSystem/remark 等元信息。命中且启用（status=1）返回值，未命中或停用返回 `null`（业务码仍 200）
 
 #### 7.2 请求头
-无
+| 参数名 | 参数说明           | 参数类型 | 是否必填 |
+| ------ | ------------------ | -------- | -------- |
+| Token  | JWT 令牌（无前缀） | string   | 是       |
 
 #### 7.3 路径参数
 | 参数名    | 参数说明 | 参数类型 | 是否必填 |

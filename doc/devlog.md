@@ -11,6 +11,18 @@
 ---
 
 ## 2026-08-14
+### 13:00 — 注册开关改专用公开接口：收回系统设置按 key 读取的游客放行
+
+前端不能随意获取系统设置，将上一轮对 `GET /sys/system-config/configKey/{configKey}` 的 permitAll 收回（保持仅需登录），改为后端提供注册开关专用公开接口。
+
+- `rookie-system/.../controller/SysRegisterController.java` — 新增 `GET /register/enabled`（公开、无 @Log）：读取 `SysConfigUtil.getBoolean("sys.user.registerEnabled", false)` 返回 `Result<Boolean>`；类注释补充说明"注册开关查询走专用接口，不放宽系统设置按 key 读取，避免游客任意读取系统设置"
+- `rookie-framework/.../config/SecurityConfig.java` — 放行规则改为 `/register` + `/register/enabled`；**移除** `GET /sys/system-config/configKey/**` 的 permitAll（该接口恢复仅需登录）
+- `rookie-ui/src/api/system/login.ts` — 新增 `getRegisterEnabledApi`（GET /register/enabled）
+- `rookie-ui/src/views/register.vue` / `rookie-ui/src/views/login.vue` — 注册开关判断由 `fetchSysConfig('sys.user.registerEnabled')` 改为调用 `getRegisterEnabledApi`（`result.data === true`），不再直接读取系统设置接口；失败仍按关闭处理
+- 验证：后端 `mvnw compile` 通过；前端 `npx vue-tsc -p tsconfig.app.json --noEmit` 通过
+- 未改动：`SysConfigController` 的 configKey 接口本身（注释语义"仅需登录"本就正确）；系统设置模块管理接口权限不变
+
+## 2026-08-14
 ### 12:40 — 弹窗栈"第二个弹窗瞬间关闭"根因修复 + profile 性别选项对齐字典
 
 - `rookie-ui/src/views/system/notice/notice-group/components/GroupMemberTransfer.vue` — **去掉 ElDialog 的 destroy-on-close**：根因是"添加成员"子弹窗（GroupMemberAddDialog）组件嵌在主弹窗 ElDialog 内部，主弹窗被弹窗栈隐藏（visible=false）时 destroy-on-close 在关闭动画后销毁内容，**内嵌子弹窗组件随之卸载**（其 onBeforeUnmount 还会从弹窗栈移除自身），导致子弹窗打开后约 300ms 瞬间消失（用户报的"打开第二个后第二个瞬间关闭"）。去掉 destroy-on-close 后主弹窗隐藏期间内容保留（display:none），子弹窗组件不卸载；状态重置由 open() 显式完成（localMembers/originalUserIds 重置），不依赖内容销毁。notice-content 页的子弹窗在页面层（SharedTablePanel 外），不受编辑弹窗 hide 影响，本无此问题

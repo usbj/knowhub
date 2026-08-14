@@ -3,15 +3,13 @@ import { onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Lock, User } from '@element-plus/icons-vue'
-import { loginApi } from '@/api/system/login'
+import { getRegisterEnabledApi, loginApi } from '@/api/system/login'
 import { useUserStore } from '@/stores/user'
-import { useSysConfigStore } from '@/stores/system-config'
 import type { LoginRequestData } from '@/types/api/system/login'
 
 const router = useRouter()
 const route = useRoute()
 const userStore = useUserStore()
-const sysConfigStore = useSysConfigStore()
 
 /**
  * 控制登录按钮的加载状态。
@@ -19,8 +17,9 @@ const sysConfigStore = useSysConfigStore()
 const loading = ref(false)
 
 /**
- * 注册是否开放：由系统设置 sys.user.registerEnabled（BOOLEAN）控制。
- * 游客态通过公共读取接口按 key 获取；读取失败按"未开放"处理（与后端默认关闭一致），
+ * 注册是否开放：由后端公开接口 GET /register/enabled 返回
+ * （后端读系统设置 sys.user.registerEnabled，BOOLEAN，默认 false）。
+ * 前端不直接读取系统设置接口；读取失败按"未开放"处理（与后端默认关闭一致），
  * 此时隐藏"注册账号"入口。
  */
 const registerEnabled = ref(false)
@@ -93,7 +92,7 @@ const handleForgotPassword = () => {
 
 /**
  * 方法效果：
- * 拉取系统设置 sys.user.registerEnabled 判断注册开关是否开放，控制"注册账号"入口显隐。
+ * 调用公开接口 GET /register/enabled 判断注册开关是否开放，控制"注册账号"入口显隐。
  * 参数：
  * - 无。
  * 返回值：
@@ -101,8 +100,8 @@ const handleForgotPassword = () => {
  */
 const loadRegisterEnabled = async () => {
   try {
-    const value = await sysConfigStore.fetchSysConfig('sys.user.registerEnabled')
-    registerEnabled.value = value === 'true'
+    const result = await getRegisterEnabledApi()
+    registerEnabled.value = result.data === true
   } catch {
     registerEnabled.value = false
   }

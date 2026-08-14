@@ -70,13 +70,13 @@ public class SecurityConfig {
                         .requestMatchers("/file/resolve/**").permitAll()
                         // 用户自助注册：注册接口允许游客访问
                         .requestMatchers("/register").permitAll()
+                        // 用户自助注册：注册接口与注册开关查询接口允许游客访问
+                        // （注册开关查询走专用接口，不放宽系统设置按 key 读取，避免游客任意读取系统设置）
+                        .requestMatchers("/register", "/register/enabled").permitAll()
                         // 公告详情公开访问（门户/游客场景）：仅数字 ID 详情路径放行，
                         // /my、/list、/read、/confirm 仍要求认证。
                         // 用 RegexRequestMatcher 精确限定，避免 MvcRequestMatcher 对 {var:regex} 匹配行为不确定。
                         .requestMatchers(RegexRequestMatcher.regexMatcher(HttpMethod.GET, "^/sys/notice/\\d+$")).permitAll()
-                        // 系统设置按 key 公共读取：放开给游客，供注册页判断注册开关等公开场景；
-                        // 仅返回单个 configValue 字符串，不暴露元信息（对应 SysConfigController 注释约定）
-                        .requestMatchers(HttpMethod.GET, "/sys/system-config/configKey/**").permitAll()
                         //swagger相关配置
                         .requestMatchers("/doc.html/**").permitAll()
                         .requestMatchers("/swagger-ui.html/**").permitAll()
