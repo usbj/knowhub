@@ -35,7 +35,7 @@ public class SysNoticeController {
 
     @GetMapping("/{noticeId}")
     @Operation(summary = "获取消息通知详情")
-    @PreAuthorize("hasAuthority('system:notice:info')")
+    // 公开接口：游客可访问（公告详情门户场景），放行规则见 SecurityConfig
     public Result<SysNoticeVo> getSysNoticeInfo(@PathVariable Long noticeId) {
         SysNoticeVo vo = sysNoticeService.getSysNoticeInfo(noticeId);
         return Result.success(vo);

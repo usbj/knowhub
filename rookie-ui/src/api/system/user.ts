@@ -7,6 +7,7 @@ import { del, get, getPage, post, put } from '@/utils/http'
 import type { ApiResult } from '@/types/api/system/common'
 import type { SysMenuRecord } from '@/types/api/system/menu'
 import type {
+  ModifyPasswordRequestData,
   SysUserFormData,
   SysUserListQuery,
   SysUserPageResult,
@@ -34,6 +35,17 @@ export const getPersonalProfileApi = () => get<ApiResult<SysUserProfile>>('/pers
  */
 export const updatePersonalProfileApi = (data: UpdatePersonalProfilePayload) =>
   put<ApiResult<boolean>, UpdatePersonalProfilePayload>('/person', data)
+
+/**
+ * 方法效果：
+ * 修改当前登录用户密码（独立接口，与资料编辑分离）。
+ * 参数：
+ * - `data`：修改密码请求体（原密码 + 新密码）。
+ * 返回值：
+ * - 后端 Result 包裹的布尔结果。
+ */
+export const modifyPersonalPasswordApi = (data: ModifyPasswordRequestData) =>
+  put<ApiResult<boolean>, ModifyPasswordRequestData>('/person/password', data)
 
 /**
  * 方法效果：

@@ -10,6 +10,53 @@
 
 ---
 
+## 2026-08-14
+### 12:40 — 弹窗栈"第二个弹窗瞬间关闭"根因修复 + profile 性别选项对齐字典
+
+- `rookie-ui/src/views/system/notice/notice-group/components/GroupMemberTransfer.vue` — **去掉 ElDialog 的 destroy-on-close**：根因是"添加成员"子弹窗（GroupMemberAddDialog）组件嵌在主弹窗 ElDialog 内部，主弹窗被弹窗栈隐藏（visible=false）时 destroy-on-close 在关闭动画后销毁内容，**内嵌子弹窗组件随之卸载**（其 onBeforeUnmount 还会从弹窗栈移除自身），导致子弹窗打开后约 300ms 瞬间消失（用户报的"打开第二个后第二个瞬间关闭"）。去掉 destroy-on-close 后主弹窗隐藏期间内容保留（display:none），子弹窗组件不卸载；状态重置由 open() 显式完成（localMembers/originalUserIds 重置），不依赖内容销毁。notice-content 页的子弹窗在页面层（SharedTablePanel 外），不受编辑弹窗 hide 影响，本无此问题
+- `rookie-ui/src/composables/useDialogStack.ts` — 头部注释补充约定：参与栈互斥且内含其他弹窗组件的弹窗不能使用 destroy-on-close（否则 hide 会把内嵌子弹窗一并卸载）；状态重置应由组件的 open() 显式完成
+- `rookie-ui/src/views/profile/index.vue` — 性别选项对齐 `sys_user_sex` 字典（男='0' 女='1'）：schema options、form 默认值、回显与表单更新兜底值由 '1' 改为 '0'（此前前端男='1' 女='0' 与字典相反，注册页按字典对齐，两处不一致导致性别显示错乱）
+- 验证：前端 `npx vue-tsc -p tsconfig.app.json --noEmit` 通过
+
+## 2026-08-14
+### 12:20 — 个人中心修复 + 修改密码独立接口 + 弹窗栈关闭路径修复
+
+承接上午的注册/公告/弹窗栈任务，修复联调发现的三类问题：① `PUT /person` 修改资料失败（update_by 未填充）；② 修改密码与资料编辑分离（独立按钮/弹窗/接口）；③ 弹窗栈基于 `@close` 事件的关闭路径失效（Element Plus 的 `close` 事件只在点 X/遮罩/Esc 时触发，程序置 v-model=false 不触发）。
+
+- `rookie-system/.../service/impl/SysLoginServiceImpl.java` — `modifyPersonalDetails` 补 `sysUser.setUpdateBy(当前登录用户名)`：`editUserInfo` 固定更新 `update_by`（NOT NULL 列），此前未填充导致 SQL 违反非空约束抛"用户信息更改失败"（管理员编辑用户走了 `SysUserServiceImpl` 的 setUpdateBy 所以正常，个人中心路径漏了）
+- `rookie-system/.../pojo/ModifyPasswordBody.java`（新建）— 修改密码请求体（oldPassword/newPassword）
+- `rookie-system/.../service/SysLoginService.java` + `impl/SysLoginServiceImpl.java` — 新增 `modifyPersonalPassword(userId, body)`：校验原密码非空、新密码 6-20 位，`passwordEncoder.matches` 校验原密码（错误抛"原密码错误"），复用 `resetSysUserPassword` 加密落库；与资料编辑完全分离
+- `rookie-system/.../controller/SysLoginController.java` — 新增 `PUT /person/password`（@Log、需登录、无 @PreAuthorize，与 /person 系列一致）
+- `rookie-ui/src/views/profile/components/ModifyPasswordDialog.vue`（新建）— 修改密码独立弹窗（原密码/新密码/确认新密码，ElForm 校验），提交 `PUT /person/password`，成功提示后关闭；已接入弹窗栈（useDialogStack）
+- `rookie-ui/src/views/profile/index.vue` — 移除资料表单中的 password 字段（历史遗留：`editUserInfo` 从不更新 password，前端传了也写不进库），"资料修改"面板新增"修改密码"按钮打开独立弹窗
+- `rookie-ui/src/api/system/user.ts` + `rookie-ui/src/types/api/system/user.ts` — 新增 `modifyPersonalPasswordApi` / `ModifyPasswordRequestData`；`UpdatePersonalProfilePayload` 移除 password
+- `rookie-ui/src/components/SharedFormPanel.vue` / `notice-group/components/GroupMemberTransfer.vue` / `GroupMemberAddDialog.vue` — 弹窗栈关闭路径修复：原来在 ElDialog `@close` 事件里做栈守卫与出栈，但 Element Plus 的 `close` 事件**只在用户点 X/遮罩/Esc 时触发**，程序设置 v-model=false（取消/完成/保存成功/栈 hide）不触发，导致：栈 hide 后守卫标志残留（后续用户关闭被误吞）、点"完成"关子弹窗不出栈（主弹窗不恢复）。统一改为 `watch(visible)` 处理关闭路径（v-model 变化必然触发）：next=false 且非栈隐藏 → 出栈恢复上一个（SharedFormPanel 另通知父层 cancel/update:visible）；next=false 且栈隐藏 → 消费守卫标志
+- 验证：后端 `mvnw compile` 通过；前端 `npx vue-tsc -p tsconfig.app.json --noEmit` 通过
+- 未改动：`editUserInfo` 白名单（不碰 password）与 `setUserId` 强覆盖；登录后不强制重登（旧 token 有效期不变，下次登录用新密码）
+
+## 2026-08-14
+### 11:40 — 公告详情放开权限 + 用户自助注册（系统设置开关 + 默认角色）+ 弹窗栈式互斥
+
+三件事：① 公告详情接口改为公开（门户场景）；② 新增用户自助注册（注册开关在系统设置配置、新用户绑定默认角色）；③ 前端弹窗改为栈式互斥（打开新弹窗关闭旧弹窗、关闭当前弹窗自动恢复上一个）。
+
+- `rookie-system/.../controller/SysNoticeController.java` — `GET /sys/notice/{noticeId}` 移除 `@PreAuthorize("system:notice:info")`，公告详情改为公开接口（游客可访问）
+- `rookie-framework/.../config/SecurityConfig.java` — 新增放行：`GET /sys/notice/{数字ID}`（RegexRequestMatcher 精确匹配，`/my`、`/list`、`/read`、`/confirm` 仍要求认证）、`POST /register`、`GET /sys/system-config/configKey/**`（游客读取公开配置值，仅返回单值字符串不暴露元信息）
+- `rookie-system/.../pojo/RegisterBody.java`（新建）— 注册请求体（username/password/nickName/phoneNumber/sex）
+- `rookie-system/.../service/SysLoginService.java` + `impl/SysLoginServiceImpl.java` — 新增 `register()`（@Transactional）：开关兜底（`SysConfigUtil.getBoolean("sys.user.registerEnabled", false)` 关闭即拒）→ 参数校验（username ≤12 位字母数字下划线、password 6-20 位、phoneNumber 11 位）→ 唯一性校验（usernameIsExistOrNot / phoneIsExistOrNot）→ BCrypt 加密落库（createBy/updateBy 用 username，无登录态）→ `getDefaultRole()` 绑定默认角色（`addUserRoleInfo`，不硬编码角色 id，无默认角色则拒绝）
+- `rookie-system/.../controller/SysRegisterController.java`（新建）— `POST /register`（@Log、无 @PreAuthorize），独立于带 TODO 的 SysLoginController
+- `sql/sys_config_register.sql`（新建）— 注册开关配置项增量插入（`sys.user.registerEnabled`，BOOLEAN，默认 false），**不含 config_id 主键**（AUTO_INCREMENT 自增，二开项目复用不冲突），靠 `uk_config_key` + `ON DUPLICATE KEY UPDATE` 幂等，与 `sql/sys_config.sql` 中同 key 行（config_id=2）幂等共存；`rookie.sql` 未改动
+- `rookie-ui/src/views/register.vue`（新建）— 注册页（对齐 login.vue 视觉与明暗主题）；onMounted 调 `fetchSysConfig('sys.user.registerEnabled')` 判断开关，非 'true' 显示"注册功能未开放"并禁用提交；前端校验（用户名/密码/确认密码/手机号）+ loading；成功提示后跳转登录页（不自动登录）
+- `rookie-ui/src/router/index.ts` — 新增 `/register` 静态路由（`meta.public: true`）；守卫 public 分支补"已登录访问 /login|/register 跳 /"
+- `rookie-ui/src/api/system/login.ts` + `rookie-ui/src/types/api/system/login.ts` — 新增 `registerApi` / `RegisterRequestData`
+- `rookie-ui/src/views/login.vue` — 底部"注册账号"入口按 `fetchSysConfig('sys.user.registerEnabled') === 'true'` 显隐（读取失败默认隐藏，与后端默认关闭一致）；`__options` 恢复两端对齐（左侧注册、右侧忘记密码）
+- `rookie-ui/src/composables/useDialogStack.ts`（新建）— 弹窗栈（模块级单例）：`open`（隐藏当前栈顶后入栈）/ `close`（出栈并恢复上一个）/ `remove`（卸载时只出栈不恢复）；栈条目以组件实例 Symbol 身份标识，防同名组件多实例冲突；hide/show 只切可见性、不重置内部状态
+- `rookie-ui/src/components/SharedFormPanel.vue` — dialog 模式接入弹窗栈：内部 `innerVisible` 镜像（由 props.visible 同步，hide/show 不联动父层）、`hide()/show()` 原语、`hidingByStack` 守卫区分"栈隐藏"与"用户关闭"（隐藏触发的 close 不误 emit cancel/update:visible）、取消按钮改为只关内部可见性（统一走 ElDialog close 事件）
+- `rookie-ui/src/views/system/notice/notice-group/components/GroupMemberTransfer.vue` — 接入弹窗栈：拆 `open()`（重置 localMembers + 注册栈 + 显示）与 `hide()/show()`（只切 visible 不重置），移除 watch(visible→open) 重置副作用（恢复时不丢本地增删改）
+- `rookie-ui/src/views/system/notice/notice-group/components/GroupMemberAddDialog.vue` — 接入弹窗栈：`open()` 注册栈（自动隐藏主弹窗），ElDialog `@close` 统一出栈恢复主弹窗（覆盖完成/X/Esc/遮罩所有关闭路径）
+- 效果：编辑/成员管理弹窗 → 添加成员子弹窗打开时主弹窗自动隐藏（状态保留）→ 关闭子弹窗自动恢复主弹窗；无上一个弹窗时正常关闭；并列弹窗（详情/日志等从页面打开）行为不变
+- 验证：后端 `mvnw compile` 通过；前端 `npx vue-tsc -p tsconfig.app.json --noEmit` 通过（`npm run type-check` 的 `--build` 增量写 node_modules/.tmp 被环境拒绝，改用 noEmit 验证）
+- 未改动：`/login`、`/person` 链路；`editUserInfo` 白名单与 `setUserId` 强覆盖；`sys_config.sql` 原样（注册开关同 key 行与新文件幂等共存）；`rookie.sql` 原样
+
 ## 2026-07-13
 ### — 字典缓存一致性：新增后端清字典缓存接口，前端"刷新字典缓存"先清后端再重拉
 

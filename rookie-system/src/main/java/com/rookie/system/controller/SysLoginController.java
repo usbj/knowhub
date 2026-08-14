@@ -6,6 +6,7 @@ import com.rookie.common.enums.BusinessType;
 import com.rookie.common.pojo.Result;
 import com.rookie.framework.security.pojo.UserInfo;
 import com.rookie.system.pojo.LoginBody;
+import com.rookie.system.pojo.ModifyPasswordBody;
 import com.rookie.system.pojo.vo.SysMenuVo;
 import com.rookie.system.pojo.vo.SysUserVo;
 import com.rookie.system.service.SysLoginService;
@@ -54,6 +55,15 @@ public class SysLoginController {
         UserInfo userInfo = (UserInfo) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
         sysUserVo.setUserId(userInfo.getUserId());
         Boolean b = sysLoginService.modifyPersonalDetails(sysUserVo);
+        return Result.success(b);
+    }
+
+    @PutMapping("/person/password")
+    @Operation(summary = "修改个人密码")
+    @Log(title = "个人信息", businessType = BusinessType.UPDATE)
+    public Result<Boolean> modifyPersonalPassword(@RequestBody ModifyPasswordBody modifyPasswordBody) {
+        UserInfo userInfo = (UserInfo) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+        Boolean b = sysLoginService.modifyPersonalPassword(userInfo.getUserId(), modifyPasswordBody);
         return Result.success(b);
     }
 

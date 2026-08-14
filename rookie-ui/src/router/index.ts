@@ -30,6 +30,14 @@ const router = createRouter({
       },
     },
     {
+      path: '/register',
+      name: 'register',
+      component: () => import('@/views/register.vue'),
+      meta: {
+        public: true,
+      },
+    },
+    {
       path: '/',
       name: 'layout',
       component: Layout,
@@ -109,7 +117,7 @@ router.beforeEach(async (to) => {
   const noticeStore = useNoticeStore()
 
   if (to.meta.public) {
-    if (userStore.isAuthenticated && to.path === '/login') {
+    if (userStore.isAuthenticated && (to.path === '/login' || to.path === '/register')) {
       return '/'
     }
 
