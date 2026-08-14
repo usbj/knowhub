@@ -15,6 +15,17 @@
 
 ## 接口更新日志
 
+### 2026-08-14 — 公告详情公开 + 用户自助注册 + 系统设置按 key 读取公开
+
+- `GET /sys/notice/{noticeId}` 消息通知详情：移除 `@PreAuthorize("system:notice:info")`，改为**公开接口**（游客可访问，公告详情门户场景）。SecurityConfig 用 `RegexRequestMatcher` 按 `GET /sys/notice/{数字ID}` 精确放行，`/list`、`/my`、`/read`、`/confirm` 仍要求认证（`/list` 的方法级 `@PreAuthorize` 不变）。
+- 新增 `POST /register` 用户自助注册（公开接口，`@Log` 记录）。受系统设置 `sys.user.registerEnabled`（BOOLEAN，默认 false）控制：未开启时返回"注册功能未开放"；开启后校验参数与唯一性（用户名 ≤12 位字母数字下划线、密码 6-20 位、手机号 11 位），密码 BCrypt 加密入库，绑定系统默认角色（`getDefaultRole()`，`sys_role.is_default=1`），注册即启用、不自动登录。注册开关配置项见 `sql/sys_config_register.sql`（无主键增量插入，rookie 与二开项目通用）。
+- `GET /sys/system-config/configKey/{configKey}` 系统设置按 key 读取：由"仅需登录"改为**公开接口**（游客可读取单个配置值，供注册页/登录页判断注册开关等公开场景；仍只返回 `configValue` 字符串，不暴露元信息）。
+
+### 2026-08-14 — 个人中心修复与修改密码独立接口
+
+- `PUT /person` 修改个人信息：修复 `update_by` 未填充导致的"用户信息更改失败"（`editUserInfo` 固定更新 `update_by` NOT NULL 列，Service 现从登录态填充当前用户名）。
+- 新增 `PUT /person/password` 修改个人密码（需要登录，`@Log` 记录）：请求体 `oldPassword`/`newPassword`，校验原密码（BCrypt matches）后加密落库，与资料编辑完全分离；`editUserInfo` 白名单保持不碰 password（密码修改不再经过资料编辑接口，前端资料表单中的 password 字段已移除）。
+
 ### 2026-07-07 — 系统设置模块补充前端加载接口
 
 新增 `GET /sys/system-config/list-all` 接口（公共读取，需登录即可，不加按钮权限），返回全部启用设置项，供前端登录后全量加载到内存缓存（对标字典启动加载）。
@@ -224,7 +235,49 @@
 
 ---
 
-### 4. 获取当前用户路由树
+### 4. 修改个人密码
+
+#### 4.1 基本信息
+**请求接口：** `/person/password`
+**请求方式：** PUT
+**所需权限：** 需要登录
+**基本信息：** 修改当前登录用户密码，与资料编辑（`PUT /person`）完全分离。校验原密码（BCrypt matches）通过后，新密码 BCrypt 加密落库；不更新其他任何资料字段（`editUserInfo` 白名单保持不碰 password）。修改成功后不自动登出，下次登录使用新密码
+
+#### 4.2 请求头
+| 参数名 | 参数说明           | 参数类型 | 是否必填 |
+| ------ | ------------------ | -------- | -------- |
+| Token  | JWT 令牌（无前缀） | string   | 是       |
+
+#### 4.3 请求体
+
+| 参数名      | 参数说明        | 参数类型 | 是否必填 |
+| ----------- | --------------- | -------- | -------- |
+| oldPassword | 原密码          | string   | 是       |
+| newPassword | 新密码（6-20 位） | string   | 是       |
+
+#### 4.4 响应示例
+
+**成功示例：**
+```json
+{
+  "code": 200,
+  "msg": "请求成功",
+  "data": true
+}
+```
+
+**失败示例（原密码错误）：**
+```json
+{
+  "code": 500,
+  "msg": "原密码错误",
+  "data": null
+}
+```
+
+---
+
+### 5. 获取当前用户路由树
 
 #### 4.1 基本信息
 **请求接口：** `/person/routers`
@@ -276,6 +329,49 @@
 | status     | 状态       | integer                    |
 | createTime | 创建时间   | string                     |
 | sonMenus   | 子菜单列表 | array\<SysMenuVo\>（递归） |
+
+---
+
+### 6. 用户自助注册
+
+#### 5.1 基本信息
+**请求接口：** `/register`
+**请求方式：** POST
+**所需权限：** 公开（无需登录；注册开关 `sys.user.registerEnabled` 未开启时后端直接拒绝）
+**基本信息：** 用户自助注册。受系统设置 `sys.user.registerEnabled`（BOOLEAN，默认 false）控制，关闭时返回"注册功能未开放"；开启后校验参数与唯一性，密码 BCrypt 加密存储，注册即启用（status=1），并自动绑定系统默认角色（`sys_role.is_default=1`，即 visitor），不自动登录
+
+#### 5.2 请求头
+无
+
+#### 5.3 请求体
+
+| 参数名      | 参数说明                          | 参数类型 | 是否必填 |
+| ----------- | --------------------------------- | -------- | -------- |
+| username    | 登录账号（≤12 位字母数字下划线）  | string   | 是       |
+| password    | 用户密码（6-20 位）               | string   | 是       |
+| nickName    | 用户昵称（空则默认取 username）   | string   | 否       |
+| phoneNumber | 手机号（11 位）                   | string   | 否       |
+| sex         | 性别（'0' 男 / '1' 女 / '3' 未知，空默认 '0'） | string   | 否       |
+
+#### 5.4 响应示例
+
+**成功示例：**
+```json
+{
+  "code": 200,
+  "msg": "请求成功",
+  "data": true
+}
+```
+
+**失败示例（开关未开启 / 用户名已存在）：**
+```json
+{
+  "code": 500,
+  "msg": "注册功能未开放",
+  "data": null
+}
+```
 
 ---
 
@@ -1078,7 +1174,7 @@
 #### 2.1 基本信息
 **请求接口：** `/sys/notice/{noticeId}`
 **请求方式：** GET
-**所需权限：** 需要登录
+**所需权限：** 公开（无需登录，公告详情门户场景；SecurityConfig 按 `GET /sys/notice/{数字ID}` 精确放行，`/list`、`/my`、`/read`、`/confirm` 仍要求认证）
 **基本信息：** 获取指定消息通知的详细信息。返回含 `groupIds`（关联分组 ID 列表）、`targetUserIds`（指定成员 ID 列表）、`targetUsers`（指定成员展示信息：userId/username/nickName/phoneNumber/status，供编辑弹窗回显）
 
 #### 2.2 请求头
@@ -1845,13 +1941,11 @@ PUBLISHED → REVOKED | **响应：** `Result<Boolean>`
 #### 7.1 基本信息
 **请求接口：** `/sys/system-config/configKey/{configKey}`
 **请求方式：** GET
-**所需权限：** 需要登录（不加按钮权限，公共读取，对标若依 `GET /system/config/configKey/{configKey}`）
+**所需权限：** 公开（无需登录；放开给游客用于注册开关等公开场景判断，仅返回单个 `configValue` 字符串，不暴露 valueType/isSystem/remark 等元信息，对标若依 `GET /system/config/configKey/{configKey}`）
 **基本信息：** 按设置键返回当前设置值，供前端按需读取运用，避免全量拉取暴露关键设置。只返回 `configValue` 字符串，不暴露 valueType/isSystem/remark 等元信息。命中且启用（status=1）返回值，未命中或停用返回 `null`（业务码仍 200）
 
 #### 7.2 请求头
-| 参数名 | 参数说明           | 参数类型 | 是否必填 |
-| ------ | ------------------ | -------- | -------- |
-| Token  | JWT 令牌（无前缀） | string   | 是       |
+无
 
 #### 7.3 路径参数
 | 参数名    | 参数说明 | 参数类型 | 是否必填 |

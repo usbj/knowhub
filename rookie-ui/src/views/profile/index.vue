@@ -11,6 +11,7 @@ import { updatePersonalProfileApi } from '@/api/system/user'
 import { useUserStore } from '@/stores/user'
 import type { UpdatePersonalProfilePayload } from '@/types/api/system/user'
 import type { SharedFieldSchemaMap } from '@/types/components/data-display'
+import ModifyPasswordDialog from './components/ModifyPasswordDialog.vue'
 
 const userStore = useUserStore()
 const saving = ref(false)
@@ -18,8 +19,7 @@ const saving = ref(false)
 const form = reactive<UpdatePersonalProfilePayload>({
   nickName: '',
   phoneNumber: '',
-  sex: '1',
-  password: '',
+  sex: '0',
 })
 
 const profileSummary = computed(() => userStore.profileSummary)
@@ -48,21 +48,11 @@ const profileFormSchema = computed<SharedFieldSchemaMap<UpdatePersonalProfilePay
     formVisible: true,
     tableVisible: false,
     formOrder: 3,
+    // 取值与 sys_user_sex 字典对齐：'0' 男 / '1' 女 / '3' 未知
     options: [
-      { label: '男', value: '1' },
-      { label: '女', value: '0' },
+      { label: '男', value: '0' },
+      { label: '女', value: '1' },
     ],
-  },
-  password: {
-    label: '新密码',
-    inputType: 'password',
-    placeholder: '不修改可留空',
-    formVisible: true,
-    tableVisible: false,
-    formOrder: 4,
-    props: {
-      autocomplete: 'new-password',
-    },
   },
 }))
 
@@ -79,8 +69,7 @@ watch(
 
     form.nickName = profile.nickName || ''
     form.phoneNumber = profile.phoneNumber || ''
-    form.sex = profile.sex || '1'
-    form.password = ''
+    form.sex = profile.sex || '0'
   },
   { immediate: true },
 )
@@ -112,7 +101,6 @@ const handleSaveProfile = async () => {
       nickName: form.nickName.trim(),
       phoneNumber: form.phoneNumber.trim(),
       sex: form.sex,
-      password: form.password?.trim() || undefined,
     }
 
     const result = await updatePersonalProfileApi(payload)
@@ -124,6 +112,23 @@ const handleSaveProfile = async () => {
   } finally {
     saving.value = false
   }
+}
+
+/**
+ * 修改密码弹窗引用，供"修改密码"按钮打开。
+ */
+const passwordDialogRef = ref<InstanceType<typeof ModifyPasswordDialog>>()
+
+/**
+ * 方法效果：
+ * 打开修改密码弹窗（独立弹窗，与资料编辑分离）。
+ * 参数：
+ * - 无。
+ * 返回值：
+ * - 无返回值；副作用是展示弹窗。
+ */
+const handleOpenPasswordDialog = () => {
+  passwordDialogRef.value?.open()
 }
 
 /**
@@ -141,8 +146,7 @@ const handleFormModelUpdate = (nextFormValue: Record<string, unknown>) => {
    */
   form.nickName = String(nextFormValue.nickName ?? '')
   form.phoneNumber = String(nextFormValue.phoneNumber ?? '')
-  form.sex = String(nextFormValue.sex ?? '1')
-  form.password = String(nextFormValue.password ?? '')
+  form.sex = String(nextFormValue.sex ?? '0')
 }
 </script>
 
@@ -190,6 +194,11 @@ const handleFormModelUpdate = (nextFormValue: Record<string, unknown>) => {
         <header class="profile-view__panel-head">
           <h2>资料修改</h2>
           <p>保存后会同步更新顶部当前用户展示信息。</p>
+          <div class="profile-view__panel-toolbar">
+            <button class="profile-view__password-btn" type="button" @click="handleOpenPasswordDialog">
+              修改密码
+            </button>
+          </div>
         </header>
 
         <SharedFormPanel
@@ -202,6 +211,9 @@ const handleFormModelUpdate = (nextFormValue: Record<string, unknown>) => {
         />
       </section>
     </div>
+
+    <!-- 修改密码弹窗：独立接口 PUT /person/password，与资料编辑分离 -->
+    <ModifyPasswordDialog ref="passwordDialogRef" />
   </section>
 </template>
 
@@ -268,6 +280,29 @@ const handleFormModelUpdate = (nextFormValue: Record<string, unknown>) => {
 .profile-view__panel-head {
   display: grid;
   gap: 8px;
+}
+
+.profile-view__panel-toolbar {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.profile-view__password-btn {
+  border: 1px solid var(--rookie-primary-border);
+  border-radius: var(--rookie-radius-md);
+  padding: 7px 14px;
+  background: var(--rookie-primary-soft);
+  color: var(--rookie-primary-strong);
+  font-size: var(--rookie-font-size-sm);
+  cursor: pointer;
+  transition:
+    background 0.2s ease,
+    color 0.2s ease;
+}
+
+.profile-view__password-btn:hover {
+  background: var(--rookie-primary);
+  color: var(--rookie-text-inverse);
 }
 
 .profile-view__summary-list {

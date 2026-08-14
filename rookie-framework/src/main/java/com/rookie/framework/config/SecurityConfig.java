@@ -6,6 +6,7 @@ import com.rookie.framework.security.filter.TokenVerifyFilter;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.access.expression.method.MethodSecurityExpressionHandler;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
@@ -20,6 +21,7 @@ import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.access.AccessDeniedHandler;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.security.web.util.matcher.RegexRequestMatcher;
 
 @Configuration
 //下面两个注解允许security进行配置的安全行为
@@ -60,6 +62,15 @@ public class SecurityConfig {
                 .authorizeHttpRequests(authorization -> authorization
                         .requestMatchers("/hello").authenticated()
                         .requestMatchers("/login").permitAll()
+                        // 用户自助注册：注册接口允许游客访问
+                        .requestMatchers("/register").permitAll()
+                        // 公告详情公开访问（门户/游客场景）：仅数字 ID 详情路径放行，
+                        // /my、/list、/read、/confirm 仍要求认证。
+                        // 用 RegexRequestMatcher 精确限定，避免 MvcRequestMatcher 对 {var:regex} 匹配行为不确定。
+                        .requestMatchers(RegexRequestMatcher.regexMatcher(HttpMethod.GET, "^/sys/notice/\\d+$")).permitAll()
+                        // 系统设置按 key 公共读取：放开给游客，供注册页判断注册开关等公开场景；
+                        // 仅返回单个 configValue 字符串，不暴露元信息（对应 SysConfigController 注释约定）
+                        .requestMatchers(HttpMethod.GET, "/sys/system-config/configKey/**").permitAll()
                         //swagger相关配置
                         .requestMatchers("/doc.html/**").permitAll()
                         .requestMatchers("/swagger-ui.html/**").permitAll()

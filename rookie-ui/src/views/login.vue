@@ -1,20 +1,29 @@
 <script setup lang="ts">
-import { reactive, ref } from 'vue'
+import { onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Lock, User } from '@element-plus/icons-vue'
 import { loginApi } from '@/api/system/login'
 import { useUserStore } from '@/stores/user'
+import { useSysConfigStore } from '@/stores/system-config'
 import type { LoginRequestData } from '@/types/api/system/login'
 
 const router = useRouter()
 const route = useRoute()
 const userStore = useUserStore()
+const sysConfigStore = useSysConfigStore()
 
 /**
  * 控制登录按钮的加载状态。
  */
 const loading = ref(false)
+
+/**
+ * 注册是否开放：由系统设置 sys.user.registerEnabled（BOOLEAN）控制。
+ * 游客态通过公共读取接口按 key 获取；读取失败按"未开放"处理（与后端默认关闭一致），
+ * 此时隐藏"注册账号"入口。
+ */
+const registerEnabled = ref(false)
 
 /**
  * 登录表单数据。
@@ -81,6 +90,37 @@ const handleForgotPassword = () => {
     },
   )
 }
+
+/**
+ * 方法效果：
+ * 拉取系统设置 sys.user.registerEnabled 判断注册开关是否开放，控制"注册账号"入口显隐。
+ * 参数：
+ * - 无。
+ * 返回值：
+ * - 无返回值；副作用是更新 registerEnabled 状态。
+ */
+const loadRegisterEnabled = async () => {
+  try {
+    const value = await sysConfigStore.fetchSysConfig('sys.user.registerEnabled')
+    registerEnabled.value = value === 'true'
+  } catch {
+    registerEnabled.value = false
+  }
+}
+
+/**
+ * 方法效果：
+ * 跳转注册页（/register 为 public 路由，无需登录）。
+ * 参数：
+ * - 无。
+ * 返回值：
+ * - 无返回值；副作用是触发路由跳转。
+ */
+const handleGoRegister = () => {
+  router.push('/register')
+}
+
+onMounted(loadRegisterEnabled)
 </script>
 
 <template>
@@ -155,6 +195,14 @@ const handleForgotPassword = () => {
         </label>
 
         <div class="login-view__options">
+          <button
+            v-if="registerEnabled"
+            class="login-view__text-action"
+            type="button"
+            @click="handleGoRegister"
+          >
+            注册账号
+          </button>
           <button
             class="login-view__text-action"
             type="button"
@@ -374,7 +422,7 @@ const handleForgotPassword = () => {
 .login-view__options {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: space-between;
 }
 
 .login-view__text-action {
