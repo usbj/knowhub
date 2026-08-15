@@ -11,10 +11,12 @@
 <script setup lang="ts">
 import { computed, nextTick, onActivated, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { ElImageViewer } from 'element-plus'
 import { ArrowLeft, ArrowUp, ArrowDown } from '@element-plus/icons-vue'
 import KhIcon from '@/components/common/KhIcon.vue'
 import KhContentToc from '@/components/common/KhContentToc.vue'
 import KhLoading from '@/components/common/KhLoading.vue'
+import { useMarkdownImageZoom } from '@/composables/useMarkdownImageZoom'
 import { getArticleDetailApi, getChapterContentApi } from '@/api/knowhub/article'
 import type { ArticlePortalDetailRecord, ChapterContentRecord } from '@/types/api/knowhub/article'
 import { useStickyBottom } from '@/utils/use-footer-visible'
@@ -94,6 +96,10 @@ const chapterToc = computed<{ level: number; text: string }[]>(() => {
 })
 
 const contentRef = ref<HTMLElement | null>(null)
+
+/** 章节正文配图点击放大（与评论区/博客正文同款 el-image-viewer）：复用 contentRef，
+ *  onContentClick 只 querySelectorAll('img')，与 handleTocSelect/computeActive 查 h2/h3/h4 正交不冲突。 */
+const { viewerVisible, viewerUrls, viewerIndex, onContentClick, closeViewer } = useMarkdownImageZoom(contentRef)
 
 /** 点击目录项 i：取正文容器内第 i 个 h2/h3/h4（按 DOM 顺序与 toc 提取顺序一一对应）平滑滚动定位 */
 const handleTocSelect = (idx: number) => {
@@ -222,7 +228,7 @@ void loadAll()
           <p class="dr__locked-hint">登录并拥有对应等级权限后可查看本章正文</p>
         </div>
         <!-- 正文：v-md-preview 渲染章节 markdown -->
-        <div v-else-if="chapter?.content" ref="contentRef" class="dr__content">
+        <div v-else-if="chapter?.content" ref="contentRef" class="dr__content" @click="onContentClick">
           <v-md-preview :text="chapter.content" />
         </div>
         <!-- 章节正文加载中（切章节时只盖正文，左栏不动） -->
@@ -259,6 +265,16 @@ void loadAll()
         <KhContentToc :items="chapterToc" :active-index="activeTocIndex" title="目录" @select="handleTocSelect" />
       </aside>
     </div>
+    <!-- 章节正文配图点击放大画廊（el-image-viewer，teleported 至 body 全屏，z-index 3000） -->
+    <el-image-viewer
+      v-if="viewerVisible"
+      :url-list="viewerUrls"
+      :initial-index="viewerIndex"
+      :z-index="3000"
+      hide-on-click-modal
+      teleported
+      @close="closeViewer"
+    />
   </div>
 </template>
 
@@ -396,6 +412,10 @@ void loadAll()
 .dr__content :deep(.github-markdown-body h3),
 .dr__content :deep(.github-markdown-body h4) {
   scroll-margin-top: calc(var(--kh-header-height) + var(--kh-space-4));
+}
+/* 章节正文配图可点放大：cursor zoom-in 视觉提示，点击由 .dr__content @click 委托 onContentClick 开 el-image-viewer */
+.dr__content :deep(.github-markdown-body img) {
+  cursor: zoom-in;
 }
 
 /* 越级锁态：正文不下发，显示锁态提示 */

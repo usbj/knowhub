@@ -14,7 +14,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox, ElSelect, ElOption } from 'element-plus'
+import { ElMessage, ElMessageBox, ElSelect, ElOption, ElSwitch } from 'element-plus'
 import { ArrowLeft } from '@element-plus/icons-vue'
 import KhIcon from '@/components/common/KhIcon.vue'
 import KhMarkdownEditor from '@/components/common/KhMarkdownEditor.vue'
@@ -39,12 +39,18 @@ const form = ref<{
   level: number
   summary: string
   description: string
+  /** 评论区开关 1开/0关，作者在创作页勾选 */
+  commentEnabled: number
+  /** 评论精选开关 0=新评论直接可见 / 1=新评论仅发表人+作者可见，作者同意展示后他人可见 */
+  commentCurated: number
 }>({
   title: '',
   type: 'PRACTICE',
   level: 1,
   summary: '',
   description: '',
+  commentEnabled: 1,
+  commentCurated: 0,
 })
 
 /** 当前项目状态（编辑模式回填，驱动按钮态） */
@@ -118,6 +124,8 @@ const buildPayload = (): ProjectAuthoringPayload => {
     level: form.value.level,
     summary,
     description: form.value.description || undefined,
+    commentEnabled: form.value.commentEnabled,
+    commentCurated: form.value.commentCurated,
   }
 }
 
@@ -218,6 +226,8 @@ const fetchForEdit = async (projectId: number) => {
   form.value.level = p.level
   form.value.summary = p.summary ?? ''
   form.value.description = p.description ?? ''
+  form.value.commentEnabled = p.commentEnabled ?? 1
+  form.value.commentCurated = p.commentCurated ?? 0
   projectStatus.value = p.status ?? ''
   if (isPublished.value) {
     ElMessage.info('该项目已发布，编辑需先撤回')
@@ -351,6 +361,20 @@ onMounted(async () => {
               rows="3"
               maxlength="200"
             />
+          </div>
+
+          <!-- 评论设置：开启评论区 + 评论精选（详见 comment 模块） -->
+          <div class="pc__field">
+            <label class="pc__label">评论设置</label>
+            <div class="pc__switch-row">
+              <ElSwitch v-model="form.commentEnabled" :active-value="1" :inactive-value="0" />
+              <span class="pc__switch-text">开启评论区</span>
+            </div>
+            <div class="pc__switch-row">
+              <ElSwitch v-model="form.commentCurated" :active-value="1" :inactive-value="0" />
+              <span class="pc__switch-text">评论精选</span>
+              <span class="pc__switch-hint">开启后新评论仅你与发表人可见，需你同意后才对他人展示</span>
+            </div>
           </div>
         </div>
       </section>
@@ -634,6 +658,11 @@ onMounted(async () => {
   border-color: var(--kh-primary-border);
   background: var(--kh-surface);
 }
+
+/* 评论设置：开启评论区 + 评论精选两个 switch */
+.pc__switch-row { display: flex; align-items: center; gap: var(--kh-space-3); flex-wrap: wrap; }
+.pc__switch-text { font-size: var(--kh-font-size-sm); color: var(--kh-text); font-weight: 500; }
+.pc__switch-hint { font-size: 12px; color: var(--kh-text-tertiary); }
 
 @media (max-width: 768px) {
   .pc__wrap {

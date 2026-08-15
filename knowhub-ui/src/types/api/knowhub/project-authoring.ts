@@ -33,6 +33,10 @@ export interface ProjectAuthoringPayload {
   awardLevel?: string
   awardTime?: string
   competitionTime?: string
+  /** 评论区开关 1开/0关，作者在创作页勾选 */
+  commentEnabled?: number
+  /** 评论精选开关 0关1开，开启后新评论需作者同意后对他人展示 */
+  commentCurated?: number
 }
 
 /**
@@ -59,6 +63,10 @@ export interface ProjectAuthoringDetail {
   canDownload?: boolean
   canEdit?: boolean
   myMemberRole?: string
+  /** 评论区开关 1开/0关，编辑回填用 */
+  commentEnabled?: number
+  /** 评论精选开关 0关1开，编辑回填用 */
+  commentCurated?: number
 }
 
 /** 我的项目列表查询参数（前台 /authoring/project/list） */

@@ -1188,3 +1188,118 @@ knowhub 项目管理模块开发，详见 `doc/knowhub-project-design.md`。项�
 
 **文件清单**：前端删 1(SubjectFlowListDialog.vue)；前端改 2(subject/index.vue + flow/index.vue)。无 SQL、无后端、无菜单/字典变化。
 **验证**：前端 `npm run type-check` 通过；跳转回填由用户本地双击自验（主体页点「流水明细」→跳资金流水页→筛选区主体名已回填、列表已按该主体过滤）。
+
+## 2026-08-14
+
+### 评论模块四类作品统一落地（comment + comment_like 两表，两层嵌套，精选 inline 无审页）
+
+为博客/文章/项目/资源四类前台作品统一建评论系统，照 `C:\Users\wyt\.claude\plans\lovely-zooming-pudding.md` 定稿实施。评论作为新的横切**独立内容模块 `comment/`**（与 `history/` 同构），不收进 `common/`。用户拍板核心约束：**评论精选无专门审核页**——作者开启精选后，用户在该作品下发表的评论只有发表人和作者能看见（`review_status=PENDING`），作者在普通评论区里 inline 看到「同意展示」(APPROVED 后他人可见)/「拒绝」(REJECTED 仍仅作者+发表人可见)/直接删除，不另建待审列表/审核历史页。
+
+**SQL `sql/knowhub-comment.sql`**（新建，结构照 `knowhub-blog-review-log.sql`/`knowhub-view-history-tags.sql`）：
+- 建 `comment` 主表（四类共用）：`comment_id`/`biz_type`(BLOG/ARTICLE/PROJECT/RESOURCE 不入字典)/`biz_id`/`author_id`/`parent_id`(仅两层)/`reply_to_user_id`+`reply_to_nickname`(@某楼内某用户)/`content`(varchar 2000)/`like_count`(冗余 service 维护)/`review_status`(NONE/PENDING/APPROVED/REJECTED 复用字典 14)/`reviewer`+`review_time`+`review_advice`(审核动作快照落主表不另建流水表)/BaseEntity 审计列/`deleted`；索引 `idx_comment_biz`/`idx_comment_parent`/`idx_comment_author`/`idx_comment_review`/`idx_comment_create`(时序列表覆盖索引)。
+- 建 `comment_like` 点赞事实表（照 `resource_like` 自增 PK+UNIQUE(comment_id,user_id) 而非 blog_like 复合主键）。
+- 4 主表幂等 ALTER 各加 `comment_enabled` tinyint DEFAULT 1（评论区开关）+ `comment_curated` tinyint DEFAULT 0（精选开关），information_schema 范式。
+- **0 行字典/0 行菜单/0 行后台权限**：`review_status`(dict_id=14)+`review_action`(dict_id=25) 直接复用；精选走前台 inline 无后台审核页，不需要 `knowhub:comment:*` 权限键与菜单。续编前已查库 `SELECT MAX(menu_id),MAX(dict_id),MAX(dict_data_id)`。
+
+**后端 `comment/` 模块**（独立命名空间 `com.knowhub.{pojo,enums,mapper,service,controller}.comment.*`，与 `history/` 同构）：
+- entity `Comment`(继承 BaseEntity)/`CommentLike`(轻量 POJO)；vo `CommentPortalVo`/`CommentReplyVo`/`CommentCreateVo`/`CommentReviewVo`；quarry `CommentListQuarry`；enum `CommentBizType`(BLOG/ARTICLE/PROJECT/RESOURCE，新建不复用 ViewBizType 因后者含 CHAPTER 不含 PROJECT)；mapper interface+xml ×2。
+- service：接口与实现同放 `service/comment/`（与 `BlogPortalServiceImpl` 同包扁平无 impl 子目录）；`CommentService`+Impl（写：发/删/点赞/作者 inline 审核）+ `CommentPortalService`+Impl（读：列表/回复分页，permitAll 区防御性取登录态+解析作品作者传 SQL）。
+- controller：`CommentPortalController`(`/portal/comment/**` 无 @PreAuthorize permitAll) + `CommentAuthoringController`(`/authoring/comment/**` @PreAuthorize isAuthenticated)。
+- **权限谓词** `commentVisiblePredicate`：`c.deleted=0 AND (c.review_status IN ('NONE','APPROVED') OR c.author_id=#{currentUserId} OR #{workAuthorId}=#{currentUserId})`——其他人只见 NONE/APPROVED；发表人见自己 PENDING/REJECTED；作品作者见全部含 PENDING/REJECTED（作者 inline 审核）。无登录态退化为前半。**不发通知**，评论人靠评论上状态标签得知。
+- `CommentWorkResolver` 单点路由 4 主表（按 bizType+bizId 解析 author_id/comment_enabled/comment_curated）；写接口不另起 level→userViewLevel 判定——只 gate 作品存在+评论开关，能看见作品由读接口列表权限谓词本身保证（看不见的作品看不到评论列表、自然触发不到发表）。
+- 删除=物理连带软删（删顶级 `UPDATE comment SET deleted=1 WHERE parent_id=#{id}` 一个 update + 自身 deleted=1，不保留壳帖）；作者可删该作品下任意评论、普通用户仅自删、admin 短路。
+- **4 主表 entity/写 VO/前台详情 VO 各加 `commentEnabled`+`commentCurated`** Integer 字段+getter/setter；4 主 Mapper resultMap/insert `<trim>`/edit `<set>` 加列映射与动态 `<if>`；4 PortalDetailMapper select 带两列下发详情 VO；4 创作编辑的 `getForEdit` 复用主 VO 带两列回填表单。
+
+**前端 knowhub-ui**：
+- 新增 `api/knowhub/comment.ts` (5 接口 listCommentsApi/listRepliesApi/createCommentApi/deleteCommentApi/toggleCommentLikeApi/reviewCommentApi) + `types/api/knowhub/comment.ts`(CommentRecord/CommentReplyRecord/CommentCreatePayload/CommentReviewPayload)。
+- 新增 3 组件 `components/common/`：`KhComment.vue`(单条评论/回复项，KhAvatar+昵称+时间+内容+点赞+回复+自删，reviewStatus 标签「待作者确认」/「已拒绝展示」，作者 inline「同意展示」/「拒绝」按钮)、`KhCommentInput.vue`(发表条，未登录 disabled「登录后评论」触发 requireAuth)、`KhCommentList.vue`(容器 props bizType/bizId/commentEnabled/commentCurated/isAuthor：分页拉列表+展开回复+发表 prepend；commentEnabled===0 显示「评论区已关闭」不渲染发表条/列表；commentCurated===1 且非作者提示「你的评论需作者同意后展示」；作者身份列表天然含 PENDING 逐条渲染操作按钮无独立待审 tab)。
+- 4 主 Record 类型(BlogPortalDetailRecord 等)+4 authoring payload/detail 类型各补 `commentEnabled?: number`+`commentCurated?: number`。
+- **4 详情页接入 `KhCommentList`**：`blog/detail.vue`(替占位 bd__comments)、`article/detail.vue`(全宽评论块在两栏 layout 后)、`resource/detail.vue`(主区评论块)、`project/detail.vue`(新增评论 tab，element-plus ChatDotRound 图标因 KhIcon 无 chat 图标)；各页补 `isAuthor = computed(authorId===userStore.userInfo?.userId)` 传入。
+- **4 创作/上传页加评论设置 ElSwitch**：`blog/create.vue`/`article/create.vue`/`project/create.vue`/`resource/upload.vue` 各在元信息区追加「开启评论区」(绑 form.commentEnabled active 1/inactive 0)+「评论精选」(绑 form.commentCurated，附文案「开启后新评论仅你与发表人可见，需你同意后才对他人展示」)两个 ElSwitch；buildPayload 透传；getForEdit `??1`/`??0` 回填；resource 编辑态 `:disabled="!canEditNow"`。
+
+**文件清单**：新 SQL 1(knowhub-comment.sql)；后端新增 comment 模块全套 entity×2/vo×4/quarry×1/enum×1/mapper×2/xml×2/service×2(接口+impl)/controller×2/support×1(CommentWorkResolver)；后端改 4 主表(entity/写VO/详情VO 各加 2 字段)+4 主Mapper.xml+4 PortalMapper.xml；前端新增 3 组件+1 api+1 types；前端改 4 详情页(BlogPortalDetailRecord 等类型补字段)+4 创作/上传页+4 authoring payload/detail 类型+4 主 PortalDetailRecord 类型。
+**验证**：前端 `npm run type-check` 通过（评论模块零新增类型错；develop HEAD 本身另有 7 个 pre-existing 类型错——ArticleCard/ProjectCard/ProjectFileTree/ProjectMemberPanel/profile/project/detail 的 `Record<ViewLevel,...>` number 索引与 `'accent'` tag 类型漂移，系上游 ba8f410/68472ef 合并带入，与本评论任务无关，不在本批处理范围）；后端未替跑 mvn（README.dev §11 沙箱无 rookie 依赖会编不过且污染 .m2，交用户本地编译验证）。SQL 由用户跑 `mysql --default-character-set=utf8mb4 < sql/knowhub-comment.sql` 后 DESC blog/article/project/resource 看 comment_enabled/comment_curated 两列、SHOW TABLES 看 comment/comment_like 在。
+
+## 2026-08-14（二）— 评论回复站内通知（社交闭环增量）
+
+评论模块主体已落地（见上方同日主条），唯一缺失是社交闭环：A 在作品下回复 B 的评论，B 不刷新评论区就不知道被回复了。本增量在评论落库后仅回复路径给被回复人发一条站内通知，通知「前往查看」按钮直接路由到该作品详情页。**不动评论模块已落地的任何代码**。
+
+- **新建 `knowhub/.../support/NotifySupport.java`**（@Component，与 CommentWorkResolver 同包）：暴露 `notifyUser(targetUserId,title,content,routePath,operator)`，内部注入 rookie `SysNoticeMapper`+`SysNoticeUserRelMapper`，落 `notice_type=NOTIFY`+`publish_scope=USER`+`level=NORMAL`+`is_top=0`+`need_confirm=0`，**先 addSysNotice（因 rookie XML insert 无 status 列落 DB DEFAULT='DRAFT'）再补一发 editSysNoticeInfo 翻 status='PUBLISHED'**（rookie 唯一带 status `<if>` 的 `<set>`，复用避免改 rookie XML——用户指示「rookie后续再改」），再 insertSysNoticeUserRel 指定接收人；全程 try/catch 吞异常 warn 不阻断主流程（对齐 AuditPeriodReportServiceImpl.notifyReportReady）。
+- **`CommentServiceImpl.createComment` 末尾追加**（addComment 后、return 前）：仅 `parent != null`（回复路径）触发，被回复人 = `record.replyToUserId`（@某楼其他用户，仅此情况非 null）?? `parent.getAuthorId()`（直回楼主）；**自回复跳过**（target==currentUserId）。title=`{回复人昵称} 回复了你的评论`（昵称复用 `workResolver.nicknameOf(userId)`，查不到兜「有人」），content=回复正文 ≤50 字截断（helper `truncate`），routePath=按 bizType 拼前台作品详情路由 `/blog/{id}` /`/article/{id}` /`/project/{id}` /`/resource/{id}`（helper `workRoute`，`WORK_ROUTE_PREFIX` 静态 Map 4 项内联）。顶级评论不触发。通知失败被 NotifySupport 内层吞掉，不破 @Transactional（评论已落库）。
+- **前端**：`types/api/notice.ts` SysNoticeRecord + `types/api/notice-portal.ts` NoticePortalRecord 各加 `routePath?: string`（联合类型 NoticeDetailRecord 访问 .routePath 需两分支都有该属性才编译过；后端 SysNoticeVo.routePath 已随 getMyNotices 的 BeanUtil.toBean 同名拷贝下发，JSON 已带）；`components/layout/KhNoticeDetailDialog.vue` footer 在「关闭」按钮前加「前往查看」按钮（`v-if="notice?.routePath"`），点击 `noticeStore.markAsRead` + `closeDetail` + emit update:visible false + `router.push(routePath)`（useRouter 新增 import）。无 routePath 的普通公告自然不露，零干扰。
+
+## 2026-08-14（三）— 评论区支持上传图片（配图增量）
+
+评论模块与站内通知闭环均落地（见上方同日主条、条二），唯一缺的是配图——当前 `KhCommentInput.vue` 是裸 textarea、`KhComment.vue` 用 `{{ comment.content }}` 纯文本插值，markdown `![]()` 会原样打印成文本根本显示不出图。本增量补「评论可配图」让讨论更直观，**存储复用文件底座走 inline markdown 进 content 列、图片走 `/file/resolve/{objectId}` 相对引用**（绝不存绝对 URL，21 张就撑爆 2000），后端 content 字段/校验上限/`varchar(2000)` 一律不动，存量纯文本评论不迁移（渲染端换 v-md-preview 对纯文本原样输出无回归）。
+
+**拍板决策（AskUserQuestion 三轮）**——①输入形态默认轻量、可切换 KhMarkdownEditor（不持久化）；②回复态只保留轻量 + 图按钮（不提供富文切换）；③配图限额 9 张 / 单图 ≤2MB / 仅图片类型；④存量评论不迁移、不加 content-format 列；⑤上传权限「给默认角色加权限」。
+
+**数据 / 配置层（新建 `sql/knowhub-comment-image.sql`，照 `knowhub-audit-voucher-filetype.sql` 续编范式）**
+- **`FileBusinessType` 枚举加 `COMMENT_IMAGE`**（`enums/storage/FileBusinessType.java`，ARTICLE_COVER 后）：`COMMENT_IMAGE("COMMENT_IMAGE","评论配图",FileAccess.PUBLIC)`——语义对齐评论配图、objectKey 前缀 `comment_image/` 便于运维隔离 GC、上限 2MB 贴合短评，不复用 BLOG_BODY。
+- **sys_config 两键 JSON_SET 增量补 COMMENT_IMAGE**（不丢用户自定义其它业务类型项）：`knowhub.file.size_limit` 补 `COMMENT_IMAGE=2`（MB）；`knowhub.file.type_whitelist` 补 `COMMENT_IMAGE=image/png,image/jpeg,image/gif,image/webp`（仅图片四类，不含 PDF）。两键各自带缺失兜底 `INSERT IGNORE ... WHERE NOT EXISTS`（老库未跑迁移时全量 JSON 行里已含 COMMENT_IMAGE）。
+- **`sys_dict_data` 装饰行**：`file_business_type` 字典加 `评论配图 / COMMENT_IMAGE / access=PUBLIC 类型图片 上限2MB 评论区配图`，排序值 `IFNULL(MAX(dict_data_sort),0)+1` 续编（头部注释含「续编前必查库 MAX」警告）。SQL 三段均幂等（UPDATE `NOT LIKE` 守卫 + INSERT IGNORE / WHERE NOT EXISTS）。
+- **权限绑定（关键）**：`INSERT IGNORE INTO sys_role_menu (role_id, menu_id) VALUES (5, 82)`——给前台游客角色 visitor（role_id=5，注册 is_default=1 绑定）挂 menu 82 `knowhub:file:upload`，让普通前台评论者可调 `/file/upload-token`/`/file/confirm`（之前 menu 82 任何角色都没挂、admin 走运行时 isAdmin 直通兜底，故 visitor 调上传令牌必 403）。代价：visitor 从此可申请任意 businessType 上传令牌——但 upload-token 只签令牌、后端仍按 sys_config 白名单/size 校验把关文件类型与大小、写入审计元数据，前台通用上传场景风险可控。不动 `@PreAuthorize`、不新建接口。
+
+**后端落点（仅注释口径，字段/上限不动）**
+- `Comment.java` content 注释 `纯文本，前端限长 2000` → `Markdown，含配图为 ![](/file/resolve/{id}) 相对引用；限长 2000，配图 9 张以内约 234 字符不撑爆`；`CommentCreateVo.java` content 注释同款 `Markdown 评论；含图片为 inline ![](/file/resolve/{id}) 相对路径`。`CommentServiceImpl.createComment` 仅去空 + 长度校验（L58-63 无 markdown/HTML 转义，原样落库）符合本方案，不动。
+
+**前端落点**
+- **新建 composable `composables/useImageInsert.ts`**：封装「点图按钮 → 弹文件选择（自管隐藏 input 挂 body、unmount 移除防泄漏）→ `checkFileAllowed(file,'COMMENT_IMAGE')` 拉白名单预检 → 校验 `size ≤ 2MB` → 当前 content 里 `![](...)` 张数 `< 9` 上限 → `presignedUploadFlow({businessType:'COMMENT_IMAGE',access:'PUBLIC'})` 预签名直传 → 拿 `/file/resolve/{id}` 相对引用 → `textarea.setRangeText(md,start,end,'end')` 在当前光标处插入 markdown 并回写 contentRef（setRangeText 不通知 v-model 须手动同步父级 ref）」全流程，供 KhCommentInput 轻量图按钮 + KhCommentList 回复态图按钮复用，避免两处复制。多选串行（await 每张），部分张失败（白名单/2MB/超 9 张）弹中文提示跳过该张继续后续。富文 KhMarkdownEditor 不走本 composable——其工具栏图片按钮/拖拽/粘贴上传由编辑器内置 `handleUploadImage`（KhMarkdownEditor.vue L102-123）直调 presignedUploadFlow insertImage。
+- **`KhCommentInput.vue` 双模式改造（P1）**：默认轻量态（头像 + textarea + 图按钮 + 字数 + 发送）不变，bar 区字数右侧加「📎图片」按钮（走 useImageInsert）+「富文」切换按钮；富文态把 textarea 换成 `<KhMarkdownEditor v-model="content" :show-mode-switch="false" height="220" business-type="COMMENT_IMAGE" access="PUBLIC" :upload-image-config="{accept:'image/*',maxFileSize:2*1024*1024}" />`（工具栏配图/拖拽/粘贴三入口均走 COMMENT_IMAGE）。`richMode = ref(false)` 不持久化（默认轻量），切换时 content ref 不变两种模式互通不丢已写。富文无 9 张拦截（靠后端 2000 字符兜底），轻量态前端硬拦 9 张。
+- **`KhCommentList.vue` 回复态（P2，只轻量 + 图按钮）**：内联 textarea（L313-318）加 `ref="replyTextareaRef"` + bar 区「📎图片」按钮，复用 useImageInsert 往 `replyDraft` 插 markdown（`useImageInsert({textareaRef:replyTextareaRef,contentRef:replyDraft,...})`）；不加富文切换按钮（回复条不显）。bar 由 `justify-content:flex-end` 改带 `gap`，图按钮 `margin-right:auto` 左靠、发送按钮右靠。
+- **`KhComment.vue` 渲染换 v-md-preview（依赖决定性点）**：`{{ comment.content }}` → `<v-md-preview :text="comment.content ?? ''" />`（全局注册于 `utils/markdown.ts` setupVmdEditor `app.use(VueMarkdownPreview)`，零局部 import；纯文本插值会把 `![](url)` 原样打印成文本，故必须配套换）。CSS：`.kh-comment__content` 移除 `white-space: pre-wrap`（交给 v-md-preview github 主题接管）、保留 `word-break`；新增 `:deep(.github-markdown-body)` 覆盖（照 KhNoticeDetailDialog 同款口径：清自带左右内边距/默认字号、h1h2 去 border-bottom、首尾子元素去 margin、字体行高用 kh token、img `max-width:100%` + 圆角限宽不抢行）；`content--rejected` 灰字类保留用 `color:inherit` 透给 v-md-preview。
+- **`types/api/knowhub/comment.ts`**：`CommentRecord.content` / `CommentReplyRecord.content` / `CommentCreatePayload.content` 三处注释 `纯文本` → `Markdown，含配图 inline ![](/file/resolve/{id})；渲染走 v-md-preview`，字段类型不动。
+
+**文档**
+- `doc/knowhub-api.md` 文件模块 `POST /file/upload-token`/`confirm` 段补一句「评论配图 `businessType=COMMENT_IMAGE`（PUBLIC 2MB，visitor 角色挂 `knowhub:file:upload` 后可传）」；评论模块「`POST /authoring/comment`」段补一句「content 现支持 markdown 配图 inline `![](url)`，渲染走 v-md-preview」。
+
+**校验**
+- 前端 `npm run type-check` 通过（评论模块 + 新 composable + 三个组件改造零新增类型错；develop HEAD 另有 7 个 pre-existing 类型错系上游合并带入的 `Record<ViewLevel,...>` number 索引与 `'accent'` tag 漂移，与本任务无关不在本批处理）；后端未替跑 mvn（§11 沙箱无 rookie 依赖，交用户本地编译）；SQL 由用户自跑 `mysql --default-character-set=utf8mb4 < sql/knowhub-comment-image.sql`（续编 dict_data 排序值幂等，跑前如需可先 `SELECT MAX(dict_data_sort) FROM sys_dict_data WHERE dict_key='file_business_type'` 核对号位）。
+
+## 2026-08-15 — 评论区配图渲染与长内容折叠（配图增量 UI 调整）
+
+接 2026-08-14（三）配图增量上线后的体验反馈，对前端渲染再调两处（纯前端，后端/SQL 不动）。
+
+**配图：取消等比缩放缩略**
+- 之前 `.kh-comment__content :deep(.github-markdown-body img)` 用 `width/height/max-width/max-height: 180px; object-fit: contain` 等比缩放成缩略图——长方形配图上下留白（contain 留白）、cover 又裁内容，富文贴大图时两种方案都难看。
+- 现 改为 `max-width: 100%; height: auto; display: block`：图按原宽高渲染、只限不撑爆评论列宽、不裁内容不留怪空白；超出评论统一高度的由上层折叠处理（图本身不留白不裁）。click 委托放大画廊（`el-image-viewer`）沿用不变。
+
+**长内容折叠 + 默认显前 2 条回复**
+- 富文可能贴大图把单条评论撑很长，压住后续评论。给 `.kh-comment__content` 统一最大高度 `COLLAPSED_HEIGHT=240px`，`KhComment` 挂载后量 `scrollHeight`，超限即默认 `--collapsed`（`max-height:240px; overflow:hidden` + `::after` 底部渐隐遮罩）+「展开」按钮；点开去掉高度限制显全文、按钮转「收起」，再点收起。
+- **短评/短文不超限时不显按钮**（`needCollapse` 初测为 `false`）：避免每条评论都挂一个动态按钮增噪。
+- **`img load` 重测**（修图异步加载竞态）：`onMounted` 量高度时配图 img 未必解码完，短文 + 大图会漏判「无需折叠」、图后加载撑过 240 却不再测、折叠不激活。故初测后对未 `complete` 的 `<img>` 挂 `{ once: true }` 的 `load` 重测，图加载完触发 `measureCollapse` 把 `needCollapse` 凝出 `true`；已 complete 的图跳过监听免冗余；`onBeforeUnmount` 清监听防泄漏。
+- **「展开评论」与「展开回复」不重混（用户明确要求）**：评论内折叠用「展开/收起」两字文案 + 居右次要色按钮，位于内容与 action bar 之间；回复展开用「展开剩余 N 条回复」/「收起」长句 + 主色链式按钮，位于评论组尾部。两套文案 + 位置一上一下错开不冲突。
+- **回复线程改为「默认显前 2 条 + 展开剩余」**（用户明确要求，替代原二元「展开 N 条回复」）：`KhCommentList.vue` 在 `fetchComments` 顶层评论拉完后，对每个 `replyCount>0` 的评论 `Promise.all` 预取回复（`fetchReplies` pageSize 50 不变），缓存进 `repliesMap`；模板 `visibleReplies(cid)` 切片——`openMap[cid]` 为 `false` 时取前 `REPLY_PREVIEW_COUNT=2`、为 `true` 取全部；`remainingReplies(c)` 给 `collapsed` 态文案计数（`replyCount - 2`）。展开/收起只翻 `openMap` 不发请求（已预取，零延迟）。`pageSize:50` 不变——回复线程一屏满放，无分页（评论回复量通常 <10，无翻页诉求）。
+
+**涉及文件**
+- `knowhub-ui/src/components/common/KhComment.vue`：img CSS 改 `max-width:100%/height:auto/block`；新增 `COLLAPSED_HEIGHT` `expanded` `needCollapse` ref + `measureCollapse`（`onMounted` + img `load` 重测 + `onBeforeUnmount` 清理）；模板 content 容器加 `--collapsed` 条件类 + 内联「展开/收起」按钮；`.kh-comment__content` 加 `position:relative`（`::after` 渐隐锚定）；`--collapsed`（`max-height:240/overflow:hidden` + `::after` 渐隐遮罩）+ `.kh-comment__content-toggle`/`.kh-comment__expand` 按钮样式新增。
+- `knowhub-ui/src/components/common/KhCommentList.vue`：`fetchComments` 末尾对 `replyCount>0` 评论 `Promise.all` 预取 `fetchReplies` 缓存 `repliesMap`；`toggleReplies` 改同步翻 `openMap`（不再 async 取数）；新增 `REPLY_PREVIEW_COUNT=2` `remainingReplies(c)` `visibleReplies(cid)` 辅助；模板 reply-section 改「线程始终渲染（折叠态显前 2 条）+ 仅 `remainingReplies(c)>0 || openMap[cid]` 显 toggle 按钮 + 文案「展开剩余 N 条回复」/「收起」」；CSS `__reply-thread` 去 `margin-bottom`、`__toggle` 加 `margin-top`（按钮现在在线程之下顺序贴合）。
+
+## 2026-08-15（二）— 正文配图点击放大从评论区通用到全部 v-md-preview 站点
+
+评论区配图点击放大上线后，正文（博客正文/文章简介/章节正文/项目简介/资源简介/公告正文）的 `v-md-preview` 配图仍是静态铺图不可点。把同款 `el-image-viewer` 全屏画廊放大铺到 6 个正文/简介 v-md-preview 站点；并把评论区的放大逻辑擗出 composable 供 7 处共用，去重复。纯前端改动，后端/SQL 不动，零新增依赖（el-image-viewer 复用 element-plus 已有）。
+
+**抽 composable `useMarkdownImageZoom`（核心）**
+- 之前 `KhComment.vue` 内联 `viewerVisible/viewerUrls/viewerIndex/onContentClick/closeViewer`，逻辑与即将接入的 6 站一模一样（容器 `@click` 委托判 `e.target.tagName==='IMG'` → 收容器内全部 `<img>` `currentSrc||src` 正文出现序组图集 + 记被点索引 → 开 `el-image-viewer`）。擗出 `composables/useMarkdownImageZoom.ts`，接 `contentRef: Ref<HTMLElement|null>`，返 `{ viewerVisible, viewerUrls, viewerIndex, onContentClick, closeViewer }`，7 处共用。
+- **contentRef 由接入站持有**（评论折叠量高、博客/章节 TOC scroll-spy 已复用该 ref），composable 只读它 `querySelectorAll('img')`——与同 ref 上其它逻辑（`querySelectorAll('h2,h3,h4')` 拿目录、`scrollHeight` 量折叠高）正交不冲突：`onContentClick` 只查 `img` 并在 IMG 点击源触发，非 IMG 早退、TOC 不受扰。
+- **擗出时守住早期漏赋坑**：`viewerUrls.value` 必须在开 `viewerVisible` 前同步回填——`el-image-viewer` 是 `v-if` 挂载即读 `url-list`，漏赋会让 url-list 恒 `[]` → `currentImg=urlList[active]=undefined` → 画布 `<img>` src 空 → 放大后一片空白（KhComment 早期 bug）。composable 内先同步赋 url 集 + 被点索引，再 `await nextTick` 让响应式 diff 生效，最后开 `viewerVisible`。
+- 选 composable 而非 wrapper 组件：各站正文容器 scoped `:deep(.github-markdown-body)` 样式不同、部分站 contentRef 已被 TOC 复用、lock/v-else-if 守卫 + `bodyReady` 延迟挂载各异——wrapper 要在各站 juggle 这些 shell，composable 只暴露 refs + 回调让各站自管模板更轻。
+
+**6 站接入 + cursor:zoom-in**
+- `blog/detail`：`.bd__content` 加 `ref="contentRef" @click="onContentClick"`（contentRef 已被 TOC scroll-spy 用，同 ref 兼任）、尾贴 `<el-image-viewer>`、`.bd__content :deep(.github-markdown-body img){cursor:zoom-in}`。
+- `article/detail`：`.di__intro`（简介渲染 `doc.summary`）同款接入。
+- `article/chapter/read`：`.dr__content`（章节正文，`v-else-if="chapter?.content"` 守卫）同款；file 此前无 element-plus import，加 `ElImageViewer`。
+- `project/detail`：`.pd__content`（`v-else` lock 守卫）同款——lock 态该 v-else 分支不挂，容器卸载即不触发放大，符合锁态不泄正文。
+- `resource/detail`：`.rd__intro`（`v-if="resource.description"` 守卫）同款——空简介分支不挂容器不触发。
+- `layout/KhNoticeDetailDialog`：公告正文 `.notice-detail__content`（包裹 `v-if="!bodyReady"` 占位 + `<v-md-preview v-else>`）同款。`el-image-viewer` 放 `<article>` 内、`teleported` 至 body、`z-index="3000"` 压在 el-dialog overlay 之上（EP dialog 默认 ~2002 起步自增，3000 不被遮；若实机见遮改 3500，现 3000 已验压过）。
+- 各站 scoped `:deep(.github-markdown-body img)` 加 `cursor: zoom-in` 作可点放大的视觉提示（v-md-preview 默认不加，正文配图平时看上去与普通图无异，加 cursor 让用户知道可点）。
+- **不动的 v-md-preview 站点**：`KhMarkdownEditor` 的预览窗格（编辑器内实时预览）不接放大——编辑态点击图片应触发选中/编辑意图而非全屏画廊，避免误入「编辑器里点图弹Viewer」的错语义。
+
+**实机验证**（沙箱 dev server，同源图 `/src/assets/image/logo.png`+`/favicon.ico` 入 `![]()`）
+- 临时 `/dev/markdown-image-zoom` probe 复现 5 站容器 + lock/空描述守卫：① 5 容器 6 图全 `cursor:zoom-in`；② 点文章简介单图开 viewer 全分辨率 logo（naturalWidth 1254，v-md-preview 画的 tiny DOM 没被当低清源）；③ 点博客 favicon（图集第 2 张）开 viewer 渲 favicon（点击索引路由正确，不是总开第 0 张）；④ viewer 内「下一张」切到 logo（32→1254，画廊切图生效）；⑤ 切博客 lock 离再回→点该容器图仍能开 viewer（template ref 重新绑定到重挂 DOM 节点，composable 重挂仍可用）；⑥ lock 态 `.pd__content`/`.bd__content` 卸载空容器不在场不误触。验毕删 probe + 还路由。
+
+**涉及文件**
+- `knowhub-ui/src/composables/useMarkdownImageZoom.ts`（新增）：事件委托收 img 图集 + 被点索引 → `el-image-viewer` 全屏画廊放大 composable，7 站共用。
+- `knowhub-ui/src/components/common/KhComment.vue`：去内联 viewer refs/onContentClick/closeViewer，改 `useMarkdownImageZoom(contentRef)`（保留 `contentRef` 供折叠量高复用），行为不变。
+- `knowhub-ui/src/views/blog/detail.vue` / `article/detail.vue` / `article/chapter/read.vue` / `project/detail.vue` / `resource/detail.vue` / `components/layout/KhNoticeDetailDialog.vue`：各加 `ElImageViewer` import + composable + `ref="contentRef" @click="onContentClick"` + 尾贴 `<el-image-viewer>` + scoped `cursor:zoom-in`。
+- `knowhub-ui/src/views/dev/MarkdownImageZoomProbe.vue`（临时验证探针）：验毕已删。

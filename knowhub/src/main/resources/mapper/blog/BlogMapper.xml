@@ -26,6 +26,8 @@
         <result property="updateBy" column="update_by"/>
         <result property="updateTime" column="update_time"/>
         <result property="deleted" column="deleted"/>
+        <result property="commentEnabled" column="comment_enabled"/>
+        <result property="commentCurated" column="comment_curated"/>
     </resultMap>
 
     <!--
@@ -88,6 +90,8 @@
             <if test="reviewer != null">reviewer,</if>
             <if test="reviewTime != null">review_time,</if>
             <if test="reviewAdvice != null">review_advice,</if>
+            <if test="commentEnabled != null">comment_enabled,</if>
+            <if test="commentCurated != null">comment_curated,</if>
             create_by, create_time, update_by, update_time
         </trim>
         values
@@ -107,6 +111,8 @@
             <if test="reviewer != null">#{reviewer},</if>
             <if test="reviewTime != null">#{reviewTime},</if>
             <if test="reviewAdvice != null">#{reviewAdvice},</if>
+            <if test="commentEnabled != null">#{commentEnabled},</if>
+            <if test="commentCurated != null">#{commentCurated},</if>
             #{createBy}, now(), #{updateBy}, now()
         </trim>
     </insert>
@@ -129,6 +135,8 @@
             <if test="reviewTime != null">review_time = #{reviewTime},</if>
             <if test="reviewAdvice != null">review_advice = #{reviewAdvice},</if>
             <if test="deleted != null">deleted = #{deleted},</if>
+            <if test="commentEnabled != null">comment_enabled = #{commentEnabled},</if>
+            <if test="commentCurated != null">comment_curated = #{commentCurated},</if>
             update_by = #{updateBy},
             update_time = now()
         </set>

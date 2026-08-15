@@ -32,6 +32,10 @@ export interface ResourceAuthoringPayload {
   linkIcon?: string | null
   /** 分类树叶子 id，不传后端置 -1 */
   resourceCategoryId?: number
+  /** 评论区开关 1开/0关，作者在上传页勾选 */
+  commentEnabled?: number
+  /** 评论精选开关 0关1开，开启后新评论需作者同意后对他人展示 */
+  commentCurated?: number
 }
 
 /**
@@ -59,6 +63,10 @@ export interface ResourceAuthoringDetail {
   reviewStatus?: string
   publishTime?: string
   createTime?: string
+  /** 评论区开关 1开/0关，编辑回填用 */
+  commentEnabled?: number
+  /** 评论精选开关 0关1开，编辑回填用 */
+  commentCurated?: number
 }
 
 /** 我的资源列表查询参数（前台 /authoring/resource/list） */

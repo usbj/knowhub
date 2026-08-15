@@ -37,6 +37,8 @@
         <result property="likeCount" column="like_count"/>
         <result property="collectCount" column="collect_count"/>
         <result property="downloadCount" column="download_count"/>
+        <result property="commentEnabled" column="comment_enabled"/>
+        <result property="commentCurated" column="comment_curated"/>
     </resultMap>
 
     <!--
@@ -126,7 +128,8 @@
     <select id="getPortalProjectMeta" parameterType="long" resultMap="ProjectPortalDetailVoMap">
         select p.project_id, p.title, p.type, p.level, p.summary,
                p.author_id, u.nick_name as author_nickname, p.publish_time,
-               p.view_count, p.like_count, p.collect_count, p.download_count
+               p.view_count, p.like_count, p.collect_count, p.download_count,
+               p.comment_enabled, p.comment_curated
         from project p
                 left join sys_user u on p.author_id = u.user_id
         where p.project_id = #{projectId} and p.deleted = 0 and p.status = 'PUBLISHED'

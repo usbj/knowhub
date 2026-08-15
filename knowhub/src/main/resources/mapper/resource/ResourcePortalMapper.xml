@@ -65,6 +65,8 @@
         <result property="collectCount" column="collect_count"/>
         <result property="ratingAvg" column="rating_avg"/>
         <result property="ratingCount" column="rating_count"/>
+        <result property="commentEnabled" column="comment_enabled"/>
+        <result property="commentCurated" column="comment_curated"/>
     </resultMap>
 
     <!--
@@ -209,6 +211,7 @@
                r.link_url, r.link_icon, r.file_object_id,
                f.original_name as original_name, f.content_length as content_length, f.content_type as content_type,
                r.publish_time, r.view_count, r.download_count,
+               r.comment_enabled, r.comment_curated,
                (select count(*) from resource_like rl where rl.resource_id = r.resource_id) as like_count,
                (select count(*) from resource_collect rc where rc.resource_id = r.resource_id) as collect_count,
                (select coalesce(round(avg(rating.score), 2), 0) from resource_rating rating where rating.resource_id = r.resource_id) as rating_avg,

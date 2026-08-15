@@ -478,7 +478,7 @@
 
 | 参数 | 类型 | 必填 | 说明 |
 |------|------|------|------|
-| businessType | string | 是 | 业务类型：BLOG_COVER/BLOG_BODY/PROJECT_SRC/PROJECT_PKG/PROJECT_DOC/RESOURCE_FILE/PLUGIN_JAR |
+| businessType | string | 是 | 业务类型：BLOG_COVER/BLOG_BODY/PROJECT_SRC/PROJECT_PKG/PROJECT_DOC/RESOURCE_FILE/PLUGIN_JAR/ARTICLE_COVER/AUDIT_VOUCHER/COMMENT_IMAGE |
 | contentType | string | 是 | MIME 类型，须落在该业务类型的类型白名单内 |
 | size | long | 是 | 声明字节数，须 ≤ 该业务类型的体积上限 |
 | originalName | string | 否 | 原始文件名（仅展示，不参与 objectKey） |
@@ -529,6 +529,8 @@
 **响应示例：** `{"code":200,"msg":"请求成功","data":true}`
 
 > 后端 `HeadObject` 取真实 `contentLength`/`contentType`/`etag`，核对类型落白名单、大小不超限，通过则置 `CONFIRMED` 并回填校验值；不符置 `FAILED`。
+
+> **评论配图**：`businessType=COMMENT_IMAGE`（access=PUBLIC、仅图片四类、≤2MB、`biz_ref_id` 可空）。普通前台评论者属注册默认角色 visitor（role_id=5），默认不挂 `knowhub:file:upload`（menu 82），调本接口会 403；`sql/knowhub-comment-image.sql` 给 visitor 挂 `sys_role_menu (5,82)` 后可传。图片回填 `/file/resolve/{objectId}` 相对引用，以 inline markdown `![](url)` 拼进评论 `content` 列（与 BLOG_BODY 同口径，不存绝对 URL）。
 
 #### 3. PUBLIC 对象回显
 
@@ -1626,3 +1628,124 @@ Accept-Ranges: none
 - **批次5 修复 date-only 反序列化崩溃**：POST `/audit/flow` 报 `Cannot deserialize java.util.Date from "2026-03-12"`——全局 `spring.jackson.date-format=yyyy-MM-dd HH:mm:ss`(SimpleDateFormat 严格解析)拒收 date-only 字符串，而审计日期字段(occurDate / borrowDate / expectedReturnDate / actualReturnDate / periodStart / periodEnd)前端用 el-date-picker ISO DATE 仅发 `yyyy-MM-dd`。于 `AuditFundFlow`/`AuditLoan`/`AuditPeriodReport` 三实体 + `AuditFundFlowVo`/`AuditLoanVo`/`AuditPeriodReportVo` 三 VO 的 date-only 字段加 `@JsonFormat(pattern="yyyy-MM-dd")`，输入解析与输出序列化双方统一 date-only；`@DateTimeFormat`(quarry GET 走表单绑定)对 `@RequestBody` JSON 无效故不依赖；createTime/updateTime/generateTime 仍走全局 timestamp 格式（非业务日期）。
 - **前端**：rookie-ui 后台新增 `api/knowhub/audit.ts` + `types/api/knowhub/audit.ts` + `constants/systemPermissions.ts` 加 knowhub.audit 块（4 模块嵌套按钮键，无 :l1-3）+ 4 页面 `views/knowhub/audit/{subject,flow,loan,report}/index.vue+config.ts` + 2 对话框（FlowReviewDialog/LoanReviewDialog/LoanReturnDialog），照 blog/resource 范式抄 SharedTablePanel/SearchFilterPanel/BaseCard/DictTag。前端验证仅 `vue-tsc --build` 通过（按要求不启 dev server，浏览器自验由用户本地跑）。
 - 校验：mvn 全量 253 源文件 compile 通过，6 audit XML 打包到 target/classes/mapper/audit/；rookie-ui npm run type-check 通过。
+
+## 评论模块
+
+> 路径前缀：`/portal/comment/**`（读，permitAll 无 @PreAuthorize）、`/authoring/comment/**`（写，`@PreAuthorize("isAuthenticated()")`）。模块在 `com.knowhub.comment` 命名空间，与 `history/` 同构的横切独立内容模块。
+
+四类作品（blog/article/project/resource）统一评论能力，两层嵌套（顶级评论 + 回复，回复可 @某楼内某用户，不允许三层）。**评论精选无专门审核页**：作者未开精选时新评论 `review_status=NONE` 直接全员可见；作者开精选后用户新评论 `review_status=PENDING` 仅发表人 + 作者可见，作者在普通评论区 inline「同意展示」(→APPROVED 他人可见)/「拒绝」(→REJECTED 仍仅作者+发表人可见)/直接删除，无待审列表/审核历史接口。精选/驳回**不发通知**，评论人通过评论上的状态标签得知。评论支持点赞（照 `resource_like` 范式 `comment_like` 事实表）。`biz_type` 枚举不入字典（BLOG/ARTICLE/PROJECT/RESOURCE，前端裸字符串），审核状态复用 `review_status` 字典(dict_id=14 NONE/PENDING/APPROVED/REJECTED)，审核动作复用 `review_action` 字典(dict_id=25 仅用 APPROVE/REJECT)——**0 行字典/0 行菜单/0 行后台权限**。
+
+4 主表（blog/article/project/resource）各加 `comment_enabled`(tinyint DEFAULT 1 评论区开关)+`comment_curated`(tinyint DEFAULT 0 精选开关)两列，作者在创作/上传页 ElSwitch 勾选，作品详情 VO 下发供前端渲染评论区开关态。
+
+读接口权限可见性谓词 `commentVisiblePredicate`：`c.deleted=0 AND (c.review_status IN ('NONE','APPROVED') OR c.author_id=#{currentUserId} OR #{workAuthorId}=#{currentUserId})`——其他人只见 NONE/APPROVED；发表人见自己 PENDING/REJECTED；作品作者见全部含 PENDING/REJECTED（作者 inline 审核）；无登录态 currentUserId=null 退化为前半。`comment_enabled=0`（关闭评论区）读接口返空列表。
+
+写接口前置：`comment_enabled=0` 拒发；`parentId` 非空校验 parent 存在、`parent.parent_id IS NULL`（拒三层）、parent.biz_type+biz_id 与入参一致；**写接口不另起 level→userViewLevel 可见性判定**──只 gate 作品存在（deleted=0）+ 评论开关，能看见作品由读接口列表的权限谓词本身保证（看不见的作品看不了评论列表、自然不会触发发表）。`comment_curated=1`→新评论 PENDING，=0→NONE。删除=物理连带软删（删顶级 `UPDATE comment SET deleted=1 WHERE parent_id=#{id}` 连带其下回复，不保留壳帖；自身 deleted=1）；作者可删该作品下任意人评论、普通用户仅自删、admin 短路。
+
+### 评论前台读接口 `/portal/comment`（permitAll）
+
+#### `GET /portal/comment/list` — 评论列表（顶级评论分页）
+
+**权限**：无（permitAll）；区防御性取登录态 + 解析作品 author_id 拼可见性谓词
+
+**请求参数**（query string）：
+
+| 参数 | 类型 | 说明 |
+|---|---|---|
+| bizType | string | BLOG / ARTICLE / PROJECT / RESOURCE（裸字符串不入字典） |
+| bizId | number | 作品主键（各主表 id） |
+| order | string | new 最新优先 / like 点赞优先；缺省 new |
+| pageNum | number | 页码，默认 1 |
+| pageSize | number | 每页条数，默认 10 |
+
+**响应**：`Result<PageInfo<CommentPortalVo>>`（CommentPortalVo：commentId/authorId/authorNickname/content/createTime/likeCount/hasLiked(boolean\|null，未登录 null)/replyCount(该顶级下回复总数，用于前端「展开 N 条回复」)/reviewStatus；可见性按上述谓词，本人 PENDING/REJECTED 评论也下发供发表人看见状态；comment_enabled=0 返空列表）
+
+#### `GET /portal/comment/replies/{commentId}` — 回复列表（某顶级下回复分页）
+
+**权限**：无（permitAll）；同 list 的可见性谓词
+
+**路径参数**：commentId（顶级评论 id）
+
+**请求参数**（query string）：
+
+| 参数 | 类型 | 说明 |
+|---|---|---|
+| pageNum | number | 页码，默认 1 |
+| pageSize | number | 每页条数，默认 10 |
+
+**响应**：`Result<PageInfo<CommentReplyVo>>`（CommentReplyVo：commentId/authorId/authorNickname/content/createTime/likeCount/hasLiked/reviewStatus + replyToUserId/replyToNickname（@某楼内某用户，直回复楼主为 null）；不含 replyCount 因回复无下级）
+
+### 评论前台写接口 `/authoring/comment`（authenticated）
+
+#### `POST /authoring/comment` — 发表评论 / 回复
+
+**权限**：isAuthenticated()；前置 comment_enabled=1 否则拒发；不另起 level→userViewLevel 可见性判定（能看见作品由读接口列表权限谓词保证）
+
+**请求体**：
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| bizType | string | BLOG / ARTICLE / PROJECT / RESOURCE |
+| bizId | number | 作品主键 |
+| content | string | 评论正文，Markdown，≤2000 字（含配图为 inline `![](/file/resolve/{id})` 相对引用，渲染走 v-md-preview；后端仅去空 + 长度校验原样落库） |
+| parentId | number? | 顶级评论 id（回复时传；顶级评论不传）。回复时校验 parent 存在、parent.parent_id IS NULL（拒三层）、parent.biz_type+biz_id 与入参一致 |
+| replyToUserId | number? | @某楼内某用户 userId（仅 parentId 非空且 ≠顶级评论 author_id 时填） |
+
+**响应**：`Result<Long>`（新评论 commentId）。review_status 由主表 comment_curated 决定：=1→PENDING（仅作者+本人可见），=0→NONE（直接全员可见）
+
+> **content 配图**：支持 markdown，配图以 inline `![name](/file/resolve/{objectId})` 相对引用拼入（走 `POST /file/upload-token` `businessType=COMMENT_IMAGE` 上传回填）。前台渲染端 `KhComment` 用 `v-md-preview` 解析 markdown 出图（纯文本插值会把 `![](url)` 原样打印成文本，故必须配套用 v-md-preview）；存量纯文本评论在新渲染器下原样展示无回归。前端轻量态图按钮拦「9 张 / 单图 ≤2MB」，富文态由 KhMarkdownEditor 内置上传走同条 presignedUploadFlow。
+
+#### `DELETE /authoring/comment/{commentId}` — 删除评论
+
+**权限**：isAuthenticated()；作者（该作品 author_id==当前用户）可删该作品下任意评论、普通用户仅自删、admin 短路；都不满足拒 `ServiceException("无权删除")`
+
+**路径参数**：commentId
+
+**响应**：`Result<Boolean>`。删顶级评论物理连带软删其下全部回复（`UPDATE comment SET deleted=1 WHERE parent_id=#{commentId}` 一个 update），不保留壳帖
+
+#### `PUT /authoring/comment/{commentId}/like` — 点赞 / 取消点赞
+
+**权限**：isAuthenticated()
+
+**路径参数**：commentId
+
+**请求参数**（query string）：
+
+| 参数 | 类型 | 说明 |
+|---|---|---|
+| liked | boolean | true 点赞 / false 取消；默认 true |
+
+**请求体**：无（body null）
+
+**响应**：`Result<Boolean>`（toggle 范式照 BlogServiceImpl.toggleLike：命中已赞+liked=true no-op；未赞+liked=false no-op；命中+liked=false→delete comment_like + like_count-1；未命中+liked=true→insert ignore comment_like + like_count+1）。comment_like UNIQUE(comment_id,user_id) 保证幂等
+
+#### `POST /authoring/comment/{commentId}/review` — 作者 inline 审核评论（同意展示 / 拒绝）
+
+**权限**：isAuthenticated()；仅该作品作者（comment.biz_type+biz_id 对应主表 author_id==当前用户）有权，非作者拒 `ServiceException`；仅当 comment 当前 review_status=PENDING 才允许动作（已是 NONE/APPROVED/REJECTED 重复操作返 false no-op）；**不发通知**（评论人靠评论上状态标签得知），审核动作快照落 comment 表 reviewer/review_time/review_advice 列，不另建流水表
+
+**路径参数**：commentId
+
+**请求体**：
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| action | string | APPROVE 同意展示（→APPROVED 他人可见）/ REJECT 拒绝（→REJECTED 仍仅作者+发表人可见） |
+| advice | string? | 审核意见（可选，落 review_advice 列；REJECT 时可空，作者也可直接删除该评论而不走拒绝） |
+
+**响应**：`Result<Boolean>`。APPROVE→review_status=APPROVED + reviewer + review_time + review_advice?；REJECT→review_status=REJECTED + reviewer + review_time + review_advice?
+
+### 回复通知（评论提交副作用，无独立接口）
+
+发评论含 `parentId`（回复路径）时，`POST /authoring/comment` 评论落库后给「被回复人」发一条站内通知（`notice_type=NOTIFY`，`publish_scope=USER`，`status=PUBLISHED`，接收人落 `sys_notice_user_rel`），通知「前往查看」按钮路由 `route_path` 跳该作品前台详情页 `/blog|/article|/project|/resource/{bizId}`。被回复人推导：`replyToUserId` 非空（@某楼内其他用户）取其，否则取楼主 `parent.author_id`；自回复跳过不给自己发；顶级评论（无 parentId）不发通知。通知正文为回复正文 ≤50 字截断，标题 `{回复人昵称} 回复了你的评论`。通知失败仅后台 warn 不阻断评论落库。**不另起接口**，纯评论 service 末尾副作用；用户经顶栏铃铛 + 通知详情弹窗「前往查看」闭环。
+
+#### 2026-08-14 评论模块四类作品统一落地（comment + comment_like 两表，两层嵌套，精选 inline 无审页，6 接口）
+
+为博客/文章/项目/资源四类前台作品统一建评论系统。照 `C:\Users\wyt\.claude\plans\lovely-zooming-pudding.md` 定稿实施，评论作为横切独立内容模块 `comment/`（与 `history/` 同构）。核心约束：**评论精选无专门审核页**——作者开启精选后用户新评论仅发表人+作者可见(PENDING)，作者在普通评论区 inline「同意展示」(APPROVED 后他人可见)/「拒绝」(REJECTED 仍仅作者+发表人可见)/直接删除，不另建待审列表/审核历史页。详见上方「评论模块」章节。
+
+- **新增接口（6）**：`GET /portal/comment/list|replies/{commentId}`（2 读公开 permitAll，区防御性取登录态+解析作品 author_id 拼可见性谓词）+ `POST /authoring/comment`、`DELETE /authoring/comment/{id}`、`PUT /authoring/comment/{id}/like`、`POST /authoring/comment/{id}/review`（4 写登录 authenticated）。读写物理隔离（/portal/** permitAll、/authoring/** authenticated）。
+- **可见性谓词 `commentVisiblePredicate`**：`deleted=0 AND (review_status IN ('NONE','APPROVED') OR author_id=#{currentUserId} OR #{workAuthorId}=#{currentUserId})`——其他人只见 NONE/APPROVED；发表人见自己 PENDING/REJECTED；作品作者见全部含 PENDING/REJECTED（作者 inline 审核）；无登录态退化为前半。精选/驳回不发通知，评论人靠评论上状态标签得知。
+- **数据层**：建 `comment`(主表四类共用，biz_type+biz_id 横切，parent_id 仅两层，review_status 复用字典 14，审核快照 reviewer/review_time/review_advice 落主表不另建流水表)+`comment_like`(点赞事实表，照 resource_like 自增 PK+UNIQUE(comment_id,user_id))；4 主表幂等 ALTER 各加 `comment_enabled`+`comment_curated` 两列。**0 行字典/0 行菜单/0 行后台权限**（复用 review_status/review_action 字典；精选走前台 inline 无后台审核页）。
+- **写接口前置**：comment_enabled=0 拒发；parentId 非空校验 parent 存在+parent.parent_id IS NULL（拒三层）+biz 一致；写接口不另起 level→userViewLevel 判定（能看见作品由读接口列表权限谓词保证）；comment_curated=1→新评论 PENDING，=0→NONE。
+- **删除**：作者可删该作品下任意评论、普通用户仅自删、admin 短路；删顶级物理连带软删其下回复（一个 update，不保留壳帖）。
+- **后端**：独立 `com.knowhub.comment` 命名空间全套（entity×2/vo×4/quarry×1/enum CommentBizType×1/mapper×2+xml×2/service CommentService+CommentPortalService 各接口+impl/controller×2/CommentWorkResolver 单点路由 4 主表）；4 主表 entity/写VO/详情VO 各加 commentEnabled+commentCurated + 4 主/4 Portal Mapper.xml 列映射与 `<if>` 动态列；getForEdit 复用主 VO 带两列回填。
+- **前端 knowhub-ui**：新增 `api/knowhub/comment.ts`+`types/api/knowhub/comment.ts`+3 组件 `components/common/KhComment{,Input,List}.vue`；4 详情页接入 `KhCommentList`（blog 替占位、article/resource 全宽评论块、project 新增评论 tab，各补 isAuthor computed 传入）；4 创作/上传页加评论设置 ElSwitch（开启评论区绑 commentEnabled active 1/inactive 0、评论精选绑 commentCurated 附文案「开启后新评论仅你与发表人可见，需你同意后才对他人展示」，buildPayload 透传，getForEdit ??1/??0 回填，resource 编辑态 disabled 守卫）；4 主 PortalDetailRecord +4 authoring payload/detail 类型各补 commentEnabled/commentCurated 字段。
+- 校验：前端 `npm run type-check` 通过（评论模块零新增类型错；develop HEAD 另有 7 个 pre-existing 类型错系上游合并带入的 `Record<ViewLevel,...>` number 索引与 `'accent'` tag 漂移，与本任务无关不在本批处理）；后端未替跑 mvn（§11 沙箱无 rookie 依赖，交用户本地编译）；SQL 由用户自跑 `mysql --default-character-set=utf8mb4 < sql/knowhub-comment.sql`。

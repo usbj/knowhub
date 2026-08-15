@@ -11,7 +11,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElImageViewer } from 'element-plus'
 import { ArrowLeft, Reading } from '@element-plus/icons-vue'
 import KhCard from '@/components/common/KhCard.vue'
 import KhTag from '@/components/common/KhTag.vue'
@@ -20,6 +20,8 @@ import KhStatPill from '@/components/common/KhStatPill.vue'
 import KhIcon from '@/components/common/KhIcon.vue'
 import KhSectionTitle from '@/components/common/KhSectionTitle.vue'
 import KhLoading from '@/components/common/KhLoading.vue'
+import KhCommentList from '@/components/common/KhCommentList.vue'
+import { useMarkdownImageZoom } from '@/composables/useMarkdownImageZoom'
 import { getArticleDetailApi, likeArticleApi, collectArticleApi } from '@/api/knowhub/article'
 import type { ArticlePortalDetailRecord } from '@/types/api/knowhub/article'
 import { viewLevelTagType, getViewLevelLabel } from '@/utils/viewLevel'
@@ -34,6 +36,10 @@ const userStore = useUserStore()
 
 const docId = computed(() => Number(route.params.id))
 const doc = ref<ArticlePortalDetailRecord | null>(null)
+/** 文章简介正文 DOM ref：v-md-preview 渲染简介 markdown，配图点击放大委托该容器的 <img> */
+const contentRef = ref<HTMLElement | null>(null)
+/** 文章简介配图点击放大（与博客/项目/资源同款 el-image-viewer 全屏画廊） */
+const { viewerVisible, viewerUrls, viewerIndex, onContentClick, closeViewer } = useMarkdownImageZoom(contentRef)
 /** 首屏取数加载态：loading 期间显 KhLoading 占位，替代 v-if="doc" 的纯空白帧 */
 const loading = ref(true)
 /** 点赞/收藏交互态：interacting 期间禁用按钮防重复点击 */
@@ -71,6 +77,11 @@ const startReading = (chapterId?: number) => {
 const goUp = () => router.push('/articles')
 
 const displayTags = computed<string[]>(() => doc.value?.tagNames ?? [])
+
+/** 是否否认当前文章作者本人（详情页评论区 isAuthor flag：作者可 inline 精选 + 删任意评论，照 blog isMyBlog 范式） */
+const isMyArticle = computed(
+  () => Boolean(doc.value?.authorId) && doc.value!.authorId === userStore.userInfo?.userId,
+)
 
 /** 点赞/收藏：未登录跳登录 + redirect 回填来源；登录态乐观更新 hasLiked/hasCollected + 计数（对齐 resource 详情范式） */
 const requireAuth = (): boolean => {
@@ -177,7 +188,7 @@ watch(docId, () => void fetchDetail())
         <KhCard padding="lg" class="di__intro-card">
           <KhSectionTitle title="文章简介" />
           <!-- summary 是 TEXT，用 v-md-preview 渲染承载长文；短 summary 时也按 markdown body 排版，不空 -->
-          <div class="di__intro">
+          <div ref="contentRef" class="di__intro" @click="onContentClick">
             <v-md-preview :text="doc.summary ?? ''" />
           </div>
         </KhCard>
@@ -213,6 +224,29 @@ watch(docId, () => void fetchDetail())
         </KhCard>
       </aside>
     </div>
+
+    <!-- 评论区：全宽独立区块，KhCommentList 内置发表条/列表/回复/作者 inline 精选 -->
+    <div v-if="doc" class="kh-container kh-container--wide di__comments">
+      <KhCard padding="lg">
+        <KhCommentList
+          biz-type="ARTICLE"
+          :biz-id="docId"
+          :comment-enabled="doc.commentEnabled"
+          :comment-curated="doc.commentCurated"
+          :is-author="isMyArticle"
+        />
+      </KhCard>
+    </div>
+    <!-- 文章简介配图点击放大画廊（el-image-viewer，teleported 至 body 全屏，z-index 3000） -->
+    <el-image-viewer
+      v-if="viewerVisible"
+      :url-list="viewerUrls"
+      :initial-index="viewerIndex"
+      :z-index="3000"
+      hide-on-click-modal
+      teleported
+      @close="closeViewer"
+    />
   </div>
 </template>
 
@@ -349,6 +383,10 @@ watch(docId, () => void fetchDetail())
   border-bottom: none;
   margin-top: var(--kh-space-6);
 }
+/* 文章简介配图可点放大：cursor zoom-in 视觉提示，点击由 .di__intro @click 委托 onContentClick 开 el-image-viewer */
+.di__intro :deep(.github-markdown-body img) {
+  cursor: zoom-in;
+}
 
 .di__aside { display: flex; flex-direction: column; gap: var(--kh-space-5); position: sticky; top: calc(var(--kh-header-height) + var(--kh-space-4)); }
 .di__outline-card { display: flex; flex-direction: column; }
@@ -378,6 +416,11 @@ watch(docId, () => void fetchDetail())
   color: var(--kh-text-tertiary);
   text-align: center;
   padding: var(--kh-space-4);
+}
+
+/* 评论区：全宽独立区块（在两栏 layout 之后），与 blog/resource 详情同款口径 */
+.di__comments {
+  padding-bottom: var(--kh-space-12);
 }
 
 @media (max-width: 1024px) {

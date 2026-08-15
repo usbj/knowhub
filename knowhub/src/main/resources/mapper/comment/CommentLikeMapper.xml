@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.knowhub.mapper.comment.CommentLikeMapper">
+
+    <resultMap id="CommentLikeResultMap" type="com.knowhub.pojo.comment.entity.CommentLike">
+        <id property="likeId" column="like_id"/>
+        <result property="commentId" column="comment_id"/>
+        <result property="userId" column="user_id"/>
+        <result property="createTime" column="create_time"/>
+    </resultMap>
+
+    <!-- insert ignore：UNIQUE(comment_id,user_id) 冲突视为已点赞，service 据此判 +1 -->
+    <insert id="addCommentLike" parameterType="com.knowhub.pojo.comment.entity.CommentLike">
+        insert ignore into comment_like(comment_id, user_id) values (#{commentId}, #{userId})
+    </insert>
+
+    <delete id="deleteCommentLike" parameterType="com.knowhub.pojo.comment.entity.CommentLike">
+        delete from comment_like where comment_id = #{commentId} and user_id = #{userId}
+    </delete>
+
+    <select id="getCommentLike" parameterType="com.knowhub.pojo.comment.entity.CommentLike" resultMap="CommentLikeResultMap">
+        select * from comment_like where comment_id = #{commentId} and user_id = #{userId}
+    </select>
+
+    <!-- 删评论时连带清理点赞记录 -->
+    <delete id="deleteByCommentId" parameterType="long">
+        delete from comment_like where comment_id = #{commentId}
+    </delete>
+
+</mapper>

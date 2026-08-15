@@ -1,0 +1,204 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.knowhub.mapper.comment.CommentMapper">
+
+    <!--
+      评论主表结果映射（getCommentById 用）：含 join 带出 authorNickname。
+      审计列 createBy/updateBy/createTime/updateTime 由实体继承 BaseEntity 承载，resultMap 给关键字段映射。
+    -->
+    <resultMap id="CommentResultMap" type="com.knowhub.pojo.comment.entity.Comment">
+        <id property="commentId" column="comment_id"/>
+        <result property="bizType" column="biz_type"/>
+        <result property="bizId" column="biz_id"/>
+        <result property="authorId" column="author_id"/>
+        <result property="parentId" column="parent_id"/>
+        <result property="replyToUserId" column="reply_to_user_id"/>
+        <result property="replyToNickname" column="reply_to_nickname"/>
+        <result property="content" column="content"/>
+        <result property="likeCount" column="like_count"/>
+        <result property="reviewStatus" column="review_status"/>
+        <result property="reviewer" column="reviewer"/>
+        <result property="reviewTime" column="review_time"/>
+        <result property="reviewAdvice" column="review_advice"/>
+        <result property="createBy" column="create_by"/>
+        <result property="createTime" column="create_time"/>
+        <result property="updateBy" column="update_by"/>
+        <result property="updateTime" column="update_time"/>
+        <result property="deleted" column="deleted"/>
+        <result property="authorNickname" column="author_nickname"/>
+    </resultMap>
+
+    <!-- 顶级评论列表项 VO 结果映射 -->
+    <resultMap id="CommentPortalVoMap" type="com.knowhub.pojo.comment.vo.CommentPortalVo">
+        <id property="commentId" column="comment_id"/>
+        <result property="authorId" column="author_id"/>
+        <result property="authorNickname" column="author_nickname"/>
+        <result property="content" column="content"/>
+        <result property="createTime" column="create_time"/>
+        <result property="likeCount" column="like_count"/>
+        <result property="reviewStatus" column="review_status"/>
+        <result property="reviewAdvice" column="review_advice"/>
+    </resultMap>
+
+    <!-- 回复列表项 VO 结果映射 -->
+    <resultMap id="CommentReplyVoMap" type="com.knowhub.pojo.comment.vo.CommentReplyVo">
+        <id property="commentId" column="comment_id"/>
+        <result property="authorId" column="author_id"/>
+        <result property="authorNickname" column="author_nickname"/>
+        <result property="content" column="content"/>
+        <result property="createTime" column="create_time"/>
+        <result property="likeCount" column="like_count"/>
+        <result property="replyToUserId" column="reply_to_user_id"/>
+        <result property="replyToNickname" column="reply_to_nickname"/>
+        <result property="reviewStatus" column="review_status"/>
+        <result property="reviewAdvice" column="review_advice"/>
+    </resultMap>
+
+    <!--
+      公共权限谓词片段：评论可见性。
+        review_status IN ('NONE','APPROVED')                         → 其他人可见
+        OR author_id = #{currentUserId}                              → 发表人见自己的 PENDING/REJECTED
+        OR #{workAuthorId} = #{currentUserId}                        → 该作品作者见全部（inline 审核）
+      未登录 currentUserId=null：workAuthorId 为该作品实际作者 userId（非 null），
+        中段永假、末段 workAuthorId=null 吻配——实际靠前半段过滤，只见 NONE/APPROVED。
+    -->
+    <sql id="commentVisiblePredicate">
+        c.deleted = 0
+        and (
+            c.review_status in ('NONE', 'APPROVED')
+            or c.author_id = #{currentUserId}
+            or #{workAuthorId} = #{currentUserId}
+        )
+    </sql>
+
+    <!-- 新增评论，动态列（对齐 README.dev「Mapper XML insert 均改为动态列」约定） -->
+    <insert id="addComment" parameterType="com.knowhub.pojo.comment.entity.Comment" useGeneratedKeys="true" keyProperty="commentId">
+        insert into comment
+        <trim prefix="(" suffix=")" suffixOverrides=",">
+            <if test="bizType != null">biz_type,</if>
+            <if test="bizId != null">biz_id,</if>
+            <if test="authorId != null">author_id,</if>
+            <if test="parentId != null">parent_id,</if>
+            <if test="replyToUserId != null">reply_to_user_id,</if>
+            <if test="replyToNickname != null">reply_to_nickname,</if>
+            <if test="content != null">content,</if>
+            <if test="reviewStatus != null">review_status,</if>
+            create_by, create_time, update_by, update_time
+        </trim>
+        values
+        <trim prefix="(" suffix=")" suffixOverrides=",">
+            <if test="bizType != null">#{bizType},</if>
+            <if test="bizId != null">#{bizId},</if>
+            <if test="authorId != null">#{authorId},</if>
+            <if test="parentId != null">#{parentId},</if>
+            <if test="replyToUserId != null">#{replyToUserId},</if>
+            <if test="replyToNickname != null">#{replyToNickname},</if>
+            <if test="content != null">#{content},</if>
+            <if test="reviewStatus != null">#{reviewStatus},</if>
+            #{createBy}, now(), #{updateBy}, now()
+        </trim>
+    </insert>
+
+    <!-- 按主键取评论（含 author_nickname join 带出，权限校验/精选/删除用） -->
+    <select id="getCommentById" resultMap="CommentResultMap">
+        select c.*, u.nick_name as author_nickname
+        from comment c
+                left join sys_user u on c.author_id = u.user_id
+        where c.comment_id = #{commentId}
+    </select>
+
+    <!--
+      顶级评论分页：指定作品（biz_type+biz_id）下 parent_id IS NULL 的评论。
+      权限谓词见 commentVisiblePredicate；service 透传 currentUserId/workAuthorId。
+      排序：like=按点赞数倒序, new/缺省=按创建时间倒序（楼层顺序）。分页由 PageHelper 接管。
+    -->
+    <select id="listTopComments" parameterType="com.knowhub.pojo.comment.quarry.CommentListQuarry" resultMap="CommentPortalVoMap">
+        select c.comment_id, c.author_id, u.nick_name as author_nickname,
+               c.content, c.create_time, c.like_count,
+               c.review_status, c.review_advice
+        from comment c
+                left join sys_user u on c.author_id = u.user_id
+        where c.biz_type = #{bizType}
+          and c.biz_id = #{bizId}
+          and c.parent_id is null
+          and <include refid="commentVisiblePredicate"/>
+        <choose>
+            <when test="order == 'like'">
+                order by c.like_count desc, c.create_time desc, c.comment_id desc
+            </when>
+            <otherwise>
+                order by c.create_time desc, c.comment_id desc
+            </otherwise>
+        </choose>
+    </select>
+
+    <!--
+      回复分页：指定顶级评论（parent_id）下的回复（两层嵌套第二层）。
+      权限谓词同 commentVisiblePredicate；按创建时间倒序（楼层顺序）。
+    -->
+    <select id="listReplies" parameterType="com.knowhub.pojo.comment.quarry.ReplyListQuarry" resultMap="CommentReplyVoMap">
+        select c.comment_id, c.author_id, u.nick_name as author_nickname,
+               c.content, c.create_time, c.like_count,
+               c.reply_to_user_id, c.reply_to_nickname,
+               c.review_status, c.review_advice
+        from comment c
+                left join sys_user u on c.author_id = u.user_id
+        where c.parent_id = #{parentId}
+          and <include refid="commentVisiblePredicate"/>
+        order by c.create_time desc, c.comment_id desc
+    </select>
+
+    <!-- 批量取多个顶级评论的回复数（service 回填 replyCount，防 N+1），返回 {commentId, cnt} -->
+    <select id="countRepliesByParentIds" resultType="java.util.Map">
+        <if test="parentIds != null and parentIds.size() > 0">
+            select parent_id as commentId, count(*) as cnt
+            from comment
+            where deleted = 0 and parent_id in
+            <foreach collection="parentIds" item="pid" open="(" separator="," close=")">#{pid}</foreach>
+            group by parent_id
+        </if>
+    </select>
+
+    <!-- 软删评论本身 -->
+    <update id="softDeleteComment" parameterType="long">
+        update comment set deleted = 1, update_time = now() where comment_id = #{commentId}
+    </update>
+
+    <!-- 删顶级评论连带其下回复 deleted=1（service 删顶级时一个 update，不保留壳帖） -->
+    <update id="softDeleteRepliesByParent" parameterType="long">
+        update comment set deleted = 1, update_time = now() where parent_id = #{parentId} and deleted = 0
+    </update>
+
+    <!-- 点赞数自增/自减（delta 由 service 传 +1/-1） -->
+    <update id="incrLikeCount">
+        update comment set like_count = like_count + #{delta} where comment_id = #{commentId}
+    </update>
+
+    <!-- 作者 inline 精选：更新审核快照 -->
+    <update id="updateReview">
+        update comment
+        set review_status = #{reviewStatus},
+            reviewer = #{reviewer},
+            review_time = now(),
+            review_advice = #{reviewAdvice},
+            update_time = now()
+        where comment_id = #{commentId}
+    </update>
+
+    <!--
+      批量取当前用户对给定评论的点赞状态（service 回填 hasLiked，防 N+1），返回 {comment_id, like_id}。
+      commentIds 为空时由外层 if 拦截，避免生成 in () 语法错误。
+    -->
+    <select id="getLikedByUser" resultType="java.util.Map">
+        <if test="commentIds != null and commentIds.size() > 0">
+            select comment_id as commentId, like_id as likeId
+            from comment_like
+            where user_id = #{userId}
+              and comment_id in
+            <foreach collection="commentIds" item="cid" open="(" separator="," close=")">#{cid}</foreach>
+        </if>
+    </select>
+
+</mapper>

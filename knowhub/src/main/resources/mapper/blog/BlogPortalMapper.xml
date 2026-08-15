@@ -32,6 +32,8 @@
         <result property="collectCount" column="collect_count"/>
         <result property="content" column="content"/>
         <result property="level" column="level"/>
+        <result property="commentEnabled" column="comment_enabled"/>
+        <result property="commentCurated" column="comment_curated"/>
     </resultMap>
 
     <!--
@@ -155,7 +157,8 @@
     <select id="getPortalBlogMeta" resultMap="BlogPortalDetailVoMap">
         select b.blog_id, b.author_id, u.nick_name as author_nickname,
                b.title, b.summary, b.cover_url, b.publish_time,
-               b.view_count, b.like_count, b.collect_count, b.level
+               b.view_count, b.like_count, b.collect_count, b.level,
+               b.comment_enabled, b.comment_curated
         from blog b
                 left join sys_user u on b.author_id = u.user_id
         where b.deleted = 0 and b.status = 'PUBLISHED'

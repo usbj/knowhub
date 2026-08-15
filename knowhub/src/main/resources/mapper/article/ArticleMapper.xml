@@ -29,6 +29,8 @@
         <result property="updateBy" column="update_by"/>
         <result property="updateTime" column="update_time"/>
         <result property="deleted" column="deleted"/>
+        <result property="commentEnabled" column="comment_enabled"/>
+        <result property="commentCurated" column="comment_curated"/>
         <!-- join 带出的展示字段（非表字段） -->
         <result property="authorNickname" column="author_nickname"/>
     </resultMap>
@@ -47,6 +49,7 @@
                a.author_id, a.cover_object_key, a.status, a.review_status, a.publish_time,
                a.view_count, a.like_count, a.collect_count,
                a.create_by, a.create_time, a.update_by, a.update_time, a.deleted,
+               a.comment_enabled, a.comment_curated,
                u.nick_name as author_nickname
         from article a
                 left join sys_user u on a.author_id = u.user_id
@@ -101,6 +104,8 @@
             <if test="status != null">status,</if>
             <if test="reviewStatus != null">review_status,</if>
             <if test="publishTime != null">publish_time,</if>
+            <if test="commentEnabled != null">comment_enabled,</if>
+            <if test="commentCurated != null">comment_curated,</if>
             create_by, create_time, update_by, update_time
         </trim>
         values
@@ -114,6 +119,8 @@
             <if test="status != null">#{status},</if>
             <if test="reviewStatus != null">#{reviewStatus},</if>
             <if test="publishTime != null">#{publishTime},</if>
+            <if test="commentEnabled != null">#{commentEnabled},</if>
+            <if test="commentCurated != null">#{commentCurated},</if>
             #{createBy}, now(), #{updateBy}, now()
         </trim>
     </insert>
@@ -132,6 +139,8 @@
             <if test="reviewStatus != null and reviewStatus != ''">review_status = #{reviewStatus},</if>
             <if test="publishTime != null">publish_time = #{publishTime},</if>
             <if test="deleted != null">deleted = #{deleted},</if>
+            <if test="commentEnabled != null">comment_enabled = #{commentEnabled},</if>
+            <if test="commentCurated != null">comment_curated = #{commentCurated},</if>
             update_by = #{updateBy},
             update_time = now()
         </set>

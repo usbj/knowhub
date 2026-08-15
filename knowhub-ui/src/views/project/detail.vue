@@ -11,9 +11,9 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElButton, ElDialog, ElFormItem, ElInput, ElMessage, ElMessageBox, ElSelect, ElOption, ElUpload } from 'element-plus'
+import { ElButton, ElDialog, ElFormItem, ElInput, ElImageViewer, ElMessage, ElMessageBox, ElSelect, ElOption, ElUpload } from 'element-plus'
 import type { UploadFile } from 'element-plus'
-import { ArrowLeft, Download, Folder, Document, Edit, UploadFilled, FolderAdd } from '@element-plus/icons-vue'
+import { ArrowLeft, Download, Folder, Document, Edit, UploadFilled, FolderAdd, ChatDotRound } from '@element-plus/icons-vue'
 import http from '@/utils/http'
 import KhCard from '@/components/common/KhCard.vue'
 import KhTag from '@/components/common/KhTag.vue'
@@ -21,6 +21,8 @@ import KhAvatar from '@/components/common/KhAvatar.vue'
 import KhStatPill from '@/components/common/KhStatPill.vue'
 import KhIcon from '@/components/common/KhIcon.vue'
 import KhLoading from '@/components/common/KhLoading.vue'
+import KhCommentList from '@/components/common/KhCommentList.vue'
+import { useMarkdownImageZoom } from '@/composables/useMarkdownImageZoom'
 import ProjectMemberPanel from '@/components/project/ProjectMemberPanel.vue'
 import {
   getProjectDetailApi,
@@ -79,6 +81,10 @@ type DetailModel = ProjectPortalDetailRecord & {
 }
 
 const project = ref<DetailModel | null>(null)
+/** 项目介绍正文 DOM ref：v-md-preview 在其内渲染，配图点击放大委托该容器的 <img> */
+const contentRef = ref<HTMLElement | null>(null)
+/** 项目介绍配图点击放大（与博客/文章正文同款 el-image-viewer 全屏画廊），复用 contentRef 委托 <img> */
+const { viewerVisible, viewerUrls, viewerIndex, onContentClick, closeViewer } = useMarkdownImageZoom(contentRef)
 const files = ref<ProjectFileRecord[]>([])
 const members = ref<ProjectMemberRecord[]>([])
 const loading = ref(false)
@@ -109,9 +115,18 @@ const statusTag = computed(() => {
   return s ? (statusMeta[s] ?? { text: s, type: 'neutral' as const }) : { text: '已发布', type: 'success' as const }
 })
 
-/** 子页面切换：介绍 / 项目文件 */
-type SubTab = 'intro' | 'files'
+/** 子页面切换：介绍 / 项目文件 / 评论 */
+type SubTab = 'intro' | 'files' | 'comments'
 const activeTab = ref<SubTab>('intro')
+
+/**
+ * 当前用户是否该项目作者（评论区 isAuthor flag：作者可 inline 精选 + 删任意评论）。
+ * 与 canManage 不同：canManage 含 LEADER 成员/canEdit 成员，但评论作者的「精选/删任意」
+ * 仅归作品作者（创建者）一人；author 来自 portal 详情 authorId 或 authoring e.authorId 比对。
+ */
+const isProjectAuthor = computed(
+  () => Boolean(project.value?.authorId) && project.value!.authorId === userStore.userInfo?.userId,
+)
 
 /**
  * 扁平文件列表按 parentId 内存组装为树。后端 listFiles 返回扁平带 parentId
@@ -227,6 +242,8 @@ const fetchDetail = async () => {
             lockReason: null,
             canEdit: e.canEdit === true,
             myMemberRole: e.myMemberRole,
+            commentEnabled: e.commentEnabled ?? 1,
+            commentCurated: e.commentCurated ?? 0,
           }
           // 作者全权：author_id === 当前登录用户 → 即便后端 canEdit 因成员记录缺失/权限点缺位回填为 false，
           // 也强制可管（作者天然可管自己项目，后端 service canOp 对 LEADER 全权，作者即创建者=LEADER）。
@@ -743,6 +760,14 @@ watch(projectId, () => {
             >
               <KhIcon name="file" :size="15" /> 项目文件
             </button>
+            <button
+              class="pd__tab"
+              :class="{ 'is-active': activeTab === 'comments' }"
+              type="button"
+              @click="activeTab = 'comments'"
+            >
+              <el-icon><ChatDotRound /></el-icon> 评论
+            </button>
           </div>
           <!-- 授权态可管：项目文件 tab 行右侧追加"新建文件夹 / 上传文件"按钮（与项目介绍/项目文件同 pill 同字号，
                无权限者不显示）；支持类型文案已在上传弹窗内展示，此处不再重复 -->
@@ -763,7 +788,7 @@ watch(projectId, () => {
             <p class="pd__locked-title">{{ project.lockReason ?? '需更高权限查看完整内容' }}</p>
             <p class="pd__locked-hint">登录并拥有对应等级权限后可查看完整项目介绍</p>
           </div>
-          <div v-else class="pd__content">
+          <div v-else ref="contentRef" class="pd__content" @click="onContentClick">
             <v-md-preview :text="project.description ?? ''" />
           </div>
         </KhCard>
@@ -829,6 +854,17 @@ watch(projectId, () => {
             <div v-if="!visibleNodes.length" class="pd__tree-empty">暂无文件</div>
           </div>
         </section>
+
+        <!-- 子页面：评论（项目正文重，用 tab 承载更干净；KhCommentList 内置发表条/列表/回复/作者 inline 精选） -->
+        <KhCard v-show="activeTab === 'comments'" padding="lg" class="pd__section">
+          <KhCommentList
+            biz-type="PROJECT"
+            :biz-id="projectId"
+            :comment-enabled="project.commentEnabled"
+            :comment-curated="project.commentCurated"
+            :is-author="isProjectAuthor"
+          />
+        </KhCard>
       </div>
 
       <!-- 右：项目信息 + 参与人员（参与人员卡内部可滚动，坐落项目信息下方） -->
@@ -982,6 +1018,16 @@ watch(projectId, () => {
         <ElButton type="primary" @click="submitRename">确定</ElButton>
       </template>
     </ElDialog>
+    <!-- 项目介绍配图点击放大画廊（el-image-viewer，teleported 至 body 全屏，z-index 3000） -->
+    <el-image-viewer
+      v-if="viewerVisible"
+      :url-list="viewerUrls"
+      :initial-index="viewerIndex"
+      :z-index="3000"
+      hide-on-click-modal
+      teleported
+      @close="closeViewer"
+    />
   </div>
 </template>
 
@@ -1184,6 +1230,10 @@ watch(projectId, () => {
 .pd__content :deep(.github-markdown-body h1),
 .pd__content :deep(.github-markdown-body h2) {
   border-bottom: none;
+}
+/* 项目介绍配图可点放大：cursor zoom-in 视觉提示，点击由 .pd__content @click 委托 onContentClick 开 el-image-viewer */
+.pd__content :deep(.github-markdown-body img) {
+  cursor: zoom-in;
 }
 /* 越级锁态占位 */
 .pd__locked {

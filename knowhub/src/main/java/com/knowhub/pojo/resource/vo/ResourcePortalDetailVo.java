@@ -29,6 +29,12 @@ public class ResourcePortalDetailVo extends ResourcePortalVo {
     /** 当前用户评分（1-5；未评分为 null/0；登录态回填） */
     private Integer myScore;
 
+    /** 评论区开关 1开/0关（见 comment 模块；详情接口 mapper 带出，前端据此渲染评论区开关态） */
+    private Integer commentEnabled;
+
+    /** 评论精选开关 0=新评论直接可见 / 1=新评论仅发表人+作者可见，作者同意展示后他人可见 */
+    private Integer commentCurated;
+
     public String getDescription() {
         return description;
     }
@@ -59,6 +65,22 @@ public class ResourcePortalDetailVo extends ResourcePortalVo {
 
     public void setMyScore(Integer myScore) {
         this.myScore = myScore;
+    }
+
+    public Integer getCommentEnabled() {
+        return commentEnabled;
+    }
+
+    public void setCommentEnabled(Integer commentEnabled) {
+        this.commentEnabled = commentEnabled;
+    }
+
+    public Integer getCommentCurated() {
+        return commentCurated;
+    }
+
+    public void setCommentCurated(Integer commentCurated) {
+        this.commentCurated = commentCurated;
     }
 
     @Override

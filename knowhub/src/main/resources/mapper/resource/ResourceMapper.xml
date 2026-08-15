@@ -33,6 +33,8 @@
         <result property="updateBy" column="update_by"/>
         <result property="updateTime" column="update_time"/>
         <result property="deleted" column="deleted"/>
+        <result property="commentEnabled" column="comment_enabled"/>
+        <result property="commentCurated" column="comment_curated"/>
         <!-- join 带出的展示字段（非表字段） -->
         <result property="authorNickname" column="author_nickname"/>
         <result property="categoryName" column="category_name"/>
@@ -52,6 +54,7 @@
                r.title, r.summary, r.file_object_id, r.link_url, r.link_icon,
                r.status, r.review_status, r.publish_time, r.download_count,
                r.create_by, r.create_time, r.update_by, r.update_time, r.deleted,
+               r.comment_enabled, r.comment_curated,
                u.nick_name as author_nickname,
                c.category_name as category_name,
                f.original_name as original_name, f.content_length as content_length, f.content_type as content_type
@@ -103,6 +106,8 @@
             <if test="reviewStatus != null">review_status,</if>
             <if test="publishTime != null">publish_time,</if>
             <if test="downloadCount != null">download_count,</if>
+            <if test="commentEnabled != null">comment_enabled,</if>
+            <if test="commentCurated != null">comment_curated,</if>
             create_by, create_time, update_by, update_time
         </trim>
         values
@@ -120,6 +125,8 @@
             <if test="reviewStatus != null">#{reviewStatus},</if>
             <if test="publishTime != null">#{publishTime},</if>
             <if test="downloadCount != null">#{downloadCount},</if>
+            <if test="commentEnabled != null">#{commentEnabled},</if>
+            <if test="commentCurated != null">#{commentCurated},</if>
             #{createBy}, now(), #{updateBy}, now()
         </trim>
     </insert>
@@ -142,6 +149,8 @@
             <if test="publishTime != null">publish_time = #{publishTime},</if>
             <if test="downloadCount != null">download_count = #{downloadCount},</if>
             <if test="deleted != null">deleted = #{deleted},</if>
+            <if test="commentEnabled != null">comment_enabled = #{commentEnabled},</if>
+            <if test="commentCurated != null">comment_curated = #{commentCurated},</if>
             update_by = #{updateBy},
             update_time = now()
         </set>

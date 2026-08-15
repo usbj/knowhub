@@ -11,7 +11,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElImageViewer } from 'element-plus'
 import { ArrowLeft, Download, Link } from '@element-plus/icons-vue'
 import KhCard from '@/components/common/KhCard.vue'
 import KhTag from '@/components/common/KhTag.vue'
@@ -20,6 +20,8 @@ import KhStatPill from '@/components/common/KhStatPill.vue'
 import KhIcon from '@/components/common/KhIcon.vue'
 import KhSectionTitle from '@/components/common/KhSectionTitle.vue'
 import KhLoading from '@/components/common/KhLoading.vue'
+import KhCommentList from '@/components/common/KhCommentList.vue'
+import { useMarkdownImageZoom } from '@/composables/useMarkdownImageZoom'
 import { getResourceDetailApi, relatedResourcesApi } from '@/api/knowhub/resource-portal'
 import {
   downloadResourceApi,
@@ -38,6 +40,10 @@ const userStore = useUserStore()
 
 const resourceId = computed(() => Number(route.params.id))
 const resource = ref<ResourcePortalDetailRecord | null>(null)
+/** 资源简介正文 DOM ref：v-md-preview 在其内渲染，配图点击放大委托该容器的 <img> */
+const contentRef = ref<HTMLElement | null>(null)
+/** 资源简介配图点击放大（与博客/文章/项目同款 el-image-viewer 全屏画廊） */
+const { viewerVisible, viewerUrls, viewerIndex, onContentClick, closeViewer } = useMarkdownImageZoom(contentRef)
 const related = ref<ResourcePortalRecord[]>([])
 const loading = ref(true)
 const ratingValue = ref(0)
@@ -50,6 +56,11 @@ const statusMeta: Record<string, { text: string; type: 'success' | 'warning' | '
   PUBLISHED: { text: '已发布', type: 'success' },
 }
 const categoryLabel = computed(() => resource.value?.categoryName || '其他')
+
+/** 是否否认当前资源作者本人（详情页评论区 isAuthor flag：作者可 inline 精选 + 删任意评论，照 blog isMyBlog 范式） */
+const isMyResource = computed(
+  () => Boolean(resource.value?.authorId) && resource.value!.authorId === userStore.userInfo?.userId,
+)
 
 /** 加载详情：未登录也可见（前台 permitAll），hasLiked/hasCollected/myScore 未登录为 null */
 const fetchDetail = async () => {
@@ -260,7 +271,7 @@ onMounted(fetchDetail)
       <div class="rd__main">
         <KhCard padding="lg" class="rd__section">
           <KhSectionTitle title="资源简介" />
-          <div v-if="resource.description" class="rd__intro">
+          <div v-if="resource.description" ref="contentRef" class="rd__intro" @click="onContentClick">
             <v-md-preview :text="resource.description" />
           </div>
           <p v-else class="rd__intro rd__intro--empty">该资源暂无简介</p>
@@ -300,6 +311,29 @@ onMounted(fetchDetail)
         </KhCard>
       </aside>
     </div>
+
+    <!-- 评论区：全宽独立区块（右栏相关推荐之后），KhCommentList 内置发表条/列表/回复/作者 inline 精选 -->
+    <div v-if="resource" class="kh-container kh-container--wide rd__comments">
+      <KhCard padding="lg">
+        <KhCommentList
+          biz-type="RESOURCE"
+          :biz-id="resourceId"
+          :comment-enabled="resource.commentEnabled"
+          :comment-curated="resource.commentCurated"
+          :is-author="isMyResource"
+        />
+      </KhCard>
+    </div>
+    <!-- 资源简介配图点击放大画廊（el-image-viewer，teleported 至 body 全屏，z-index 3000） -->
+    <el-image-viewer
+      v-if="viewerVisible"
+      :url-list="viewerUrls"
+      :initial-index="viewerIndex"
+      :z-index="3000"
+      hide-on-click-modal
+      teleported
+      @close="closeViewer"
+    />
   </div>
   <KhLoading v-else-if="loading" title="正在加载资源…" />
 </template>
@@ -526,6 +560,10 @@ onMounted(fetchDetail)
 .rd__intro :deep(.github-markdown-body h2) {
   border-bottom: none;
 }
+/* 资源简介配图可点放大：cursor zoom-in 视觉提示，点击由 .rd__intro @click 委托 onContentClick 开 el-image-viewer */
+.rd__intro :deep(.github-markdown-body img) {
+  cursor: zoom-in;
+}
 .rd__intro--empty {
   color: var(--kh-text-tertiary);
   white-space: pre-wrap;
@@ -631,6 +669,12 @@ onMounted(fetchDetail)
   font-size: 11px;
   color: var(--kh-text-tertiary);
   margin-top: 2px;
+}
+
+/* 评论区：全宽独立区块（右栏相关推荐之后），与 article 详情同款口径 */
+.rd__comments {
+  padding-bottom: var(--kh-space-12);
+  margin-top: var(--kh-space-6);
 }
 
 @media (max-width: 1024px) {

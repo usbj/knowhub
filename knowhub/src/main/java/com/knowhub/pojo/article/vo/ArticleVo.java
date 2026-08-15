@@ -69,6 +69,12 @@ public class ArticleVo {
     /** 当前用户是否为该文章作者（作者全权不看等级/不看 visibility） */
     private Boolean isAuthor;
 
+    /** 评论区开关 1开/0关（见 comment 模块） */
+    private Integer commentEnabled;
+
+    /** 评论精选开关 0=新评论直接可见 / 1=新评论仅发表人+作者可见，作者同意展示后他人可见 */
+    private Integer commentCurated;
+
     private String createBy;
 
     private Date createTime;
@@ -230,6 +236,22 @@ public class ArticleVo {
 
     public void setIsAuthor(Boolean isAuthor) {
         this.isAuthor = isAuthor;
+    }
+
+    public Integer getCommentEnabled() {
+        return commentEnabled;
+    }
+
+    public void setCommentEnabled(Integer commentEnabled) {
+        this.commentEnabled = commentEnabled;
+    }
+
+    public Integer getCommentCurated() {
+        return commentCurated;
+    }
+
+    public void setCommentCurated(Integer commentCurated) {
+        this.commentCurated = commentCurated;
     }
 
     public String getCreateBy() {

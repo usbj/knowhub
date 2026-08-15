@@ -37,6 +37,8 @@
         <result property="viewCount" column="view_count"/>
         <result property="likeCount" column="like_count"/>
         <result property="collectCount" column="collect_count"/>
+        <result property="commentEnabled" column="comment_enabled"/>
+        <result property="commentCurated" column="comment_curated"/>
     </resultMap>
 
     <!--
@@ -53,7 +55,8 @@
         a.article_id, a.author_id, u.nick_name as author_nickname,
         a.title, a.summary, a.cover_object_key as cover_url,
         a.level, a.publish_time,
-        a.view_count, a.like_count, a.collect_count
+        a.view_count, a.like_count, a.collect_count,
+        a.comment_enabled, a.comment_curated
     </sql>
 
     <sql id="articlePortalJoins">

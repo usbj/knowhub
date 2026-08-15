@@ -29,6 +29,9 @@ export interface NoticePortalRecord {
   /** 发布者（后端 create_by） */
   createBy?: string
   createTime?: string
+  /** 前往查看路由（后端 route_path：公开公告源本级 VO 未必下发，声明可选以兼容
+   *  KhNoticeDetailDialog 的 NoticeDetailRecord 联合类型访问 .routePath 的类型校验） */
+  routePath?: string
 }
 
 /** /portal/notice/list 入参 */

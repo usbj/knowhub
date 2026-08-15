@@ -26,6 +26,9 @@ export interface SysNoticeRecord {
   /** 发布者（后端 create_by） */
   createBy?: string
   createTime?: string
+  /** 前往查看路由（后端 route_path：评论回复通知带 /blog/{id} 等作品详情路由；普通公告为空）。
+   *  后端 SysNoticeVo.routePath 已带并随 getMyNotices 的 BeanUtil.toBean 同名拷贝下发，JSON 已有该字段。 */
+  routePath?: string
   /** 当前用户是否已读，后端 /sys/notice/my 返回时填充 */
   hasRead?: boolean
   /** 当前用户是否已确认（前台暂不强交互） */

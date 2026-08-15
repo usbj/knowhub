@@ -57,6 +57,10 @@ export interface ResourcePortalDetailRecord extends ResourcePortalRecord {
   hasCollected?: boolean | null
   /** 当前用户评分 1-5（未评分为 0/null，登录态回填） */
   myScore?: number | null
+  /** 评论区开关 1开/0关（详情接口带出，前端据此渲染评论区开关态） */
+  commentEnabled?: number
+  /** 评论精选开关 0=新评论直接可见 / 1=新评论仅发表人+作者可见，作者同意展示后他人可见 */
+  commentCurated?: number
 }
 
 /** 搜索查询条件（GET /portal/resource/search） */

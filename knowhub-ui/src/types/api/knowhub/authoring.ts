@@ -21,6 +21,10 @@ export interface BlogAuthoringPayload {
   coverUrl?: string
   level?: number
   tagIds?: number[]
+  /** 评论区开关 1开/0关，作者在创作页勾选 */
+  commentEnabled?: number
+  /** 评论精选开关 0关1开，开启后新评论需作者同意后对他人展示 */
+  commentCurated?: number
 }
 
 /**
@@ -41,6 +45,10 @@ export interface BlogAuthoringDetail {
   tagNames?: string[]
   isAuthor?: boolean
   canEdit?: boolean
+  /** 评论区开关 1开/0关，编辑回填用 */
+  commentEnabled?: number
+  /** 评论精选开关 0关1开，编辑回填用 */
+  commentCurated?: number
 }
 
 /** 我的博客列表查询参数（前台 /authoring/blog/list） */

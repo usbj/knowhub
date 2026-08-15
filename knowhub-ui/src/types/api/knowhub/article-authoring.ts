@@ -24,6 +24,10 @@ export interface ArticleAuthoringPayload {
   visibility?: string
   coverObjectKey?: string
   tagIds?: number[]
+  /** 评论区开关 1开/0关，作者在创作页勾选 */
+  commentEnabled?: number
+  /** 评论精选开关 0关1开，开启后新评论需作者同意后对他人展示 */
+  commentCurated?: number
 }
 
 /**
@@ -44,6 +48,10 @@ export interface ArticleAuthoringDetail {
   tagNames?: string[]
   isAuthor?: boolean
   canEdit?: boolean
+  /** 评论区开关 1开/0关，编辑回填用 */
+  commentEnabled?: number
+  /** 评论精选开关 0关1开，编辑回填用 */
+  commentCurated?: number
   /**
    * 后台文章可见性三档（PRIVATE/SEMIPUBLIC/PUBLIC）。章节提交状态机据此：
    * 作者提交任意 visibility 免审直 PUBLISHED；非作者 PRIVATE 拒、SEMIPUBLIC 进 PENDING_AUTHOR_REVIEW、PUBLIC 免审。

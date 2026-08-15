@@ -13,7 +13,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox, ElSelect, ElOption } from 'element-plus'
+import { ElMessage, ElMessageBox, ElSelect, ElOption, ElSwitch } from 'element-plus'
 import { ArrowLeft } from '@element-plus/icons-vue'
 import KhIcon from '@/components/common/KhIcon.vue'
 import KhMarkdownEditor from '@/components/common/KhMarkdownEditor.vue'
@@ -43,6 +43,8 @@ const form = ref<{
   coverUrl: string
   level: number
   tagIds: number[]
+  commentEnabled: number
+  commentCurated: number
 }>({
   title: '',
   content: '',
@@ -50,6 +52,8 @@ const form = ref<{
   coverUrl: '',
   level: 1,
   tagIds: [],
+  commentEnabled: 1,
+  commentCurated: 0,
 })
 
 /** 当前博客状态（编辑模式回填，驱动按钮态） */
@@ -129,6 +133,8 @@ const buildPayload = (): BlogAuthoringPayload => ({
   coverUrl: form.value.coverUrl.trim() || undefined,
   level: form.value.level,
   tagIds: form.value.tagIds.length ? form.value.tagIds : undefined,
+  commentEnabled: form.value.commentEnabled,
+  commentCurated: form.value.commentCurated,
 })
 
 const validate = (): boolean => {
@@ -249,6 +255,8 @@ const fetchForEdit = async (blogId: number) => {
   form.value.coverUrl = b.coverUrl ?? ''
   form.value.level = b.level ?? 1
   form.value.tagIds = b.tagIds ?? []
+  form.value.commentEnabled = b.commentEnabled ?? 1
+  form.value.commentCurated = b.commentCurated ?? 0
   blogStatus.value = b.status ?? ''
   if (isPublished.value) {
     ElMessage.info('该博客已发布，编辑需先撤回')
@@ -413,6 +421,20 @@ onMounted(async () => {
               rows="3"
               maxlength="200"
             />
+          </div>
+
+          <!-- 评论设置：评论区开关 + 评论精选开关 -->
+          <div class="create__field">
+            <label class="create__label">评论设置</label>
+            <div class="create__switch-row">
+              <ElSwitch v-model="form.commentEnabled" :active-value="1" :inactive-value="0" />
+              <span class="create__switch-text">开启评论区</span>
+            </div>
+            <div class="create__switch-row">
+              <ElSwitch v-model="form.commentCurated" :active-value="1" :inactive-value="0" />
+              <span class="create__switch-text">评论精选</span>
+              <span class="create__switch-hint">开启后新评论仅你与发表人可见，需你同意后才对他人展示</span>
+            </div>
           </div>
         </div>
       </section>
@@ -698,6 +720,23 @@ onMounted(async () => {
 .create__summary:focus {
   border-color: var(--kh-primary-border);
   background: var(--kh-surface);
+}
+
+/* —— 评论设置开关组 —— */
+.create__switch-row {
+  display: flex;
+  align-items: center;
+  gap: var(--kh-space-3);
+  flex-wrap: wrap;
+}
+.create__switch-text {
+  font-size: var(--kh-font-size-sm);
+  color: var(--kh-text);
+  font-weight: 500;
+}
+.create__switch-hint {
+  font-size: 12px;
+  color: var(--kh-text-tertiary);
 }
 
 @media (max-width: 768px) {

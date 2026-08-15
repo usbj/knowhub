@@ -6,10 +6,9 @@
 <script setup lang="ts">
 import { computed, nextTick, onActivated, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElImageViewer } from 'element-plus'
 import {
   ArrowLeft,
-  ChatDotRound,
   Share,
   Collection,
   EditPen,
@@ -22,6 +21,8 @@ import KhSectionTitle from '@/components/common/KhSectionTitle.vue'
 import KhContentToc from '@/components/common/KhContentToc.vue'
 import KhIcon from '@/components/common/KhIcon.vue'
 import KhLoading from '@/components/common/KhLoading.vue'
+import KhCommentList from '@/components/common/KhCommentList.vue'
+import { useMarkdownImageZoom } from '@/composables/useMarkdownImageZoom'
 import { getBlogDetailApi, relatedBlogsApi } from '@/api/knowhub/blog'
 import { likeBlogApi, collectBlogApi } from '@/api/knowhub/authoring'
 import type { BlogPortalDetailRecord, BlogPortalRecord } from '@/types/api/knowhub/blog'
@@ -102,6 +103,10 @@ const toc = computed(() => {
 
 /** 正文容器 DOM 引用：v-md-preview 在其内渲染，目录跳转靠 querySel 取第 idx 个 h2/h3/h4 */
 const contentRef = ref<HTMLElement | null>(null)
+
+/** 正文配图点击放大（与评论区同款 el-image-viewer 全屏画廊）：复用上面的 contentRef——
+ *  onContentClick 只 querySelectorAll('img')，与 handleTocSelect/computeActive 查 h2/h3/h4 正交不冲突。 */
+const { viewerVisible, viewerUrls, viewerIndex, onContentClick, closeViewer } = useMarkdownImageZoom(contentRef)
 
 /**
  * 点击目录项 i：在正文容器内取第 i 个 h2/h3/h4（v-md-preview github 主题不给 heading 加 id，
@@ -255,7 +260,7 @@ watch(blogId, () => {
           <p class="bd__locked-title">{{ blog.lockReason ?? '需更高权限查看完整正文' }}</p>
           <p class="bd__locked-hint">登录并拥有对应等级权限后可查看完整内容</p>
         </div>
-        <div v-else ref="contentRef" class="bd__content">
+        <div v-else ref="contentRef" class="bd__content" @click="onContentClick">
           <v-md-preview :text="blog.content ?? ''" />
         </div>
 
@@ -272,18 +277,15 @@ watch(blogId, () => {
           </button>
         </div>
 
-        <!-- 评论区占位 -->
+        <!-- 评论区：KhCommentList 内置发表条/列表/回复/作者 inline 精选，未登录只读已「同意展示」评论 -->
         <KhCard padding="lg" class="bd__comments">
-          <KhSectionTitle title="评论" subtitle="登录后参与讨论" />
-          <div class="bd__comment-input">
-            <KhAvatar :item="{ label: '林溪' }" :size="36" />
-            <input class="bd__comment-field" placeholder="写下你的评论…" disabled />
-            <button class="bd__comment-send" type="button">发送</button>
-          </div>
-          <div class="bd__comment-empty">
-            <el-icon><ChatDotRound /></el-icon>
-            <span>暂无评论，来抢沙发吧</span>
-          </div>
+          <KhCommentList
+            biz-type="BLOG"
+            :biz-id="blogId"
+            :comment-enabled="blog.commentEnabled"
+            :comment-curated="blog.commentCurated"
+            :is-author="isMyBlog"
+          />
         </KhCard>
       </article>
 
@@ -308,6 +310,16 @@ watch(blogId, () => {
         </KhCard>
       </aside>
     </div>
+    <!-- 正文配图点击放大画廊（与评论区同款 el-image-viewer，teleported 至 body 全屏） -->
+    <el-image-viewer
+      v-if="viewerVisible"
+      :url-list="viewerUrls"
+      :initial-index="viewerIndex"
+      :z-index="3000"
+      hide-on-click-modal
+      teleported
+      @close="closeViewer"
+    />
   </div>
 </template>
 
@@ -453,6 +465,10 @@ watch(blogId, () => {
 .bd__content :deep(.github-markdown-body h3) {
   scroll-margin-top: calc(var(--kh-header-height) + var(--kh-space-4));
 }
+/* 正文配图可点放大：cursor zoom-in 作视觉提示，点击由 .bd__content @click 委托 onContentClick 开 el-image-viewer */
+.bd__content :deep(.github-markdown-body img) {
+  cursor: zoom-in;
+}
 
 /* 锁态：越级访问只给元数据，正文不下发，展示锁态提示 */
 .bd__locked {
@@ -512,42 +528,6 @@ watch(blogId, () => {
 
 .bd__comments {
   margin-top: var(--kh-space-6);
-}
-.bd__comment-input {
-  display: flex;
-  align-items: center;
-  gap: var(--kh-space-3);
-  margin-top: var(--kh-space-4);
-}
-.bd__comment-field {
-  flex: 1;
-  height: 40px;
-  padding: 0 var(--kh-space-4);
-  border: 1px solid var(--kh-border);
-  border-radius: var(--kh-radius-pill);
-  background: var(--kh-surface-muted);
-  outline: none;
-  font-size: var(--kh-font-size-sm);
-}
-.bd__comment-send {
-  height: 40px;
-  padding: 0 var(--kh-space-5);
-  border: none;
-  border-radius: var(--kh-radius-pill);
-  background: var(--kh-primary);
-  color: #fff;
-  font-weight: 600;
-  font-size: var(--kh-font-size-sm);
-  cursor: pointer;
-}
-.bd__comment-empty {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  padding: var(--kh-space-10);
-  color: var(--kh-text-tertiary);
-  font-size: var(--kh-font-size-sm);
 }
 
 /* 侧栏 */

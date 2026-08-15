@@ -12,7 +12,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage, ElMessageBox, ElSwitch } from 'element-plus'
 import { ArrowLeft, UploadFilled } from '@element-plus/icons-vue'
 import KhIcon from '@/components/common/KhIcon.vue'
 import KhMarkdownEditor from '@/components/common/KhMarkdownEditor.vue'
@@ -47,6 +47,10 @@ const form = ref<{
   contentLength: number | null
   linkUrl: string
   resourceCategoryId: number | null
+  /** 评论区开关 1开/0关，作者在上传页勾选 */
+  commentEnabled: number
+  /** 评论精选开关 0=新评论直接可见 / 1=新评论仅发表人+作者可见，作者同意展示后他人可见 */
+  commentCurated: number
 }>({
   resourceType: 'FILE',
   title: '',
@@ -57,6 +61,8 @@ const form = ref<{
   contentLength: null,
   linkUrl: '',
   resourceCategoryId: null,
+  commentEnabled: 1,
+  commentCurated: 0,
 })
 
 const resourceStatus = ref<string>('')
@@ -196,6 +202,8 @@ const buildPayload = (): ResourceAuthoringPayload => {
     summary: form.value.summary.trim() || undefined,
     description: form.value.description.trim() || undefined,
     resourceCategoryId: form.value.resourceCategoryId ?? undefined,
+    commentEnabled: form.value.commentEnabled,
+    commentCurated: form.value.commentCurated,
   }
   if (form.value.resourceType === 'FILE') {
     payload.fileObjectId = form.value.fileObjectId ?? undefined
@@ -291,6 +299,8 @@ const fetchForEdit = async (id: number) => {
     form.value.contentLength = b.contentLength ?? null
     form.value.linkUrl = b.linkUrl ?? ''
     form.value.resourceCategoryId = b.resourceCategoryId ?? null
+    form.value.commentEnabled = b.commentEnabled ?? 1
+    form.value.commentCurated = b.commentCurated ?? 0
     resourceStatus.value = b.status ?? ''
   } catch {
     router.back()
@@ -417,6 +427,20 @@ onMounted(async () => {
         <div class="ru__field">
           <label class="ru__label">摘要</label>
           <textarea v-model="form.summary" class="ru__textarea" rows="2" placeholder="资源一句话简介（列表卡片展示用）" :disabled="!canEditNow" />
+        </div>
+
+        <!-- 评论设置：开启评论区 + 评论精选（详见 comment 模块） -->
+        <div class="ru__field">
+          <label class="ru__label">评论设置</label>
+          <div class="ru__switch-row">
+            <ElSwitch v-model="form.commentEnabled" :active-value="1" :inactive-value="0" :disabled="!canEditNow" />
+            <span class="ru__switch-text">开启评论区</span>
+          </div>
+          <div class="ru__switch-row">
+            <ElSwitch v-model="form.commentCurated" :active-value="1" :inactive-value="0" :disabled="!canEditNow" />
+            <span class="ru__switch-text">评论精选</span>
+            <span class="ru__switch-hint">开启后新评论仅你与发表人可见，需你同意后才对他人展示</span>
+          </div>
         </div>
       </section>
 
@@ -782,6 +806,11 @@ onMounted(async () => {
   color: var(--kh-text-tertiary);
   font-style: italic;
 }
+
+/* 评论设置：开启评论区 + 评论精选两个 switch */
+.ru__switch-row { display: flex; align-items: center; gap: var(--kh-space-3); flex-wrap: wrap; }
+.ru__switch-text { font-size: var(--kh-font-size-sm); color: var(--kh-text); font-weight: 500; }
+.ru__switch-hint { font-size: 12px; color: var(--kh-text-tertiary); }
 
 @media (max-width: 768px) {
   .ru__bar-left {

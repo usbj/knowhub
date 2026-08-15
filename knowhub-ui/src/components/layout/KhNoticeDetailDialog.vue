@@ -11,9 +11,11 @@
 -->
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { ElMessage } from 'element-plus'
+import { useRouter } from 'vue-router'
+import { ElMessage, ElImageViewer } from 'element-plus'
 import KhTag from '@/components/common/KhTag.vue'
 import KhIcon from '@/components/common/KhIcon.vue'
+import { useMarkdownImageZoom } from '@/composables/useMarkdownImageZoom'
 import { confirmNoticeApi } from '@/api/system/notice-portal'
 import { useUserStore } from '@/stores/user'
 import { useNoticeStore, type NoticeDetailRecord } from '@/stores/notice'
@@ -32,6 +34,7 @@ const emit = defineEmits<{
 
 const userStore = useUserStore()
 const noticeStore = useNoticeStore()
+const router = useRouter()
 
 const noticeTypeMap: Record<string, string> = { NOTICE: '公告', NOTIFY: '通知', REMIND: '提醒' }
 const noticeTagType: Record<string, 'warm' | 'warning' | 'primary' | 'info' | 'success'> = {
@@ -88,12 +91,32 @@ const dialogVisible = computed<boolean>({
  * 关闭时立即清掉 bodyReady，下次开又是干净流程（先占位 → 动画 → 正文）。
  */
 const bodyReady = ref(false)
+/** 公告正文 DOM ref：v-md-preview（bodyReady 后挂载）在其内渲染，配图点击放大委托该容器的 <img> */
+const contentRef = ref<HTMLElement | null>(null)
+/** 公告正文配图点击放大（el-image-viewer 全屏画廊）——弹窗内，z-index 3000 叠在 dialog overlay 之上不被遮。 */
+const { viewerVisible, viewerUrls, viewerIndex, onContentClick, closeViewer } = useMarkdownImageZoom(contentRef)
 const handleOpened = () => {
   bodyReady.value = true
 }
 const handleClose = () => {
   bodyReady.value = false
   dialogVisible.value = false
+}
+
+/**
+ * 「前往查看」按钮：routePath 由后端通知 route_path 下发（评论回复通知拼 /blog/{id} 等作品详情路由）。
+ * 点击后关闭弹窗 + 标记已读 + 路由跳该作品详情页。markAsRead 内部对已读/缺省态已短路（store L64-73），
+ * 联合类型两分支（SysNoticeRecord / NoticePortalRecord）都可安全调，无需类型守卫。
+ */
+const handleGoToWork = async () => {
+  const n = props.notice
+  if (!n?.routePath) return
+  if (n.noticeId) {
+    await noticeStore.markAsRead(n.noticeId)
+  }
+  noticeStore.closeDetail()
+  emit('update:visible', false)
+  router.push(n.routePath)
 }
 </script>
 
@@ -129,10 +152,21 @@ const handleClose = () => {
       <!-- 正文：v-md-preview 渲染 markdown。bodyReady 延迟到 @opened 后再挂载，
            避免 markdown 同步解析与弹窗 enter 动画同帧争抢主线程导致卡顿。
            未就绪时占位一个 min-height 防止弹窗尺寸从空态跳到满态闪一下。 -->
-      <div class="notice-detail__content">
+      <div ref="contentRef" class="notice-detail__content" @click="onContentClick">
         <div v-if="!bodyReady" class="notice-detail__placeholder">正在加载正文…</div>
         <v-md-preview v-else :text="notice.content ?? ''" />
       </div>
+      <!-- 公告正文配图点击放大画廊：el-dialog 内，teleported 至 body 全屏。
+           z-index 3000 叠在 dialog overlay 之上（el-dialog 默认 ~2000 起步自增）；若被遮实机改 3500。 -->
+      <el-image-viewer
+        v-if="viewerVisible"
+        :url-list="viewerUrls"
+        :initial-index="viewerIndex"
+        :z-index="3000"
+        hide-on-click-modal
+        teleported
+        @close="closeViewer"
+      />
     </article>
 
     <template #footer>
@@ -140,6 +174,12 @@ const handleClose = () => {
         <span v-if="showConfirmButton" class="notice-detail__hint">
           <KhIcon name="info" :size="13" /> 本公告需确认
         </span>
+        <el-button
+          v-if="notice?.routePath"
+          type="primary"
+          plain
+          @click="handleGoToWork"
+        >前往查看</el-button>
         <el-button @click="handleClose">关闭</el-button>
         <el-button
           v-if="showConfirmButton"
@@ -258,6 +298,10 @@ const handleClose = () => {
 .notice-detail__content :deep(.github-markdown-body h1),
 .notice-detail__content :deep(.github-markdown-body h2) {
   border-bottom: none;
+}
+/* 公告正文配图可点放大：cursor zoom-in 视觉提示，点击由 .notice-detail__content @click 委托 onContentClick 开 el-image-viewer */
+.notice-detail__content :deep(.github-markdown-body img) {
+  cursor: zoom-in;
 }
 .notice-detail__content :deep(.github-markdown-body) > :first-child {
   margin-top: 0;

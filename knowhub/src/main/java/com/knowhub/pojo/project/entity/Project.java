@@ -63,6 +63,12 @@ public class Project extends BaseEntity {
 
     private Integer deleted;
 
+    /** 评论区开关 1开/0关（见 comment 模块） */
+    private Integer commentEnabled;
+
+    /** 评论精选开关 0=新评论直接可见 / 1=新评论仅发表人+作者可见，作者同意展示后他人可见 */
+    private Integer commentCurated;
+
     // ---- 非表字段（列表/详情查询 join 带出的展示字段，resultMap 映射，不入库） ----
     /** 负责人昵称（join sys_user on user_id=author_id 带出，非表字段） */
     private String authorNickname;
@@ -227,6 +233,22 @@ public class Project extends BaseEntity {
 
     public void setDeleted(Integer deleted) {
         this.deleted = deleted;
+    }
+
+    public Integer getCommentEnabled() {
+        return commentEnabled;
+    }
+
+    public void setCommentEnabled(Integer commentEnabled) {
+        this.commentEnabled = commentEnabled;
+    }
+
+    public Integer getCommentCurated() {
+        return commentCurated;
+    }
+
+    public void setCommentCurated(Integer commentCurated) {
+        this.commentCurated = commentCurated;
     }
 
     public String getAuthorNickname() {
