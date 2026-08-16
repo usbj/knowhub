@@ -21,6 +21,8 @@ export interface SysUserProfile {
   nickName: string
   phoneNumber: string
   sex: string
+  /** 头像存储名（上传路径 avatar/ 子目录下的文件名；无头像为 undefined，前端显示字母占位） */
+  avatar?: string
   status: number
   createTime?: string
   userRole: SysRoleRecord[]

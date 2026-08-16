@@ -146,7 +146,9 @@ const handleProfileCommand = async (command: string) => {
   }
 
   if (command === 'logout') {
-    userStore.logout()
+    // 先等 store 完成本地清理（内部先调后端退出接口）再跳登录页，
+    // 否则路由守卫可能因 token 尚未清除把用户弹回应用内
+    await userStore.logout()
     layoutNavigationStore.resetNavigationState()
     unregisterDynamicRoutes(router)
     await router.replace('/login')
@@ -232,7 +234,13 @@ const handleProfileCommand = async (command: string) => {
         >
           <button class="nav-bar__profile" type="button" aria-label="当前用户菜单">
             <span class="nav-bar__profile-avatar">
-              {{ userStore.displayName.slice(0, 1).toUpperCase() }}
+              <img
+                v-if="userStore.avatarUrl"
+                class="nav-bar__profile-avatar-img"
+                :src="userStore.avatarUrl"
+                alt="用户头像"
+              />
+              <template v-else>{{ userStore.displayName.slice(0, 1).toUpperCase() }}</template>
             </span>
             <span class="nav-bar__profile-copy">
               <strong>{{ userStore.displayName }}</strong>
@@ -432,6 +440,15 @@ const handleProfileCommand = async (command: string) => {
   color: var(--rookie-primary-strong);
   font-weight: 700;
   flex: none;
+  overflow: hidden;
+}
+
+/* 头像图片铺满圆形容器，不依赖背景色（明暗主题下表现一致） */
+.nav-bar__profile-avatar-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
 }
 
 .nav-bar__profile-copy {

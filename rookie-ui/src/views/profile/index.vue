@@ -132,6 +132,70 @@ const handleOpenPasswordDialog = () => {
 }
 
 /**
+ * 头像上传状态：上传中禁用再次点击。
+ */
+const avatarUploading = ref(false)
+
+/**
+ * 隐藏的文件选择框引用，点击头像区时触发其选择文件。
+ */
+const avatarFileInput = ref<HTMLInputElement>()
+
+/**
+ * 方法效果：
+ * 点击头像区，触发隐藏文件选择框。
+ * 参数：
+ * - 无。
+ * 返回值：
+ * - 无返回值；副作用是打开系统文件选择框。
+ */
+const handleClickAvatar = () => {
+  if (avatarUploading.value) {
+    return
+  }
+  avatarFileInput.value?.click()
+}
+
+/**
+ * 方法效果：
+ * 校验并上传新头像：前端先做类型/大小预检（与后端口径一致），
+ * 通过后交给 user store 上传并刷新资料与头像展示。
+ * 参数：
+ * - `event`：文件选择框的 change 事件。
+ * 返回值：
+ * - 无返回值；副作用是上传头像并更新界面展示。
+ */
+const handleAvatarFileChange = async (event: Event) => {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  // 每次选择后清空 input，保证连续选择同一文件也能触发 change
+  input.value = ''
+
+  if (!file) {
+    return
+  }
+
+  const ALLOWED_EXTS = ['png', 'jpg', 'jpeg', 'gif', 'webp']
+  const ext = file.name.includes('.') ? file.name.split('.').pop()!.toLowerCase() : ''
+  if (!ALLOWED_EXTS.includes(ext)) {
+    ElMessage.warning('头像仅支持 png/jpg/jpeg/gif/webp 格式')
+    return
+  }
+  if (file.size > 2 * 1024 * 1024) {
+    ElMessage.warning('头像大小不能超过2MB')
+    return
+  }
+
+  avatarUploading.value = true
+  try {
+    await userStore.updateAvatar(file)
+    ElMessage.success('头像已更新')
+  } finally {
+    avatarUploading.value = false
+  }
+}
+
+/**
  * 方法效果：
  * 接收公共表单组件提交的新模型，并同步回当前页面的响应式表单对象。
  * 参数：
@@ -158,9 +222,32 @@ const handleFormModelUpdate = (nextFormValue: Record<string, unknown>) => {
         <h1>个人中心</h1>
         <p>维护当前登录账号的基础资料与登录密码。</p>
       </div>
-      <div class="profile-view__avatar">
-        {{ (profileSummary?.nickName || profileSummary?.username || 'U').slice(0, 1).toUpperCase() }}
-      </div>
+      <button
+        class="profile-view__avatar"
+        type="button"
+        aria-label="更换头像"
+        :title="avatarUploading ? '头像上传中…' : '点击更换头像'"
+        :disabled="avatarUploading"
+        @click="handleClickAvatar"
+      >
+        <img
+          v-if="userStore.avatarUrl"
+          class="profile-view__avatar-img"
+          :src="userStore.avatarUrl"
+          alt="用户头像"
+        />
+        <template v-else>
+          {{ (profileSummary?.nickName || profileSummary?.username || 'U').slice(0, 1).toUpperCase() }}
+        </template>
+        <span class="profile-view__avatar-hint">{{ avatarUploading ? '上传中…' : '更换头像' }}</span>
+      </button>
+      <input
+        ref="avatarFileInput"
+        class="profile-view__avatar-input"
+        type="file"
+        accept=".png,.jpg,.jpeg,.gif,.webp,image/png,image/jpeg,image/gif,image/webp"
+        @change="handleAvatarFileChange"
+      />
     </header>
 
     <div class="profile-view__content">
@@ -252,6 +339,7 @@ const handleFormModelUpdate = (nextFormValue: Record<string, unknown>) => {
 }
 
 .profile-view__avatar {
+  position: relative;
   width: 52px;
   height: 52px;
   display: inline-flex;
@@ -263,6 +351,53 @@ const handleFormModelUpdate = (nextFormValue: Record<string, unknown>) => {
   font-size: var(--rookie-font-size-xl);
   font-weight: 700;
   flex: none;
+  overflow: hidden;
+  padding: 0;
+  border: 1px solid var(--rookie-border);
+  cursor: pointer;
+  transition: border-color 0.2s ease;
+}
+
+.profile-view__avatar:hover {
+  border-color: var(--rookie-primary);
+}
+
+.profile-view__avatar:disabled {
+  cursor: default;
+  opacity: 0.7;
+}
+
+/* 头像图片铺满圆形容器 */
+.profile-view__avatar-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+/* 悬停遮罩提示"更换头像"，上传中显示"上传中…" */
+.profile-view__avatar-hint {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.45);
+  color: #fff;
+  font-size: var(--rookie-font-size-xs);
+  font-weight: 500;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.profile-view__avatar:hover .profile-view__avatar-hint,
+.profile-view__avatar:disabled .profile-view__avatar-hint {
+  opacity: 1;
+}
+
+/* 隐藏的文件选择框：不占布局、不可见，由头像按钮触发 */
+.profile-view__avatar-input {
+  display: none;
 }
 
 .profile-view__content {

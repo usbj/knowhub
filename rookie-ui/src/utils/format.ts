@@ -161,3 +161,66 @@ export const formatDisplayValue = (
 
   return sanitizeDisplayText(String(value), options.preserveLineBreaks) || fallback
 }
+
+/**
+ * 方法效果：
+ * 把字节数格式化为可读容量文本（B / KB / MB / GB / TB），保留两位小数。
+ * 参数：
+ * - `bytes`：字节数。
+ * - `fallback`：非法值时的兜底文案。
+ * 返回值：
+ * - 如 `1.50 GB`；非法值返回 fallback。
+ */
+export const formatFileSize = (bytes: unknown, fallback = DEFAULT_FALLBACK): string => {
+  const value = Number(bytes)
+  if (!Number.isFinite(value) || value < 0) {
+    return fallback
+  }
+
+  const units = ['B', 'KB', 'MB', 'GB', 'TB']
+  let index = 0
+  let size = value
+  while (size >= 1024 && index < units.length - 1) {
+    size /= 1024
+    index += 1
+  }
+
+  // 字节整数展示，其余保留两位小数
+  const formatted = index === 0 ? String(size) : size.toFixed(2)
+  return `${formatted} ${units[index]}`
+}
+
+/**
+ * 方法效果：
+ * 把秒数格式化为「X天X小时X分X秒」的可读时长。
+ * 参数：
+ * - `seconds`：秒数。
+ * - `fallback`：非法值时的兜底文案。
+ * 返回值：
+ * - 如 `3天5小时12分30秒`；不足一天只显示小时级以下；非法值返回 fallback。
+ */
+export const formatDuration = (seconds: unknown, fallback = DEFAULT_FALLBACK): string => {
+  const total = Number(seconds)
+  if (!Number.isFinite(total) || total < 0) {
+    return fallback
+  }
+
+  const value = Math.floor(total)
+  const days = Math.floor(value / 86400)
+  const hours = Math.floor((value % 86400) / 3600)
+  const minutes = Math.floor((value % 3600) / 60)
+  const secs = value % 60
+
+  const parts: string[] = []
+  if (days > 0) {
+    parts.push(`${days}天`)
+  }
+  if (hours > 0 || days > 0) {
+    parts.push(`${hours}小时`)
+  }
+  if (minutes > 0 || hours > 0 || days > 0) {
+    parts.push(`${minutes}分`)
+  }
+  parts.push(`${secs}秒`)
+  return parts.join('')
+}

@@ -13,6 +13,7 @@
   "dependencies": {
     "@kangc/v-md-editor": "^2.3.18",
     "axios": "^1.16.1",
+    "echarts": "^6.1.0",
     "element-plus": "^2.14.0",
     "highlight.js": "^11.11.1",
     "pinia": "^3.0.4",

@@ -32,3 +32,11 @@ export const registerApi = (data: RegisterRequestData) =>
  * 前端注册入口/注册页据此显隐与提示；不直接读取系统设置接口。
  */
 export const getRegisterEnabledApi = () => get<ApiResult<boolean>>('/register/enabled')
+
+/**
+ * 方法效果：
+ * 调用后端退出登录接口（需要登录）。
+ * 后端从在线集合移除当前用户并删除登录态缓存，旧 token 立即失效；
+ * 前端调用后清空本地登录态并跳转登录页。
+ */
+export const logoutApi = () => post<ApiResult<boolean>>('/logout')

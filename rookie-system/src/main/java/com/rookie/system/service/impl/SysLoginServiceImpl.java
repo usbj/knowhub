@@ -2,15 +2,19 @@ package com.rookie.system.service.impl;
 
 
 import cn.hutool.core.bean.BeanUtil;
+import cn.hutool.core.util.StrUtil;
+import cn.hutool.extra.servlet.JakartaServletUtil;
 import com.rookie.common.enums.ResultEnum;
 import com.rookie.common.exception.ServiceException;
 import com.rookie.common.pojo.Result;
 import com.rookie.common.pojo.entity.SysRole;
 import com.rookie.common.pojo.entity.SysUser;
+import com.rookie.common.util.ServletUtil;
 import com.rookie.common.util.SysConfigUtil;
 import com.rookie.framework.security.mapper.UserInfoMapper;
 import com.rookie.framework.security.service.TokenService;
 import com.rookie.framework.security.pojo.UserInfo;
+import com.rookie.framework.service.OnlineUserService;
 import com.rookie.system.mapper.SysRoleMapper;
 import com.rookie.system.mapper.SysUserMapper;
 import com.rookie.system.mapper.SysUserRoleMapper;
@@ -18,12 +22,16 @@ import com.rookie.system.pojo.LoginBody;
 import com.rookie.system.pojo.ModifyPasswordBody;
 import com.rookie.system.pojo.RegisterBody;
 import com.rookie.system.pojo.SysUserRole;
+import com.rookie.system.pojo.vo.FileUploadVo;
 import com.rookie.system.pojo.vo.SysMenuVo;
 import com.rookie.system.pojo.vo.SysUserVo;
+import com.rookie.system.service.SysFileService;
 import com.rookie.system.service.SysLoginService;
 import com.rookie.system.service.SysMenuService;
 import com.rookie.system.service.SysRoleService;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.core.io.Resource;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
@@ -31,6 +39,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -67,6 +76,12 @@ public class SysLoginServiceImpl implements SysLoginService {
     @Autowired
     SysUserRoleMapper sysUserRoleMapper;
 
+    @Autowired
+    SysFileService sysFileService;
+
+    @Autowired
+    OnlineUserService onlineUserService;
+
 
 
     @Override
@@ -81,9 +96,34 @@ public class SysLoginServiceImpl implements SysLoginService {
         }
         //获取用户信息
         UserInfo userInfo = (UserInfo) authenticate.getPrincipal();
-        //生成JWT
+        // 记录登录 IP（随 UserInfo 缓存，供在线用户列表展示；解析失败时留空不影响登录）
+        try {
+            userInfo.setLoginIp(JakartaServletUtil.getClientIP(ServletUtil.getRequest()));
+        } catch (Exception ignore) {
+        }
+        //生成JWT（createJwt 内部会把 UserInfo 写入 Redis 登录态缓存）
         String token = tokenService.createJwt(userInfo);
         return token;
+    }
+
+    /**
+     * 方法效果：
+     * 退出登录：从在线集合移除并删除登录态缓存，旧 token 立即失效。
+     * 参数：
+     * - `username`：当前登录用户名。
+     * 返回值：
+     * - 退出成功返回 true。
+     * 副作用：
+     * - 在线集合移除 + 删除 Redis 登录态缓存；重复退出/缓存已不存在时幂等。
+     */
+    @Override
+    public Boolean logout(String username) {
+        if (StrUtil.isBlank(username)) {
+            return true;
+        }
+        onlineUserService.removeOnline(username);
+        tokenService.deleteToken(username);
+        return true;
     }
 
     /**
@@ -230,6 +270,76 @@ public class SysLoginServiceImpl implements SysLoginService {
         SysUser sysUser = sysUserMapper.getSysUserInfoById(userId);
         SysUserVo userVo = BeanUtil.toBean(sysUser, SysUserVo.class);
         return userVo;
+    }
+
+    /**
+     * 方法效果：
+     * 上传当前用户头像：文件存储（类型/大小校验）→ 更新 sys_user.avatar → 清理旧头像文件。
+     * 参数：
+     * - `userId`：当前登录用户主键。
+     * - `file`：头像图片（png/jpg/jpeg/gif/webp，≤2MB）。
+     * 返回值：
+     * - 新头像存储名。
+     * 副作用：
+     * - 头像文件落在上传根路径 avatar/ 子目录（不落文件表）；avatar 列更新失败时回滚删除刚上传的文件；
+     *   旧头像文件删除失败仅告警，不影响主流程。
+     */
+    @Override
+    public String uploadPersonalAvatar(Long userId, MultipartFile file) {
+        SysUser sysUser = sysUserMapper.getSysUserInfoById(userId);
+        if (sysUser == null) {
+            throw new ServiceException(500, "用户不存在");
+        }
+        // 1. 存储新头像（校验失败抛 ServiceException，不会产生残留文件）
+        FileUploadVo uploadVo = sysFileService.uploadAvatar(file);
+        String newAvatar = uploadVo.getStoredName();
+
+        // 2. 更新用户表头像列（update_by 为 NOT NULL 列，必须显式填充当前登录用户名）
+        SysUser update = new SysUser();
+        update.setUserId(userId);
+        update.setAvatar(newAvatar);
+        update.setUpdateBy(currentUsername());
+        Boolean ok = sysUserMapper.updateSysUserAvatar(update);
+        if (!Boolean.TRUE.equals(ok)) {
+            // 更新失败回滚：删掉刚上传的新文件，避免残留孤儿文件
+            sysFileService.deleteAvatar(newAvatar);
+            throw new ServiceException(500, "头像更新失败");
+        }
+
+        // 3. 清理旧头像文件（幂等；失败不影响主流程，仅告警）
+        String oldAvatar = sysUser.getAvatar();
+        if (StrUtil.isNotBlank(oldAvatar) && !oldAvatar.equals(newAvatar)) {
+            sysFileService.deleteAvatar(oldAvatar);
+        }
+        return newAvatar;
+    }
+
+    /**
+     * 方法效果：
+     * 读取当前用户头像图片流（inline 响应）。
+     * 参数：
+     * - `userId`：当前登录用户主键。
+     * 返回值：
+     * - 头像图片响应；未设置头像或存储文件缺失时抛 ServiceException。
+     */
+    @Override
+    public ResponseEntity<Resource> getPersonalAvatar(Long userId) {
+        SysUser sysUser = sysUserMapper.getSysUserInfoById(userId);
+        if (sysUser == null) {
+            throw new ServiceException(500, "用户不存在");
+        }
+        if (StrUtil.isBlank(sysUser.getAvatar())) {
+            throw new ServiceException(500, "尚未设置头像");
+        }
+        return sysFileService.downloadAvatar(sysUser.getAvatar());
+    }
+
+    /**
+     * 从 SecurityContext 取当前登录用户名，供头像更新填充 update_by。
+     */
+    private String currentUsername() {
+        UserInfo userInfo = (UserInfo) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+        return userInfo.getUsername();
     }
 
     @Override
