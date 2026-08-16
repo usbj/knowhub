@@ -34,6 +34,7 @@ export const createDefaultMenuForm = (): SysMenuRecord => ({
   backlinks: 0,
   path: '',
   icon: 'Menu',
+  sort: 0,
   status: 1,
   sonMenus: [],
 })

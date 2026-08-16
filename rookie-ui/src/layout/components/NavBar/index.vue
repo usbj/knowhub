@@ -14,6 +14,7 @@ import {
   Sunny,
 } from '@element-plus/icons-vue'
 import { ElBadge, ElDropdown, ElDropdownItem, ElDropdownMenu } from 'element-plus'
+import UserAvatar from '@/components/UserAvatar.vue'
 import { useUserStore } from '@/stores/user'
 import { useLayoutNavigationStore } from '@/stores/navigation'
 import { useThemePreferenceStore } from '@/stores/themePreference'
@@ -234,13 +235,10 @@ const handleProfileCommand = async (command: string) => {
         >
           <button class="nav-bar__profile" type="button" aria-label="当前用户菜单">
             <span class="nav-bar__profile-avatar">
-              <img
-                v-if="userStore.avatarUrl"
-                class="nav-bar__profile-avatar-img"
-                :src="userStore.avatarUrl"
-                alt="用户头像"
+              <UserAvatar
+                :name="userStore.displayName"
+                :src="userStore.avatarUrl ?? undefined"
               />
-              <template v-else>{{ userStore.displayName.slice(0, 1).toUpperCase() }}</template>
             </span>
             <span class="nav-bar__profile-copy">
               <strong>{{ userStore.displayName }}</strong>
@@ -436,19 +434,8 @@ const handleProfileCommand = async (command: string) => {
   align-items: center;
   justify-content: center;
   border-radius: 999px;
-  background: var(--rookie-avatar-bg);
-  color: var(--rookie-primary-strong);
-  font-weight: 700;
   flex: none;
   overflow: hidden;
-}
-
-/* 头像图片铺满圆形容器，不依赖背景色（明暗主题下表现一致） */
-.nav-bar__profile-avatar-img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  display: block;
 }
 
 .nav-bar__profile-copy {

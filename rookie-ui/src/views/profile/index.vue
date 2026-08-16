@@ -7,6 +7,7 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import SharedFormPanel from '@/components/SharedFormPanel.vue'
+import UserAvatar from '@/components/UserAvatar.vue'
 import { updatePersonalProfileApi } from '@/api/system/user'
 import { useUserStore } from '@/stores/user'
 import type { UpdatePersonalProfilePayload } from '@/types/api/system/user'
@@ -230,15 +231,10 @@ const handleFormModelUpdate = (nextFormValue: Record<string, unknown>) => {
         :disabled="avatarUploading"
         @click="handleClickAvatar"
       >
-        <img
-          v-if="userStore.avatarUrl"
-          class="profile-view__avatar-img"
-          :src="userStore.avatarUrl"
-          alt="用户头像"
+        <UserAvatar
+          :name="profileSummary?.nickName || profileSummary?.username || 'U'"
+          :src="userStore.avatarUrl ?? undefined"
         />
-        <template v-else>
-          {{ (profileSummary?.nickName || profileSummary?.username || 'U').slice(0, 1).toUpperCase() }}
-        </template>
         <span class="profile-view__avatar-hint">{{ avatarUploading ? '上传中…' : '更换头像' }}</span>
       </button>
       <input
@@ -365,14 +361,6 @@ const handleFormModelUpdate = (nextFormValue: Record<string, unknown>) => {
 .profile-view__avatar:disabled {
   cursor: default;
   opacity: 0.7;
-}
-
-/* 头像图片铺满圆形容器 */
-.profile-view__avatar-img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  display: block;
 }
 
 /* 悬停遮罩提示"更换头像"，上传中显示"上传中…" */

@@ -10,6 +10,127 @@
 
 ---
 
+## 2026-08-17
+### 02:50 — 问号图标垂直居中微调
+
+用户反馈问号偏上。原因：inline-flex 元素的默认 `vertical-align: baseline` 使其底部贴文字基线、视觉偏上。在 label flex 容器内用 `align-self: center` 强制垂直居中。
+
+- `rookie-ui/src/views/system/menu/index.vue` — `.sort-help` 增加 `align-self: center`
+- 验证：前端 `npx vue-tsc -p tsconfig.app.json --noEmit` 通过
+
+## 2026-08-17
+### 02:40 — 问号图标放回标签「排序」后面（label 插槽直接子项）
+
+用户要求问号放在标签文字后面。确认 EP 的 `.el-form-item__label` 为 inline-flex + `justify-content: flex-end`，插槽内容天然横排；此前竖排源于多包了一层 inline-flex span 被容器挤压。改为：**label 插槽直接放两个子项**——"排序"文本节点 + ElTooltip 包裹的 18px 文本问号 span（不包中间层），问号与文字同行、右对齐、margin-left 4px 间距；字体继承 label 与其他标签一致。
+
+- `rookie-ui/src/views/system/menu/index.vue` — 排序表单项 label 插槽结构调整（文本 + 问号直接子项）；移除 `.sort-field` 输入框右侧方案
+- 验证：前端 `npx vue-tsc -p tsconfig.app.json --noEmit` 通过
+
+## 2026-08-17
+### 02:25 — 排序问号图标改纯文本实现（修复 231px 尺寸失控）
+
+用户反馈图标渲染成 231×231px 并把输入框挤没。原因：Element Plus 的 `el-icon`（QuestionFilled）在该组合下尺寸继承失控（`font-size: inherit` 未吃到覆盖，按异常大尺寸渲染），且 ElTooltip 的 trigger 包裹影响 scoped 样式命中。改为**纯文本问号**：`<span class="sort-help">?</span>`，宽高固定 18px（输入框 32px 的一半）、圆形边框背景，尺寸完全由 CSS 控制、无任何继承依赖。
+
+- `rookie-ui/src/views/system/menu/index.vue` — 排序表单项说明图标由 `QuestionFilled`（el-icon）改为纯文本 `?` span（固定 18px 圆形）；移除 `QuestionFilled` import 与旧样式
+- 验证：前端 `npx vue-tsc -p tsconfig.app.json --noEmit` 通过
+
+## 2026-08-17
+### 02:10 — 排序说明图标改放输入框右侧（放弃 label 内绝对定位）
+
+用户反馈图标定位在输入框下方/大小异常。原因：label 区域固定 92px 且文字右对齐，紧贴输入框（input 从 92px 起），label 文字右侧无可用空间；此前绝对定位 `left: 94px` 恰好叠在输入框左边缘上。改为：图标放**输入框右侧**，`.sort-field` flex 水平排列 + `align-items: center` 垂直居中，`font-size: 16px` 固定大小（输入框 32px 的一半），悬浮说明不变。
+
+- `rookie-ui/src/views/system/menu/index.vue` — 排序表单项内容改为 `.sort-field`（ElInputNumber + ElTooltip 图标）flex 布局；移除 `.sort-item` 绝对定位与 `.label-help` 样式
+- 验证：前端 `npx vue-tsc -p tsconfig.app.json --noEmit` 通过
+
+## 2026-08-17
+### 01:55 — 排序说明图标重构：label 属性原生渲染 + 图标绝对定位
+
+用户反馈三点：标签与输入框未居中对齐、标签字体与其他标签不一致、问号图标过大且压住输入框。根因：`#label` 插槽内容脱离 EP label 的默认渲染（字体/行高/对齐异常）。改为：`label` 用普通属性（与其他标签原生一致），问号图标**绝对定位**于 label 文字右侧（left 基于 label-width 92px）、`top:50%+translateY` 与输入框垂直居中、固定 `font-size:16px`（输入框 32px 的一半），不参与文档流布局。
+
+- `rookie-ui/src/views/system/menu/index.vue` — 排序表单项改回 `label="排序"` + `.sort-item` 定位参照；`.label-help` 改为绝对定位样式；移除 `#label` 插槽与 `label-help-wrap` 样式
+- 验证：前端 `npx vue-tsc -p tsconfig.app.json --noEmit` 通过
+
+## 2026-08-17
+### 01:40 — 修复排序 label 竖排：说明图标改行内结构
+
+用户反馈排序标签"排/？/序"竖排。原因：label 插槽内用 `inline-flex` span 被容器挤压换行。改为纯行内结构：`display: inline` + `white-space: nowrap` 的包装 span，问号图标 `inline-block` + `vertical-align`，保证「排序」与图标恒同行。
+
+- `rookie-ui/src/views/system/menu/index.vue` — 排序 label 插槽结构调整（`.label-help-wrap` inline + nowrap；`.label-help` inline-block），悬浮说明逻辑不变
+- 验证：前端 `npx vue-tsc -p tsconfig.app.json --noEmit` 通过
+
+## 2026-08-17
+### 01:30 — 菜单排序说明改为 label 后问号图标悬浮提示
+
+- `rookie-ui/src/views/system/menu/index.vue` — 排序表单项改用 `#label` 插槽：「排序」文字 + `QuestionFilled` 问号图标（ElTooltip 包裹，悬浮显示"同级内按排序值升序展示（越小越靠前，可填负数）"）；问号图标悬停变主色、cursor: help；移除输入框上的 title 说明
+- 验证：前端 `npx vue-tsc -p tsconfig.app.json --noEmit` 通过
+
+## 2026-08-17
+### 01:20 — 菜单排序输入说明改为悬浮提示
+
+- `rookie-ui/src/views/system/menu/index.vue` — 删除排序输入框下方的说明文字，改为 `title` 属性悬浮提示（鼠标悬停显示"同级内按排序值升序展示（越小越靠前，可填负数）"），并移除对应样式
+- 验证：前端 `npx vue-tsc -p tsconfig.app.json --noEmit` 通过
+
+## 2026-08-17
+### 01:10 — 菜单操作列分组修正：内联仅「编辑」，新增/启停/删除全部进更多
+
+上轮改动把「停用/启用」「删除」移回了内联，与用户要求不符（用户只要求「新增」进更多）。修正为：内联仅「编辑」，更多下拉包含「新增 / 启停 / 删除」。
+
+- `rookie-ui/src/views/system/menu/index.vue` — `getInlineMenuActions` 仅保留 `edit`；`getOverflowMenuActions` 返回除 `edit` 外的全部操作（新增/启停/删除）
+- 验证：前端 `npx vue-tsc -p tsconfig.app.json --noEmit` 通过
+
+## 2026-08-17
+### 01:00 — 菜单管理页 UI 调整（表格不再撑开视图 + 新增移入更多）
+
+- `rookie-ui/src/views/system/menu/index.vue` —
+  - 布局：`.system-menu-view` 加 `min-width: 0`，卡片及其内容区同样允许收缩，菜单树表格列宽总和超出时在表格内部横向滚动，不再把整个视图撑开产生页面级水平移动
+  - 操作列：内联按钮固定为「编辑 / 启停 / 删除」，「新增」移入“更多”下拉（原逻辑为按数量截断，超过 3 个时前 2 个内联，新增/删除顺序不稳定）
+- 验证：前端 `npx vue-tsc -p tsconfig.app.json --noEmit` 通过
+
+## 2026-08-17
+### 00:30 — 修复菜单管理页渲染崩溃：formatCellValue 对数字 sort 调用 trim
+
+用户反馈"改排序后菜单项及后面数据获取不到、路由跳转异常"，并贴出前端报错：`Uncaught (in promise) TypeError: value.trim is not a function at formatCellValue (index.vue:552) at index.vue:620`。定位：排序列（sort）传入数字，原 `formatCellValue = (value) => value && value.trim() ? value : '--'` 对数字 0 走短路不报错，对数字 1（sort 有值）执行 `1.trim()` 抛 TypeError，**表格渲染在该行中断，该行及后续行全部不渲染**——数据未丢失，是渲染崩溃导致"获取不到"（此前的孤儿节点丢弃修复保留，属防御性改进）。
+
+- `rookie-ui/src/views/system/menu/index.vue` — `formatCellValue` 改为类型安全实现：空值（null/undefined/空串）返回 '--'，其余 `String(value).trim()`（数字/字符串均可），方法注释补充说明
+- 验证：前端 `npx vue-tsc -p tsconfig.app.json --noEmit` 通过
+- 未改动：后端与数据库（此前排查确认 85 条数据完整、排序 SQL 正常、无接口报错）
+
+## 2026-08-16
+### 23:50 — 修复菜单数据"消失"：buildMenuTree 孤儿节点静默丢弃
+
+用户反馈"改排序后菜单管理数据项消失"。排查：数据库 85 条菜单全在、菜单接口无报错、前端无过滤逻辑。定位根因：`buildMenuTree` 对**父节点不在当前结果集**的节点（如菜单管理页按名称/状态筛选时父节点被过滤掉）**静默丢弃**，整棵子树在响应中缺失——"该条及其后数据获取不到"。用户在查询区残留筛选条件时编辑保存（改 sort），保存后按残留条件刷新即触发。
+
+- `rookie-system/.../service/impl/SysMenuServiceImpl.java` — `buildMenuTree`：父节点不在结果集时改为**作为顶级节点保留**（不再静默丢弃），过滤场景下子树不再消失
+- `rookie-system/.../service/impl/SysLoginServiceImpl.java` — 同名 `buildMenuTree` 同样修复（侧边栏菜单树防御）
+- 验证：后端 `mvnw compile` 通过
+- 说明：sort 与"消失"是相关性而非因果（sort 是编辑内容，触发条件是残留筛选 + 孤儿丢弃）；顺带确认菜单排序 SQL 与数据本身均正常（85 行全量、52/69 sort=1 已落库）
+
+## 2026-08-16
+### 22:50 — 修复菜单排序联调问题（树折叠误判"数据消失" + 排序规则/负数支持）
+
+联调反馈"改排序后侧边栏顺序不变、菜单管理数据项消失"。排查结论：数据未丢失（sys_menu 85 行全在、无删除标记）、排序已生效（操作日志确认 sort 落库），两个表现均为前端观感/规则问题：
+
+- 数据项"消失"：菜单管理页 ElTable 树默认折叠，刷新/重新拉取后二级菜单收起，误以为数据丢失
+- 顺序"不变"：① 测试改的菜单（日志管理/系统设置 sort=1）本来就排在同级末尾，1>0 仍在末尾故无可见变化；② ElInputNumber min=0 导致无法设负数，排不到默认 0 的项前面
+
+- `rookie-ui/src/views/system/menu/index.vue` — 修复：`fetchMenuList` 成功后自动展开全部节点（抽取 `expandAllRows`/`collapseAllRows`/`walkMenus`，折叠/展开按钮复用）；排序输入 min 改为 -9999（允许负数排到默认 0 项之前）；表单补充排序规则提示文案
+- 验证：前端 `npx vue-tsc -p tsconfig.app.json --noEmit` 通过
+- 未改动：后端与数据库（排序 SQL/数据均正常）；侧边栏菜单树在登录/刷新时重新拉取，修改排序后刷新页面即生效
+
+## 2026-08-16
+### 00:10 — 菜单排序支持 + 头像加载失败/为空兜底首字母
+
+- `sql/sys_menu_sort.sql`（新建）— sys_menu 增加 `sort` 列（int NOT NULL DEFAULT 0，幂等：information_schema 判断列是否存在 + PREPARE 动态 ALTER）；存量数据归零（顺序由 `order by sort, menu_id` 兜底保持）；排序规则：同一父级下 sort 升序，相同按 menu_id
+- `rookie-common/.../pojo/entity/SysMenu.java` / `rookie-system/.../pojo/vo/SysMenuVo.java` — 新增 `sort` 字段
+- `rookie-system/.../resources/mapper/system/SysMenuMapper.xml` — resultMap 补 sort；quarrySysMenu 补 `order by parent_id, sort, menu_id`（原无排序）；getSysMenuByMenuIds / getSysMenuAllEnabled 排序改为 `parent_id, sort, menu_id`；addSysMenu / editSysMenuInfo 支持 sort 列
+- `rookie-ui/src/types/api/system/menu.ts` — SysMenuRecord 新增 `sort?`
+- `rookie-ui/src/views/system/menu/config.ts` — createDefaultMenuForm 新增 `sort: 0`
+- `rookie-ui/src/views/system/menu/index.vue` — 树表格新增「排序」列（icon 后、状态前）；表单新增「排序」输入（ElInputNumber，0-9999，越小越靠前）
+- `rookie-ui/src/components/UserAvatar.vue`（新建）— 用户头像公共组件：有 src 且加载成功显示图片，无 src 或 **@error 加载失败**时回退展示名首字母大写；src 变化重置失败标志；尺寸由外层容器控制
+- `rookie-ui/src/layout/components/NavBar/index.vue` / `views/profile/index.vue` — 头像改用 UserAvatar（原 img/字母分支与专用样式删除，字母字号继承外层容器与原行为一致）
+- 验证：后端 `mvnw compile` 通过；前端 `npx vue-tsc -p tsconfig.app.json --noEmit` 通过
+- 待用户操作：执行 `sql/sys_menu_sort.sql` 后重启后端（侧边栏/菜单管理页按 sort 排序生效）；菜单管理页可调整各菜单「排序」值，保存后刷新页面即按新顺序展示
+
 ## 2026-08-15
 ### 23:50 — 删除定时任务测试用 Demo 任务
 
