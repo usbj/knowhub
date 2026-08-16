@@ -13,6 +13,10 @@ import java.util.List;
  */
 public class ArticlePortalDetailVo extends ArticlePortalVo {
 
+    /** 文章内部可见性 PRIVATE未公开/SEMIPUBLIC半公开/PUBLIC全公开（与 level 正交；前台不按 visibility 过滤可见性，
+     *  仅用于前端判断是否显「申请成为贡献者」按钮——PRIVATE 文章非作者不可贡献章节，申请无意义，按钮隐藏） */
+    private String visibility;
+
     /** 章节大纲（章节名+排序，不含正文；越级时仍下发大纲，不泄正文） */
     private List<ChapterOutlineVo> chapterList;
 
@@ -40,6 +44,14 @@ public class ArticlePortalDetailVo extends ArticlePortalVo {
 
     public void setChapterList(List<ChapterOutlineVo> chapterList) {
         this.chapterList = chapterList;
+    }
+
+    public String getVisibility() {
+        return visibility;
+    }
+
+    public void setVisibility(String visibility) {
+        this.visibility = visibility;
     }
 
     public Boolean getLocked() {

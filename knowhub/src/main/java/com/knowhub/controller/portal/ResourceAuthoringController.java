@@ -17,6 +17,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -100,6 +101,20 @@ public class ResourceAuthoringController {
     @PreAuthorize("isAuthenticated()")
     public Result<Boolean> revoke(@PathVariable Long resourceId) {
         Boolean b = resourceService.revokeResource(resourceId);
+        return Result.success(b);
+    }
+
+    /**
+     * 前台删除自己的资源（软删：resource.deleted=1）。复用 ResourceService.deleteResourceInfo(Long[])，
+     * 其内权限校验=作者 OR knowhub:resource:delete 按钮权限；普通前台用户只能删自己上传的（无 delete
+     * 按钮权限键）；admin 全权。单条包装 Long[]。
+     */
+    @DeleteMapping("/{resourceId}")
+    @Operation(summary = "前台删除资源（软删，仅作者或 admin）")
+    @Log(title = "资源创作", businessType = BusinessType.DELETE)
+    @PreAuthorize("isAuthenticated()")
+    public Result<Boolean> delete(@PathVariable Long resourceId) {
+        Boolean b = resourceService.deleteResourceInfo(new Long[]{resourceId});
         return Result.success(b);
     }
 

@@ -24,9 +24,11 @@ import com.knowhub.pojo.resource.vo.ResourceReviewLogVo;
 import com.knowhub.pojo.resource.vo.ResourceReviewVo;
 import com.knowhub.pojo.resource.vo.ResourceVo;
 import com.knowhub.service.resource.impl.ResourceService;
+import com.knowhub.service.review.ReviewNotifyService;
 import com.knowhub.service.storage.impl.FileService;
 import com.knowhub.service.history.impl.ViewHistoryService;
 import com.knowhub.enums.history.ViewBizType;
+import com.knowhub.support.NotifySupport;
 import com.rookie.common.exception.ServiceException;
 import com.rookie.common.util.PageUtil;
 import com.rookie.framework.security.pojo.UserInfo;
@@ -94,6 +96,12 @@ public class ResourceServiceImpl implements ResourceService {
 
     @Autowired
     private ViewHistoryService viewHistoryService;
+
+    @Autowired
+    private NotifySupport notifySupport;
+
+    @Autowired
+    private ReviewNotifyService reviewNotifyService;
 
     @Value("${redis.base-key}")
     private String baseKey;
@@ -257,6 +265,9 @@ public class ResourceServiceImpl implements ResourceService {
             action = ReviewAction.SUBMIT;
             // 标记存在待审核资源，供对账定时任务快速判断是否需要扫表收口（不计数仅标记存在性）
             redisTemplate.opsForValue().set(baseKey + CACHE_PENDING_FLAG, "1");
+            // 提审通知：按系统设置 knowhub.review.notify_role_key 通知持该角色的有效用户（总开关缺省关）
+            reviewNotifyService.notifyReviewers("resource", resourceId, exist.getTitle(),
+                    userInfo.getUsername(), userInfo.getUsername());
         } else {
             update.setStatus(ResourceStatus.PUBLISHED.getCode());
             update.setPublishTime(now);
@@ -266,6 +277,8 @@ public class ResourceServiceImpl implements ResourceService {
         resourceMapper.editResourceInfo(update);
         // 写审核流水：作者提交(SUBMIT, AUTHOR) 或 系统直通(PUBLISH, SYSTEM)
         writeReviewLog(resourceId, action, userInfo, null);
+        // 审核结果通知作者（PUBLISH 直通发"已发布"通知；SUBMIT 不通知：作者是提交人已知晓）
+        notifyReviewResult(exist, action, null);
         return true;
     }
 
@@ -337,6 +350,8 @@ public class ResourceServiceImpl implements ResourceService {
         resourceMapper.editResourceInfo(update);
         // 写审核流水：通过(APPROVE, REVIEWER) 或 驳回(REJECT, REVIEWER)
         writeReviewLog(vo.getResourceId(), action, userInfo, advice);
+        // 审核结果通知作者（avoid 已保障 author_id==userId 走不到这里）
+        notifyReviewResult(exist, action, advice);
         return true;
     }
 
@@ -547,6 +562,36 @@ public class ResourceServiceImpl implements ResourceService {
             org.slf4j.LoggerFactory.getLogger(ResourceServiceImpl.class)
                     .warn("写审核流水失败 resourceId={} action={}: {}", resourceId, action.getCode(), e.getMessage());
         }
+    }
+
+    /**
+     * 审核结果通知作者（2026-08-15 落地，复用 NotifySupport 个人通道）。口径同博客/文章：
+     * APPROVE/REJECT 发审核结果通知，PUBLISH（审核关直通）发"已发布"，SUBMIT/REVOKE 不通知。
+     * reviewResource 前作者自审已抛错，不会自通知。失败由 NotifySupport 内部吞掉，不阻断已落库状态。
+     */
+    private void notifyReviewResult(Resource resource, ReviewAction action, String advice) {
+        if (resource == null || resource.getAuthorId() == null) {
+            return;
+        }
+        String title;
+        String content;
+        switch (action) {
+            case APPROVE:
+                title = "你的资源审核通过";
+                content = "《" + resource.getTitle() + "》审核通过，已发布。" + (advice != null && !advice.isEmpty() ? "审核意见：" + advice : "");
+                break;
+            case REJECT:
+                title = "你的资源被驳回";
+                content = "《" + resource.getTitle() + "》被驳回，请修改后重新发布。" + (advice != null && !advice.isEmpty() ? "驳回原因：" + advice : "");
+                break;
+            case PUBLISH:
+                title = "你的资源已发布";
+                content = "《" + resource.getTitle() + "》已直接发布（审核未开启）。";
+                break;
+            default:
+                return;
+        }
+        notifySupport.notifyUser(resource.getAuthorId(), title, content, "/resource/" + resource.getResourceId(), "system");
     }
 
     /** 构造一个 system 操作者 UserInfo，用于对账放行时写流水（operator_id=0, operator=system） */

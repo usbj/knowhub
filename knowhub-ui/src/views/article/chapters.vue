@@ -7,14 +7,14 @@
   - 章节状态机：PUBLISHED 已发布/ PENDING_AUTHOR_REVIEW 待作者审(SEMIPUBLIC 非作者提交)/ DRAFT 草稿/
     REJECTED 被驳回/ REVOKED 已撤回。
   - PUBLISHED 章节只能「撤回」后才能编辑（防绕审改已发布）；DRAFT/REJECTED/REVOKED 可「编辑/发布」。
-  - 可见性提示：SEMIPUBLIC 半公开文章下他人提交的章节需当前文章作者审（本页暂不展开审核 UI，未来补）。
+  - 可见性提示：SEMIPUBLIC 半公开文章下他人提交的章节需当前文章作者审（行内「通过/驳回」按钮，列表回填 canReview 驱动）。
   入口：文章创作页"章节管理"按钮 / 我的文章列表。
 -->
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ArrowLeft, Plus, Edit, Upload, Delete, RefreshLeft, Rank } from '@element-plus/icons-vue'
+import { ArrowLeft, Plus, Edit, Upload, Delete, RefreshLeft, Rank, Select, CircleClose, WarnTriangleFilled } from '@element-plus/icons-vue'
 import KhIcon from '@/components/common/KhIcon.vue'
 import KhPagination from '@/components/common/KhPagination.vue'
 import KhTag from '@/components/common/KhTag.vue'
@@ -27,11 +27,15 @@ import {
   revokeChapterAuthoringApi,
   deleteChapterApi,
   reorderChaptersApi,
+  reviewChapterAuthoringApi,
+  takedownChapterApi,
 } from '@/api/knowhub/article-authoring'
 import type { ChapterAuthoringDetail, ArticleAuthoringDetail } from '@/types/api/knowhub/article-authoring'
+import { useUserStore } from '@/stores/user'
 
 const route = useRoute()
 const router = useRouter()
+const userStore = useUserStore()
 
 const articleId = computed(() => Number(route.params.id))
 const article = ref<ArticleAuthoringDetail | null>(null)
@@ -66,17 +70,21 @@ const canRevokeChapter = (c: ChapterAuthoringDetail) =>
 /** —— 文章级状态（与文章创作页一致的按钮态）—— */
 const articleStatus = computed(() => article.value?.status ?? '')
 const isArticlePublished = computed(() => articleStatus.value === 'PUBLISHED')
-/** 文章可编辑：草稿/驳回/撤回/空态；PUBLISHED/待审 不可直接改（须先撤回） */
+/**
+ * 文章级管理权（编辑/发布/撤回文章）：作者 OR 系统编辑级，后端回填 canManageChapters。
+ * 不含被作者批准的贡献者——贡献者可提交新章节/编辑自己章节（章节级 canEdit），但不可改文章元信息、不可发布/撤回文章。
+ */
+const canManageArticle = computed(() => Boolean(article.value?.canManageChapters))
+/** 文章可编辑：有管理权 且 草稿/驳回/撤回/空态；PUBLISHED/待审 不可直接改（须先撤回） */
 const canEditArticle = computed(() =>
-  Boolean(article.value?.canEdit) &&
-  ['DRAFT', 'REJECTED', 'REVOKED', ''].includes(articleStatus.value),
+  canManageArticle.value && ['DRAFT', 'REJECTED', 'REVOKED', ''].includes(articleStatus.value),
 )
-/** 文章可发布：已有 articleId 且草稿/驳回/撤回态 */
+/** 文章可发布：有管理权 且 已有 articleId 且草稿/驳回/撤回态 */
 const canPublishArticle = computed(() =>
   Boolean(article.value?.articleId) && canEditArticle.value,
 )
-/** 文章可撤回：已发布态 */
-const canRevokeArticle = computed(() => isArticlePublished.value)
+/** 文章可撤回：有管理权 且 已发布态 */
+const canRevokeArticle = computed(() => canManageArticle.value && isArticlePublished.value)
 
 /** 文章状态徽标文案/样式 */
 const articleStatusMeta = computed(() => {
@@ -148,6 +156,52 @@ const handleDelete = async (c: ChapterAuthoringDetail) => {
   void fetchChapters()
 }
 
+/** 作者审核：通过章节（SEMIPUBLIC 非作者提交的 PENDING_AUTHOR_REVIEW，列表回填 canReview） */
+const handleApproveChapter = async (c: ChapterAuthoringDetail) => {
+  try {
+    await ElMessageBox.confirm(`确认通过章节「${c.chapterName}」并发布？`, '通过章节', { type: 'info' })
+  } catch { return }
+  await reviewChapterAuthoringApi({ chapterId: c.chapterId, pass: true })
+  ElMessage.success('已通过并发布')
+  void fetchChapters()
+}
+
+/** 作者审核：驳回章节，advice 必填 */
+const handleRejectChapter = async (c: ChapterAuthoringDetail) => {
+  let advice: string
+  try {
+    const res = await ElMessageBox.prompt('请填写驳回原因', '驳回章节', {
+      type: 'warning',
+      inputType: 'textarea',
+      inputPlaceholder: '驳回原因（必填）',
+      inputValidator: (v) => (v && v.trim().length > 0) || '请填写驳回原因',
+    })
+    advice = res.value
+  } catch { return }
+  await reviewChapterAuthoringApi({ chapterId: c.chapterId, pass: false, advice })
+  ElMessage.success('已驳回')
+  void fetchChapters()
+}
+
+/** 作者下架贡献者章节（advice 必填）：状态 REVOKED + 写流水 + 通知贡献者带原因。
+ *  仅文章作者/系统编辑级（canManageChapters）在「非自己提交的章节」行上可见此按钮。 */
+const myUserId = computed(() => userStore.userInfo?.userId)
+const handleTakedownChapter = async (c: ChapterAuthoringDetail) => {
+  let advice: string
+  try {
+    const res = await ElMessageBox.prompt(`下架章节「${c.chapterName}」需说明原因（贡献者会收到带原因的通知）`, '下架章节', {
+      type: 'warning',
+      inputType: 'textarea',
+      inputPlaceholder: '下架原因（必填）',
+      inputValidator: (v) => (v && v.trim().length > 0) || '请填写下架原因',
+    })
+    advice = res.value
+  } catch { return }
+  await takedownChapterApi(c.chapterId, advice)
+  ElMessage.success('章节已下架')
+  void fetchChapters()
+}
+
 const goUp = () => router.push('/profile?tab=article')
 
 /** —— 文章级操作 —— */
@@ -189,14 +243,14 @@ const visibilityHint = computed(() => {
   }
 })
 
-/** 拖拽重排：作者/系统编辑权限即可调（排序是组织权，不涉内容审核，PUBLISHED 也允许）。
- *  后端 reorderChapters 逐章 canEditChapter 鉴权 + 同 articleId 一致校验 + 事务。
- *  前端用 article.canEdit 放开拖拽（已发布文章作者仍可重排章节顺序）。 */
+/** 拖拽重排：仅文章作者/系统编辑级可整列拖（canManageChapters）。被作者批准的贡献者不可改章节顺序——
+ *  想改他人/作者章节顺序应走「编辑该章节带新 sortOrder」由 5.a 编辑申请生效，作者审通过才落。
+ *  后端 reorderChapters 逐章 canEditChapter 鉴权（贡献者对他人章节 false）+ 同 articleId 一致校验 + 事务。 */
 const dragIndex = ref<number | null>(null)
 const dropIndex = ref<number | null>(null)
 const reordering = ref(false)
 
-const canReorder = computed(() => Boolean(article.value?.articleId) && Boolean(article.value?.canEdit))
+const canReorder = computed(() => Boolean(article.value?.articleId) && Boolean(article.value?.canManageChapters))
 
 const onDragStart = (i: number) => {
   if (!canReorder.value) return
@@ -285,7 +339,7 @@ onMounted(() => {
         </div>
         <div class="ac-ch__head-actions">
           <button
-            v-if="article?.articleId"
+            v-if="canManageArticle"
             class="ac-ch__act ac-ch__act--ghost"
             type="button"
             title="编辑文章元信息（标题/前言/等级/可见性/封面/标签）"
@@ -306,6 +360,7 @@ onMounted(() => {
             type="button"
             @click="handlePublishArticle"
           >发布文章</button>
+          <!-- 新增章节：贡献者也可显（在自己有权提交的文章下）；PRIVATE 文章贡献者后端拒、其它 visibility 按状态机放行 -->
           <button class="ac-ch__add" type="button" @click="goAddChapter">
             <el-icon><Plus /></el-icon> 新增章节
           </button>
@@ -345,7 +400,14 @@ onMounted(() => {
           </span>
           <span class="ac-ch__no">{{ String((pageNum - 1) * pageSize + i + 1).padStart(2, '0') }}</span>
           <div class="ac-ch__item-main">
-            <div class="ac-ch__item-title" @click="goEditChapter(c.chapterId)">{{ c.chapterName }}</div>
+            <!-- 标题始终可点开编辑页（只读视角不限制）；编辑页内自带 PUBLISHED「请先撤回」+ PENDING 锁定预览兜底，
+                 贡献者点他人章节只是看不可改——行为按钮（编辑/发布/撤回等）在右侧按钮区按 canEditChapter/canReview 限权。
+                 之前给标题加 (canEditChapter||canReview) && go 的 gate 会让 PUBLISHED 章节标题点不开（canEdit 排 PUBLISHED、
+                 canReview 仅 PENDING_AUTHOR_REVIEW），即用户反馈「在章节管理里点章节没反应」。 -->
+            <div
+              class="ac-ch__item-title is-clickable"
+              @click="goEditChapter(c.chapterId)"
+            >{{ c.chapterName }}</div>
             <div class="ac-ch__item-meta">
               <KhTag size="sm" :type="statusMeta[c.status ?? '']?.type ?? 'neutral'">{{ statusMeta[c.status ?? '']?.text ?? '未知' }}</KhTag>
               <span v-if="c.authorNickname">· {{ c.authorNickname }}</span>
@@ -358,10 +420,28 @@ onMounted(() => {
             <button v-if="canPublishChapter(c)" class="ac-ch__btn ac-ch__btn--primary" type="button" title="发布/提交" @click="handlePublish(c)">
               <el-icon><Upload /></el-icon>
             </button>
+            <button v-if="c.canReview" class="ac-ch__btn ac-ch__btn--primary" type="button" title="通过并发布" @click="handleApproveChapter(c)">
+              <el-icon><Select /></el-icon>
+            </button>
+            <button v-if="c.canReview" class="ac-ch__btn ac-ch__btn--danger" type="button" title="驳回" @click="handleRejectChapter(c)">
+              <el-icon><CircleClose /></el-icon>
+            </button>
             <button v-if="canRevokeChapter(c)" class="ac-ch__btn ac-ch__btn--warn" type="button" title="撤回" @click="handleRevoke(c)">
               <el-icon><RefreshLeft /></el-icon>
             </button>
-            <button class="ac-ch__btn ac-ch__btn--danger" type="button" title="删除" @click="handleDelete(c)">
+            <!-- 下架：仅作者/系统编辑级（canManageChapters）在非自己提交的章节行上显，advice 必填；
+                 与驳回视觉区分（下架=WarnTriangleFilled 警告实心三角，驳回=CircleClose 圆叉），避免混淆 -->
+            <button
+              v-if="canManageArticle && c.authorId != null && c.authorId !== myUserId"
+              class="ac-ch__btn ac-ch__btn--danger"
+              type="button"
+              title="下架（撤销并通知贡献者）"
+              @click="handleTakedownChapter(c)"
+            >
+              <el-icon><WarnTriangleFilled /></el-icon>
+            </button>
+            <!-- 删除：仅作者/系统编辑级可见（贡献者不可删任何章节）；硬删不可恢复用 deleteChapterApi -->
+            <button v-if="canManageArticle" class="ac-ch__btn ac-ch__btn--danger" type="button" title="删除" @click="handleDelete(c)">
               <el-icon><Delete /></el-icon>
             </button>
           </div>
@@ -421,8 +501,9 @@ onMounted(() => {
 .ac-ch__drag-handle:hover { color: var(--kh-primary); }
 .ac-ch__no { font-family: var(--kh-font-mono); font-size: var(--kh-font-size-lg); font-weight: 700; color: var(--kh-primary); width: 32px; flex: none; }
 .ac-ch__item-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
-.ac-ch__item-title { font-size: var(--kh-font-size-md); font-weight: 600; color: var(--kh-text); cursor: pointer; }
-.ac-ch__item-title:hover { color: var(--kh-primary); }
+.ac-ch__item-title { font-size: var(--kh-font-size-md); font-weight: 600; color: var(--kh-text); }
+.ac-ch__item-title.is-clickable { cursor: pointer; }
+.ac-ch__item-title.is-clickable:hover { color: var(--kh-primary); }
 .ac-ch__item-meta { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--kh-text-tertiary); }
 .ac-ch__item-actions { display: flex; align-items: center; gap: 6px; flex: none; }
 .ac-ch__btn { display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; border: 1px solid var(--kh-border); border-radius: var(--kh-radius-sm); background: var(--kh-surface); color: var(--kh-text-secondary); cursor: pointer; transition: all var(--kh-transition-fast); }

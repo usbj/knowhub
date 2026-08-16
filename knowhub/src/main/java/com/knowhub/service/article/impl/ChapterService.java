@@ -55,4 +55,12 @@ public interface ChapterService {
      * 权限沿用 canEditChapter（章节作者 OR 文章作者 OR 系统编辑权限够）。
      */
     Boolean reorderChapters(List<ChapterVo> orders);
+
+    /**
+     * 作者下架贡献者章节（用户拍板：下架 = 撤销 REVOKED + 写流水记原因 + 通知贡献者，不硬删可追溯）。
+     * 与 revokeChapter 区分：revokeChapter 是章节作者/文章作者撤回自己的 PUBLISHED 章节入状态机不入流水；
+     * takedown 是文章作者强制下架贡献者写的章节、必须填下架原因 advice，写 chapter_review_log REJECT 流水
+     * （action=REJECT，advice=下架原因）并通知章节作者（贡献者）带原因。权限沿用 deleteChapterInfo 口径放宽到作者。
+     */
+    Boolean takedownChapter(Long chapterId, String advice);
 }

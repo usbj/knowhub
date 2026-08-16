@@ -12,6 +12,7 @@ import com.knowhub.service.project.impl.ProjectService;
 import com.knowhub.support.ProjectPermissionResolver;
 import com.rookie.common.annotation.Log;
 import com.rookie.common.enums.BusinessType;
+import com.rookie.common.exception.ServiceException;
 import com.rookie.common.pojo.Result;
 import com.rookie.framework.security.pojo.UserInfo;
 import io.swagger.v3.oas.annotations.Operation;
@@ -83,6 +84,22 @@ public class ProjectAuthoringController {
         return ((UserInfo) SecurityContextHolder.getContext().getAuthentication().getPrincipal()).getUserId();
     }
 
+    /**
+     * 前台成员管理前置鉴权：仅项目负责人或项目作者可管理成员（后台 admin controller 不走此口径，
+     * 仍持 knowhub:project:member 按钮权限直接放行，service 层 canOp 闸亦保留不退化）。
+     * 在 controller 层前置抛 500，可避免「canEdit=1 的成员因 canOp(edit)=true 而能管成员」的越权。
+     */
+    private boolean canManageMembers(Long projectId) {
+        return projectService.isLeaderOrAuthor(projectId, currentUserId());
+    }
+
+    /** 简写：不通过抛 ServiceException（统一文案）。 */
+    private void assertLeaderOrAuthor(Long projectId) {
+        if (!canManageMembers(projectId)) {
+            throw new ServiceException(500, "成员管理仅项目负责人可操作");
+        }
+    }
+
     @GetMapping("/{projectId}")
     @Operation(summary = "前台编辑回填（复用 getProjectInfo，内 canOp(view) 防越权：作者看自己全态、别人草稿拒）")
     @PreAuthorize("isAuthenticated()")
@@ -127,6 +144,20 @@ public class ProjectAuthoringController {
         return Result.success(b);
     }
 
+    /**
+     * 前台删除自己的项目（软删：project.deleted=1 + 级联 softDeleteProjectFiles 软删项目内文件 +
+     * 项目主表软删）。复用 ProjectService.deleteProjectInfo(Long[])，其内权限校验=作者 OR
+     * knowhub:project:delete 按钮权限；普通前台用户只能删自己创建的（无 delete 按钮权限键）；admin 全权。
+     */
+    @DeleteMapping("/{projectId}")
+    @Operation(summary = "前台删除项目（软删，仅作者或 admin；级联软删项目文件）")
+    @Log(title = "项目创作", businessType = BusinessType.DELETE)
+    @PreAuthorize("isAuthenticated()")
+    public Result<Boolean> delete(@PathVariable Long projectId) {
+        Boolean b = projectService.deleteProjectInfo(new Long[]{projectId});
+        return Result.success(b);
+    }
+
     // ---- 成员管理（前台创作者管理自己的项目成员，不依赖后台 knowhub:project:member 按钮权限） ----
 
     @GetMapping("/{projectId}/member")
@@ -143,6 +174,7 @@ public class ProjectAuthoringController {
     @PreAuthorize("isAuthenticated()")
     public Result<Boolean> addMember(@PathVariable Long projectId, @RequestBody ProjectMemberVo vo) {
         vo.setProjectId(projectId);
+        assertLeaderOrAuthor(projectId);
         Boolean b = projectService.addMember(vo);
         return Result.success(b);
     }
@@ -152,7 +184,20 @@ public class ProjectAuthoringController {
     @Log(title = "项目成员管理", businessType = BusinessType.INSERT)
     @PreAuthorize("isAuthenticated()")
     public Result<Boolean> addMembersBatch(@PathVariable Long projectId, @RequestBody List<Long> userIds) {
+        assertLeaderOrAuthor(projectId);
         Boolean b = projectService.addMembersBatch(projectId, userIds);
+        return Result.success(b);
+    }
+
+    @PostMapping("/{projectId}/invite")
+    @Operation(summary = "前台发起项目邀请（薄封装 inviteMember，负责人选受邀人→PENDING 邀请→受邀人在协作页同意/拒绝）")
+    @Log(title = "项目成员管理", businessType = BusinessType.INSERT)
+    @PreAuthorize("isAuthenticated()")
+    public Result<Boolean> invite(@PathVariable Long projectId, @RequestParam Long userId) {
+        // 替换直加成员为邀请制：service 内 canOp(edit) 校验 + 不邀请自己/已是成员 + 去重/重邀幂等，
+        // 落 PENDING 邀请 + 通知受邀人 routePath=/profile?tab=collaboration。仅负责人/作者可发起邀请。
+        assertLeaderOrAuthor(projectId);
+        Boolean b = projectService.inviteMember(projectId, userId);
         return Result.success(b);
     }
 
@@ -161,6 +206,10 @@ public class ProjectAuthoringController {
     @Log(title = "项目成员管理", businessType = BusinessType.UPDATE)
     @PreAuthorize("isAuthenticated()")
     public Result<Boolean> editMember(@RequestBody ProjectMemberVo vo) {
+        if (vo.getProjectId() == null) {
+            throw new ServiceException(500, "需指定项目 projectId");
+        }
+        assertLeaderOrAuthor(vo.getProjectId());
         Boolean b = projectService.editMember(vo);
         return Result.success(b);
     }
@@ -170,6 +219,10 @@ public class ProjectAuthoringController {
     @Log(title = "项目成员管理", businessType = BusinessType.DELETE)
     @PreAuthorize("isAuthenticated()")
     public Result<Boolean> deleteMember(@PathVariable Long memberId) {
+        // 删除路由只有 memberId 入参，走 memberId 反查 projectId 后再鉴权（只接受负责人/作者）。
+        if (!projectService.isLeaderOrAuthorByMemberId(memberId, currentUserId())) {
+            throw new ServiceException(500, "成员管理仅项目负责人可操作");
+        }
         Boolean b = projectService.deleteMember(memberId);
         return Result.success(b);
     }

@@ -101,6 +101,11 @@ export interface MyProjectRecord {
   downloadCount?: number
   createTime?: string
   updateTime?: string
+  /**
+   * 「我的项目」列表回填的角色标识：LEADER=负责人(=作者)；MENTOR=导师；MEMBER=参与者。
+   * 仅 /authoring/project/my 列表回填，驱动前端行显「导师/参与者」标识（LEADER=作者默认即负责人，不显额外标识）。
+   */
+  myMemberRole?: string
 }
 
 /**

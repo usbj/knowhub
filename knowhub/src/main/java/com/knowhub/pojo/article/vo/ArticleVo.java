@@ -69,6 +69,20 @@ public class ArticleVo {
     /** 当前用户是否为该文章作者（作者全权不看等级/不看 visibility） */
     private Boolean isAuthor;
 
+    /**
+     * 当前用户能否像作者那样自由管理文章章节（排序/改文章元信息/发布/撤回/删除）。
+     * = 文章作者 OR 系统编辑级（edit:lN≥level），不含被作者批准的贡献者。
+     * 与 canEdit 区分：canEdit 含贡献者分支（贡献者可提交新章节/编辑自己章节），canManageChapters 不含——
+     * 贡献者不可改章节排序、不可发布/撤回/删除文章、不可删任意章节。详情接口回填，列表不回填。
+     */
+    private Boolean canManageChapters;
+
+    /**
+     * 「我的作品」列表当前用户对该文章的角色标识：AUTHOR=我是作者；CONTRIBUTOR=我被批准为贡献者；null=无归属。
+     * 仅 quarryArticle（/authoring/article/my 列表）回填，驱动前端行上「贡献者」标识。作者默认不显标识（默认即作者）。
+     */
+    private String myRole;
+
     /** 评论区开关 1开/0关（见 comment 模块） */
     private Integer commentEnabled;
 
@@ -238,6 +252,22 @@ public class ArticleVo {
         this.isAuthor = isAuthor;
     }
 
+    public Boolean getCanManageChapters() {
+        return canManageChapters;
+    }
+
+    public void setCanManageChapters(Boolean canManageChapters) {
+        this.canManageChapters = canManageChapters;
+    }
+
+    public String getMyRole() {
+        return myRole;
+    }
+
+    public void setMyRole(String myRole) {
+        this.myRole = myRole;
+    }
+
     public Integer getCommentEnabled() {
         return commentEnabled;
     }
@@ -299,6 +329,8 @@ public class ArticleVo {
                 ", canView=" + canView +
                 ", canEdit=" + canEdit +
                 ", isAuthor=" + isAuthor +
+                ", canManageChapters=" + canManageChapters +
+                ", myRole='" + myRole + '\'' +
                 '}';
     }
 }

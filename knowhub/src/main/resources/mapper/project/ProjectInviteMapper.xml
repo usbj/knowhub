@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.knowhub.mapper.project.ProjectInviteMapper">
+
+    <resultMap id="ProjectInviteResultMap" type="com.knowhub.pojo.project.entity.ProjectInvite">
+        <id property="inviteId" column="invite_id"/>
+        <result property="projectId" column="project_id"/>
+        <result property="inviteeUserId" column="invitee_user_id"/>
+        <result property="status" column="status"/>
+        <result property="inviterBy" column="inviter_by"/>
+        <result property="inviteTime" column="invite_time"/>
+        <result property="handleBy" column="handle_by"/>
+        <result property="handleTime" column="handle_time"/>
+        <result property="createBy" column="create_by"/>
+        <result property="createTime" column="create_time"/>
+        <result property="updateBy" column="update_by"/>
+        <result property="updateTime" column="update_time"/>
+        <result property="deleted" column="deleted"/>
+        <result property="projectTitle" column="project_title"/>
+        <result property="inviterNickname" column="inviter_nick_name"/>
+    </resultMap>
+
+    <!-- 发起一条邀请：invite_time/create_time/update_time 由 DB 默认 CURRENT_TIMESTAMP 填充；
+         status 用默认 PENDING，invitation 立即可见给受邀人。 -->
+    <insert id="addInvite" parameterType="com.knowhub.pojo.project.entity.ProjectInvite"
+            useGeneratedKeys="true" keyProperty="inviteId">
+        insert into project_invite (project_id, invitee_user_id, status, inviter_by, create_by, update_by)
+        values (#{projectId}, #{inviteeUserId}, 'PENDING', #{inviterBy}, #{createBy}, #{updateBy})
+    </insert>
+
+    <!-- 查 (projectId, inviteeUserId) 的当前 ACTIVE 行（deleted=0），用于去重与重邀检测 -->
+    <select id="getByProjectAndInvitee" resultMap="ProjectInviteResultMap">
+        select invite_id, project_id, invitee_user_id, status, inviter_by, invite_time,
+               handle_by, handle_time, create_by, create_time, update_by, update_time, deleted
+        from project_invite
+        where project_id = #{projectId} and invitee_user_id = #{inviteeUserId} and deleted = 0
+        limit 1
+    </select>
+
+    <!-- 按主键查（含 deleted 字段，accept/reject 回填 + 防越权校验用） -->
+    <select id="getById" resultMap="ProjectInviteResultMap">
+        select invite_id, project_id, invitee_user_id, status, inviter_by, invite_time,
+               handle_by, handle_time, create_by, create_time, update_by, update_time, deleted
+        from project_invite
+        where invite_id = #{inviteId}
+    </select>
+
+    <!-- 受邀人侧：列出收到的邀请（service 注入 inviteeUserId），join project 取标题 + join sys_user 取邀请人昵称。
+         邀请人即项目作者 project.author_id（LEADER/admin），LEFT JOIN 不丢项目/作者改名时的行。 -->
+    <select id="listReceived" resultMap="ProjectInviteResultMap">
+        select i.invite_id, i.project_id, i.invitee_user_id, i.status, i.inviter_by, i.invite_time,
+               i.handle_by, i.handle_time, i.create_by, i.create_time, i.update_by, i.update_time, i.deleted,
+               p.title as project_title,
+               u.nick_name as inviter_nick_name
+        from project_invite i
+        inner join project p on i.project_id = p.project_id and p.deleted = 0
+        left join sys_user u on p.author_id = u.user_id
+        where i.deleted = 0
+          and i.invitee_user_id = #{inviteeUserId}
+        <if test="status != null and status != ''">
+            and i.status = #{status}
+        </if>
+        order by i.invite_time desc, i.invite_id desc
+    </select>
+
+    <!-- accept/reject 改 status + handle_by + handle_time + 审计 -->
+    <update id="updateStatus" parameterType="com.knowhub.pojo.project.entity.ProjectInvite">
+        update project_invite
+        set status = #{status},
+            handle_by = #{handleBy},
+            handle_time = #{handleTime},
+            update_by = #{updateBy}
+        where invite_id = #{inviteId} and deleted = 0
+    </update>
+
+    <!-- 软删（重邀旧 REJECTED 行 deleted=1，避 uk_project_invite 冲突） -->
+    <update id="softDeleteById">
+        update project_invite set deleted = 1 where invite_id = #{inviteId}
+    </update>
+
+</mapper>

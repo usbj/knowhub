@@ -46,6 +46,9 @@ export interface ArticlePortalRecord {
 
 /** 前台文章详情（继承列表字段 + 章节大纲 + 锁态；正文不在 article 主表，走章节接口） */
 export interface ArticlePortalDetailRecord extends ArticlePortalRecord {
+  /** 内部可见性 PRIVATE未公开/SEMIPUBLIC半公开/PUBLIC全公开（与 level 正交；前台不按此过滤可见性，
+   *  仅用于前端判断是否显「申请成为贡献者」按钮——PRIVATE 非作者无章节可写，申请无意义，按钮隐藏） */
+  visibility?: string
   /** 章节大纲（章节名+排序，不含正文；越级时仍下发大纲，不泄正文） */
   chapterList?: ChapterOutlineRecord[]
   /** 是否越级锁态：true=无权看完整内容，章节接口也会锁态拒发正文 */

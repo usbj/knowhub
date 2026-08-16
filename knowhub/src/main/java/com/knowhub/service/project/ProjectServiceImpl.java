@@ -9,6 +9,7 @@ import com.knowhub.enums.project.ProjectLevel;
 import com.knowhub.enums.project.ProjectMemberRole;
 import com.knowhub.enums.project.ProjectStatus;
 import com.knowhub.enums.project.ProjectType;
+import com.knowhub.enums.project.ProjectInviteStatus;
 import com.knowhub.enums.common.ReviewAction;
 import com.knowhub.enums.common.ReviewStatus;
 import com.knowhub.mapper.storage.FileObjectMapper;
@@ -17,11 +18,13 @@ import com.knowhub.mapper.project.ProjectCollectMapper;
 import com.knowhub.mapper.project.ProjectFileMapper;
 import com.knowhub.mapper.project.ProjectMapper;
 import com.knowhub.mapper.project.ProjectMemberMapper;
+import com.knowhub.mapper.project.ProjectInviteMapper;
 import com.knowhub.mapper.project.ProjectReviewLogMapper;
 import com.knowhub.pojo.project.entity.Project;
 import com.knowhub.pojo.project.entity.ProjectFile;
 import com.knowhub.pojo.project.entity.ProjectMember;
 import com.knowhub.pojo.project.entity.ProjectCollect;
+import com.knowhub.pojo.project.entity.ProjectInvite;
 import com.knowhub.pojo.project.entity.ProjectReviewLog;
 import com.knowhub.pojo.project.quarry.ProjectQuarry;
 import com.knowhub.pojo.common.vo.BindVo;
@@ -36,9 +39,13 @@ import com.knowhub.support.ProjectPermissionResolver;
 import com.knowhub.support.ProjectPermissionResolver.ProjectPermissionLevel;
 import com.knowhub.service.storage.impl.FileService;
 import com.knowhub.service.project.impl.ProjectService;
+import com.knowhub.service.review.ReviewNotifyService;
+import com.knowhub.support.NotifySupport;
 import com.rookie.common.exception.ServiceException;
+import com.rookie.common.pojo.entity.SysUser;
 import com.rookie.common.util.PageUtil;
 import com.rookie.framework.security.pojo.UserInfo;
+import com.rookie.system.mapper.SysUserMapper;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -88,6 +95,12 @@ public class ProjectServiceImpl implements ProjectService {
     private ProjectMemberMapper projectMemberMapper;
 
     @Autowired
+    private ProjectInviteMapper projectInviteMapper;
+
+    @Autowired
+    private SysUserMapper sysUserMapper;
+
+    @Autowired
     private ProjectReviewLogMapper projectReviewLogMapper;
 
     @Autowired
@@ -101,6 +114,12 @@ public class ProjectServiceImpl implements ProjectService {
 
     @Autowired
     private ProjectConfigReader projectConfigReader;
+
+    @Autowired
+    private NotifySupport notifySupport;
+
+    @Autowired
+    private ReviewNotifyService reviewNotifyService;
 
     @Autowired
     private StringRedisTemplate redisTemplate;
@@ -122,7 +141,23 @@ public class ProjectServiceImpl implements ProjectService {
         List<Project> list = projectMapper.quarryProject(quarry);
         PageInfo<Project> page = PageUtil.packagedPageInfo(list);
         PageInfo<ProjectVo> voPage = PageUtil.copyPageInfo(page, ProjectVo.class);
-        // 列表不回填权限态/成员/文件树（详情接口才回填），authorNickname 由 join 带出经 BeanUtil 拷贝
+        // 「我的项目」列表（/authoring/project/my，controller 注入 authorId=me）回填 myMemberRole：
+        //  负责人(LEADER = 作者) → LEADER；其它活跃成员 → 实际 memberRole（MENTOR 导师/MEMBER 参与者）。
+        //  驱动前端行显「导师/参与者」标识（LEADER=作者默认即项目负责人，不显额外标识）。
+        //  非 myList 场景（admin 后台不注入 authorId）不回填。
+        if (quarry.getAuthorId() != null && user.getUserId().equals(quarry.getAuthorId())
+                && voPage.getList() != null) {
+            for (ProjectVo vo : voPage.getList()) {
+                if (vo.getAuthorId() != null && vo.getAuthorId().equals(user.getUserId())) {
+                    vo.setMyMemberRole("LEADER");
+                } else {
+                    ProjectMember m = projectMemberMapper.getMember(vo.getProjectId(), user.getUserId());
+                    if (m != null) {
+                        vo.setMyMemberRole(m.getMemberRole());
+                    }
+                }
+            }
+        }
         return voPage;
     }
 
@@ -279,6 +314,9 @@ public class ProjectServiceImpl implements ProjectService {
             update.setReviewStatus(ReviewStatus.PENDING.getCode());
             action = ReviewAction.SUBMIT;
             redisTemplate.opsForValue().set(baseKey + CACHE_PENDING_FLAG, "1");
+            // 提审通知：按系统设置 knowhub.review.notify_role_key 通知持该角色的有效用户（总开关缺省关）
+            reviewNotifyService.notifyReviewers("project", projectId, exist.getTitle(),
+                    userInfo.getUsername(), userInfo.getUsername());
         } else {
             update.setStatus(ProjectStatus.PUBLISHED.getCode());
             update.setPublishTime(now);
@@ -287,6 +325,8 @@ public class ProjectServiceImpl implements ProjectService {
         }
         projectMapper.editProjectInfo(update);
         writeReviewLog(projectId, action, userInfo, null);
+        // 审核结果通知作者（PUBLISH 直通发"已发布"；SUBMIT 不通知：作者是提交人）
+        notifyReviewResult(exist, action, null);
         return true;
     }
 
@@ -355,6 +395,8 @@ public class ProjectServiceImpl implements ProjectService {
         }
         projectMapper.editProjectInfo(update);
         writeReviewLog(vo.getProjectId(), action, userInfo, advice);
+        // 审核结果通知作者（avoid 已保障 author_id==userId 走不到这里）
+        notifyReviewResult(exist, action, advice);
         return true;
     }
 
@@ -548,6 +590,62 @@ public class ProjectServiceImpl implements ProjectService {
             throw new ServiceException(500, "负责人不可直接删除，请先转移负责人");
         }
         projectMemberMapper.softDeleteMember(memberId);
+        return true;
+    }
+
+    @Override
+    @Transactional
+    public Boolean inviteMember(Long projectId, Long inviteeUserId) {
+        // 替换直加成员为邀请制：负责人发起邀请 → 受邀人在个人中心「我的协作」tab 同意/拒绝。
+        // agree 才写 project_member（由 ProjectInviteServiceImpl.accept 调 projectMemberMapper.addMember）。
+        if (projectId == null || inviteeUserId == null) {
+            throw new ServiceException(500, "邀请参数不完整");
+        }
+        Project project = projectMapper.getProjectInfoById(projectId);
+        if (project == null) {
+            throw new ServiceException(500, "项目不存在");
+        }
+        if (!canOp(project, "edit")) {
+            throw new ServiceException(500, "无权管理该项目成员");
+        }
+        UserInfo me = currentUser();
+        // 不能邀请自己（出资者已是天然成员/负责人）
+        if (inviteeUserId.equals(me.getUserId())) {
+            throw new ServiceException(500, "无需邀请自己");
+        }
+        // 已是成员的不再邀请
+        if (projectMemberMapper.getMember(projectId, inviteeUserId) != null) {
+            throw new ServiceException(500, "该用户已是项目成员");
+        }
+        // 去重：查当前 ACTIVE 邀请
+        ProjectInvite exist = projectInviteMapper.getByProjectAndInvitee(projectId, inviteeUserId);
+        if (exist != null) {
+            String st = exist.getStatus();
+            if (ProjectInviteStatus.PENDING.getCode().equals(st)) {
+                throw new ServiceException(500, "已邀请过该用户，待其回应");
+            }
+            if (ProjectInviteStatus.ACCEPTED.getCode().equals(st)) {
+                // 已同意过的理论上成员已写入，再走到此分支说明成员被移除但邀请记录还在——允许重邀软删旧行
+                projectInviteMapper.softDeleteById(exist.getInviteId());
+            } else {
+                // REJECTED 允许重邀：软删旧行（避 uk_project_invite 唯一索引冲突）再插新 PENDING
+                projectInviteMapper.softDeleteById(exist.getInviteId());
+            }
+        }
+        ProjectInvite invite = new ProjectInvite();
+        invite.setProjectId(projectId);
+        invite.setInviteeUserId(inviteeUserId);
+        invite.setInviterBy(me.getUsername());
+        invite.setCreateBy(me.getUsername());
+        invite.setUpdateBy(me.getUsername());
+        projectInviteMapper.addInvite(invite);
+        // 通知受邀人：routePath 指向个人中心「我的协作」tab
+        String inviterNick = nicknameOf(me.getUserId());
+        String who = inviterNick != null ? inviterNick : me.getUsername();
+        String title = "有新的项目邀请";
+        String content = "用户「" + who + "」邀请你加入项目《" + project.getTitle() + "》，请前往「我的协作」处理。";
+        notifySupport.notifyUser(inviteeUserId, title, content,
+                "/profile?tab=collaboration", "system");
         return true;
     }
 
@@ -767,6 +865,38 @@ public class ProjectServiceImpl implements ProjectService {
         return member != null && ProjectMemberRole.LEADER.getCode().equals(member.getMemberRole());
     }
 
+    @Override
+    public boolean isLeaderOrAuthor(Long projectId, Long userId) {
+        // 前台成员管理操作前置鉴权：仅项目负责人或项目作者（创建者=LEADER）可管理成员。
+        // 后台 admin controller 不走此口径（admin 持 knowhub:project:member 按钮权限直接放行，件 backend 保留）。
+        // portal 已 authenticated 兜底，此处不引系统级权限——admin 在 admin controller 单走互不影响。
+        if (projectId == null || userId == null) {
+            return false;
+        }
+        Project project = projectMapper.getProjectInfoById(projectId);
+        if (project == null) {
+            return false;
+        }
+        if (project.getAuthorId() != null && project.getAuthorId().equals(userId)) {
+            return true;
+        }
+        ProjectMember member = projectMemberMapper.getMember(projectId, userId);
+        return member != null && ProjectMemberRole.LEADER.getCode().equals(member.getMemberRole());
+    }
+
+    @Override
+    public boolean isLeaderOrAuthorByMemberId(Long memberId, Long userId) {
+        // 删除成员路由只有 memberId 入参，需反查 projectId 后走 isLeaderOrAuthor。
+        if (memberId == null || userId == null) {
+            return false;
+        }
+        ProjectMember m = projectMemberMapper.getMemberById(memberId);
+        if (m == null) {
+            return false;
+        }
+        return isLeaderOrAuthor(m.getProjectId(), userId);
+    }
+
     /** 判断当前用户是否拥有某按钮权限（非等级，如 knowhub:project:delete）。
      *  注意：UserInfo.getPermissions() 是 List<Permission>，需遍历比 permKey，不能用 contains(String) */
     private boolean hasButtonPerm(String permKey) {
@@ -890,8 +1020,10 @@ public class ProjectServiceImpl implements ProjectService {
             return;
         }
         leader.setMemberRole(ProjectMemberRole.MEMBER.getCode());
+        // 原负责人降为参与人员，权限标志位按 MEMBER 默认 1/0/0（view 仅，文件下载/编辑丢弃），
+        // 与 addMembersBatch 默认产出口径一致——降为参与人员即意味「不再负责」。
         leader.setCanView(1);
-        leader.setCanDownload(1);
+        leader.setCanDownload(0);
         leader.setCanEdit(0);
         leader.setUpdateBy(operator);
         projectMemberMapper.editMember(leader);
@@ -989,6 +1121,36 @@ public class ProjectServiceImpl implements ProjectService {
         }
     }
 
+    /**
+     * 审核结果通知负责人（2026-08-15 落地，复用 NotifySupport 个人通道）。口径同博客/文章/资源：
+     * APPROVE/REJECT 发审核结果通知，PUBLISH（审核关直通）发"已发布"，SUBMIT/REVOKE 不通知。
+     * reviewProject 前负责人自审已抛错，不会自通知。失败由 NotifySupport 内部吞掉，不阻断已落库状态。
+     */
+    private void notifyReviewResult(Project project, ReviewAction action, String advice) {
+        if (project == null || project.getAuthorId() == null) {
+            return;
+        }
+        String title;
+        String content;
+        switch (action) {
+            case APPROVE:
+                title = "你的项目审核通过";
+                content = "《" + project.getTitle() + "》审核通过，已发布。" + (advice != null && !advice.isEmpty() ? "审核意见：" + advice : "");
+                break;
+            case REJECT:
+                title = "你的项目被驳回";
+                content = "《" + project.getTitle() + "》被驳回，请修改后重新发布。" + (advice != null && !advice.isEmpty() ? "驳回原因：" + advice : "");
+                break;
+            case PUBLISH:
+                title = "你的项目已发布";
+                content = "《" + project.getTitle() + "》已直接发布（审核未开启）。";
+                break;
+            default:
+                return;
+        }
+        notifySupport.notifyUser(project.getAuthorId(), title, content, "/project/" + project.getProjectId(), "system");
+    }
+
     /** 构造一个 system 操作者 UserInfo，用于对账放行时写流水（operator_id=0, operator=system） */
     private UserInfo systemOperator() {
         UserInfo sys = new UserInfo();
@@ -999,5 +1161,14 @@ public class ProjectServiceImpl implements ProjectService {
 
     private UserInfo currentUser() {
         return (UserInfo) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+    }
+
+    /** 按 userId 取昵称快照（通知文案用；用户不存在返 null） */
+    private String nicknameOf(Long userId) {
+        if (userId == null) {
+            return null;
+        }
+        SysUser u = sysUserMapper.getSysUserInfoById(userId);
+        return u == null ? null : u.getNickName();
     }
 }

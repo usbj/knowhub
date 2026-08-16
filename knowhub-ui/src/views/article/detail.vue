@@ -23,6 +23,8 @@ import KhLoading from '@/components/common/KhLoading.vue'
 import KhCommentList from '@/components/common/KhCommentList.vue'
 import { useMarkdownImageZoom } from '@/composables/useMarkdownImageZoom'
 import { getArticleDetailApi, likeArticleApi, collectArticleApi } from '@/api/knowhub/article'
+import { applyContributorApi } from '@/api/knowhub/article-authoring'
+import { myContributorStatusApi } from '@/api/knowhub/collaboration'
 import type { ArticlePortalDetailRecord } from '@/types/api/knowhub/article'
 import { viewLevelTagType, getViewLevelLabel } from '@/utils/viewLevel'
 import { formatDateTime } from '@/utils/format'
@@ -44,6 +46,10 @@ const { viewerVisible, viewerUrls, viewerIndex, onContentClick, closeViewer } = 
 const loading = ref(true)
 /** 点赞/收藏交互态：interacting 期间禁用按钮防重复点击 */
 const interacting = ref(false)
+/** 我对本文章的贡献申请态：null 未申请/作者，PENDING/APPROVED/REJECTED；驱动「申请成为贡献者」按钮态 */
+const contributorStatus = ref<string | null>(null)
+/** 申请中态：applying 期间禁用按钮防重复点 */
+const applying = ref(false)
 
 const fetchDetail = async () => {
   loading.value = true
@@ -60,8 +66,25 @@ const fetchDetail = async () => {
     if (d.locked) {
       ElMessage.warning(d.lockReason ?? '当前内容需更高权限查看')
     }
+    // 取数成功后拉我的贡献申请态，驱动「申请成为贡献者」按钮态（PENDING/APPROVED 置灰、REJECTED/null 可点）。
+    // 之前未调用导致刷新后按钮永远停在「申请成为贡献者」可点态、即便已被作者通过也亮起。
+    void fetchContributorStatus()
   } finally {
     loading.value = false
+  }
+}
+
+/** 拉取我对该文章的贡献申请态：仅登录态 + 非作者时查（作者无须对自己申请；后端对作者返回 null） */
+const fetchContributorStatus = async () => {
+  if (!userStore.isAuthenticated || isMyArticle.value) {
+    contributorStatus.value = null
+    return
+  }
+  try {
+    const res = await myContributorStatusApi(docId.value)
+    contributorStatus.value = res.data ?? null
+  } catch {
+    contributorStatus.value = null
   }
 }
 
@@ -117,6 +140,30 @@ const handleCollect = async () => {
   }
 }
 
+/** 「申请成为贡献者」按钮态（仅作者之外可见）：
+ *  - null/REJECTED → 申请 / 重新申请 可点；PENDING → 审核中 置灰；APPROVED → 已是贡献者 置灰
+ *  - 登录非作者才显；未登录点跳登录（沿用 requireAuth 范式） */
+const contributorBtn = computed<{ label: string; disabled: boolean; actionable: boolean }>(() => {
+  const s = contributorStatus.value
+  if (s === 'PENDING') return { label: '审核中', disabled: true, actionable: false }
+  if (s === 'APPROVED') return { label: '已是贡献者', disabled: true, actionable: false }
+  if (s === 'REJECTED') return { label: '重新申请', disabled: false, actionable: true }
+  return { label: '申请成为贡献者', disabled: false, actionable: true }
+})
+
+/** 申请成为贡献者：建一条 PENDING 并通知作者；后端对作者/已 PENDING/已 APPROVED 自守拦截 */
+const handleApplyContributor = async () => {
+  if (!doc.value || !requireAuth()) return
+  applying.value = true
+  try {
+    await applyContributorApi(docId.value)
+    contributorStatus.value = 'PENDING'
+    toast('已提交申请，等待作者审核')
+  } finally {
+    applying.value = false
+  }
+}
+
 onMounted(() => void fetchDetail())
 watch(docId, () => void fetchDetail())
 </script>
@@ -142,7 +189,6 @@ watch(docId, () => void fetchDetail())
     <div v-else class="kh-container kh-container--wide">
       <KhCard v-if="doc" padding="none" class="di__head">
         <div class="di__head-cover" :style="{ background: doc.coverUrl ? `url(${doc.coverUrl}) center/cover` : 'linear-gradient(135deg,#2563eb,#0ea5e9)' }">
-          <KhIcon name="doc" :size="32" class="di__head-cover-icon" />
         </div>
         <div class="di__head-body">
           <div class="di__head-main">
@@ -186,7 +232,18 @@ watch(docId, () => void fetchDetail())
     <div v-if="doc" class="kh-container kh-container--wide di__layout">
       <article class="di__main">
         <KhCard padding="lg" class="di__intro-card">
-          <KhSectionTitle title="文章简介" />
+          <!-- 申请成为贡献者放在「文章简介」标题行右侧（KhSectionTitle 默认 slot），登录非作者且文章非未公开 PRIVATE 时可见：
+               null/REJECTED 可点申请，PENDING「审核中」置灰，APPROVED「已是贡献者」置灰 -->
+          <KhSectionTitle title="文章简介">
+            <button
+              v-if="!isMyArticle && doc.visibility !== 'PRIVATE'"
+              class="di__apply-btn"
+              :class="{ 'is-pending': contributorStatus === 'PENDING', 'is-approved': contributorStatus === 'APPROVED' }"
+              type="button"
+              :disabled="applying || contributorBtn.disabled"
+              @click="handleApplyContributor"
+            >{{ contributorBtn.label }}</button>
+          </KhSectionTitle>
           <!-- summary 是 TEXT，用 v-md-preview 渲染承载长文；短 summary 时也按 markdown body 排版，不空 -->
           <div ref="contentRef" class="di__intro" @click="onContentClick">
             <v-md-preview :text="doc.summary ?? ''" />
@@ -293,7 +350,6 @@ watch(docId, () => void fetchDetail())
   justify-content: flex-end;
   padding-right: var(--kh-space-6);
 }
-.di__head-cover-icon { color: rgba(255, 255, 255, 0.9); position: relative; top: 14px; }
 .di__head-body {
   display: flex;
   align-items: center;
@@ -359,6 +415,33 @@ watch(docId, () => void fetchDetail())
   color: #fff;
 }
 .di__action:disabled { opacity: 0.6; cursor: not-allowed; }
+
+/* 申请成为贡献者按钮：嵌在「文章简介」标题行右侧（KhSectionTitle slot，margin-left:auto 推到右），默认主色描边软底胶囊；
+   不再通栏、不再挤在点赞/收藏右，与标题并排版式清爽。hover 实色高亮；PENDING/APPROVED 灰静隐态（置灰不可点） */
+.di__apply-btn {
+  height: 36px;
+  padding: 0 var(--kh-space-5);
+  border: 1px solid var(--kh-primary-border);
+  border-radius: var(--kh-radius-pill);
+  background: var(--kh-primary-soft);
+  color: var(--kh-primary);
+  font-size: var(--kh-font-size-sm);
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all var(--kh-transition-fast);
+}
+.di__apply-btn:hover:not(:disabled) {
+  background: var(--kh-primary);
+  color: #fff;
+}
+.di__apply-btn:disabled { opacity: 0.65; cursor: not-allowed; }
+.di__apply-btn.is-pending,
+.di__apply-btn.is-approved {
+  background: var(--kh-bg-soft);
+  border-color: var(--kh-border);
+  color: var(--kh-text-tertiary);
+}
 
 .di__layout {
   display: grid;

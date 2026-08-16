@@ -57,6 +57,14 @@ export const publishArticleAuthoringApi = (articleId: number) =>
 export const revokeArticleAuthoringApi = (articleId: number) =>
   put<ApiResult<boolean>>(`/authoring/article/${articleId}/revoke`)
 
+/** 前台删除文章（软删 article.deleted=1 + 级联软删章节与封面，仅作者或 admin；普通用户仅删自己写的）。 */
+export const deleteArticleAuthoringApi = (articleId: number) =>
+  del<ApiResult<boolean>>(`/authoring/article/${articleId}`)
+
+/** 前台申请成为该文章贡献者（建一条 PENDING 申请并通知作者去协作页审批；去重/重申在后端 service）。 */
+export const applyContributorApi = (articleId: number) =>
+  post<ApiResult<boolean>>(`/authoring/article/${articleId}/apply-contributor`)
+
 // ============================ 章节创作 ============================
 
 /**
@@ -98,6 +106,31 @@ export const deleteChapterApi = (chapterIds: number | number[]) =>
  */
 export const reorderChaptersApi = (orders: ChapterReorderPayload) =>
   put<ApiResult<boolean>, ChapterReorderPayload>('/authoring/chapter/reorder', orders)
+
+/**
+ * 前台章节作者审核（PUT /authoring/chapter/review，仅 SEMIPUBLIC 文章非作者提交章节）。
+ * **入参顶层即 ChapterReviewVo**（后端 @RequestBody ChapterReviewVo 期望 JSON 对象）：
+ * - chapterId：待审章节主键；
+ * - pass：true 通过→PUBLISHED / false 驳回→REJECTED，驳回时 advice 必填。
+ * 后端 service 校验：章节状态=PENDING_AUTHOR_REVIEW + 审核人=文章作者 OR knowhub:chapter:review + 不能审自己提交的。
+ */
+/**
+ * 章节作者审核（PUT /authoring/chapter/review，仅 SEMIPUBLIC 文章非作者提交章节）。
+ * **入参顶层即 ChapterReviewVo**（后端 @RequestBody ChapterReviewVo 期望 JSON 对象）：
+ * - chapterId：待审章节主键；
+ * - pass：true 通过→PUBLISHED / false 驳回→REJECTED，驳回时 advice 必填。
+ * 后端 service 校验：章节状态=PENDING_AUTHOR_REVIEW + 审核人=文章作者 OR knowhub:chapter:review + 不能审自己提交的。
+ */
+export const reviewChapterAuthoringApi = (data: { chapterId: number; pass: boolean; advice?: string }) =>
+  put<ApiResult<boolean>, { chapterId: number; pass: boolean; advice?: string }>('/authoring/chapter/review', data)
+
+/**
+ * 作者下架贡献者章节（PUT /authoring/chapter/{chapterId}/takedown，advice 必填）。
+ * 服务侧复用 takedownChapter：状态置 REVOKED + 写 chapter_review_log REJECT 流水（advice=下架原因）+ 通知章节作者（贡献者）带原因。
+ * 鉴权：文章作者 OR knowhub:chapter:delete 按钮权限。与 revokeChapter 区分——revoke 是章节作者撤自己的，takedown 是作者强制下架别人的。
+ */
+export const takedownChapterApi = (chapterId: number, advice: string) =>
+  put<ApiResult<boolean>>(`/authoring/chapter/${chapterId}/takedown`, null, { params: { advice } })
 
 /** 类型再导出，供页面直接用 */
 export type {

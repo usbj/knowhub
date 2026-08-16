@@ -12,6 +12,7 @@ import com.knowhub.enums.storage.FileBusinessType;
 import com.knowhub.enums.common.ReviewAction;
 import com.knowhub.enums.common.ReviewStatus;
 import com.knowhub.mapper.article.ArticleMapper;
+import com.knowhub.mapper.article.ArticleContributorMapper;
 import com.knowhub.mapper.article.ArticleTagMapper;
 import com.knowhub.mapper.tag.TagMapper;
 import com.knowhub.mapper.article.ArticleReviewLogMapper;
@@ -27,7 +28,9 @@ import com.knowhub.pojo.article.vo.ArticleReviewVo;
 import com.knowhub.pojo.article.vo.ArticleVo;
 import com.knowhub.service.article.impl.ArticleService;
 import com.knowhub.service.history.impl.ViewHistoryService;
+import com.knowhub.service.review.ReviewNotifyService;
 import com.knowhub.enums.history.ViewBizType;
+import com.knowhub.support.NotifySupport;
 import com.rookie.common.exception.ServiceException;
 import com.rookie.common.util.PageUtil;
 import com.rookie.framework.security.pojo.Permission;
@@ -73,6 +76,9 @@ public class ArticleServiceImpl implements ArticleService {
     private ArticleTagMapper articleTagMapper;
 
     @Autowired
+    private ArticleContributorMapper articleContributorMapper;
+
+    @Autowired
     private TagMapper tagMapper;
 
     @Autowired
@@ -89,6 +95,12 @@ public class ArticleServiceImpl implements ArticleService {
 
     @Autowired
     private ViewHistoryService viewHistoryService;
+
+    @Autowired
+    private NotifySupport notifySupport;
+
+    @Autowired
+    private ReviewNotifyService reviewNotifyService;
 
     @Autowired
     private StringRedisTemplate redisTemplate;
@@ -110,7 +122,21 @@ public class ArticleServiceImpl implements ArticleService {
         List<Article> list = articleMapper.quarryArticle(quarry);
         PageInfo<Article> page = PageUtil.packagedPageInfo(list);
         PageInfo<ArticleVo> voPage = PageUtil.copyPageInfo(page, ArticleVo.class);
-        // 列表不回填权限态/作者标识（详情接口才回填），authorNickname 由 join 带出经 BeanUtil 拷贝
+        // 「我的作品」列表（/authoring/article/my，controller 注入 authorId=me）回填 myRole：作者=AUTHOR，被批准贡献者=CONTRIBUTOR。
+        // 驱动前端行上「贡献者」标识（作者默认不显）。非 myList 场景（admin 后台不注入 authorId）不回填。
+        if (quarry.getAuthorId() != null && user.getUserId().equals(quarry.getAuthorId())
+                && voPage.getList() != null) {
+            for (ArticleVo vo : voPage.getList()) {
+                if (vo.getAuthorId() != null && vo.getAuthorId().equals(user.getUserId())) {
+                    vo.setMyRole("AUTHOR");
+                } else {
+                    Boolean approved = articleContributorMapper.isApproved(vo.getArticleId(), user.getUserId());
+                    if (Boolean.TRUE.equals(approved)) {
+                        vo.setMyRole("CONTRIBUTOR");
+                    }
+                }
+            }
+        }
         return voPage;
     }
 
@@ -281,6 +307,9 @@ public class ArticleServiceImpl implements ArticleService {
             update.setReviewStatus(ReviewStatus.PENDING.getCode());
             action = ReviewAction.SUBMIT;
             redisTemplate.opsForValue().set(baseKey + CACHE_PENDING_FLAG, "1");
+            // 提审通知：按系统设置 knowhub.review.notify_role_key 通知持该角色的有效用户（总开关缺省关）
+            reviewNotifyService.notifyReviewers("article", articleId, exist.getTitle(),
+                    userInfo.getUsername(), userInfo.getUsername());
         } else {
             update.setStatus(ArticleStatus.PUBLISHED.getCode());
             update.setPublishTime(now);
@@ -289,6 +318,8 @@ public class ArticleServiceImpl implements ArticleService {
         }
         articleMapper.editArticleInfo(update);
         writeReviewLog(articleId, action, userInfo, null);
+        // 审核结果通知作者（SUBMIT 不通知：作者是提交人；PUBLISH 直通发"已发布"通知）
+        notifyReviewResult(exist, action, null);
         return true;
     }
 
@@ -357,6 +388,8 @@ public class ArticleServiceImpl implements ArticleService {
         }
         articleMapper.editArticleInfo(update);
         writeReviewLog(vo.getArticleId(), action, userInfo, advice);
+        // 审核结果通知作者（APPROVE/REJECT；avoid 已保障 author_id==userId 走不到这里）
+        notifyReviewResult(exist, action, advice);
         return true;
     }
 
@@ -401,6 +434,37 @@ public class ArticleServiceImpl implements ArticleService {
     // ============================ 私有辅助 ============================
 
     /**
+     * 审核结果通知作者（2026-08-15 落地，复用 NotifySupport 个人通道）。
+     * 通知口径同博客：APPROVE/REJECT 发审核结果通知，PUBLISH（审核开关关直通）发"已发布"通知，
+     * SUBMIT/REVOKE 不通知（作者主动行为）。reviewArticle 调用前 author_id==userId 回避已抛错，
+     * 不会给作者自己发审核结果。失败由 NotifySupport 内部吞掉，不阻断审核状态已落库。
+     */
+    private void notifyReviewResult(Article article, ReviewAction action, String advice) {
+        if (article == null || article.getAuthorId() == null) {
+            return;
+        }
+        String title;
+        String content;
+        switch (action) {
+            case APPROVE:
+                title = "你的文章审核通过";
+                content = "《" + article.getTitle() + "》审核通过，已发布。" + (advice != null && !advice.isEmpty() ? "审核意见：" + advice : "");
+                break;
+            case REJECT:
+                title = "你的文章被驳回";
+                content = "《" + article.getTitle() + "》被驳回，请修改后重新发布。" + (advice != null && !advice.isEmpty() ? "驳回原因：" + advice : "");
+                break;
+            case PUBLISH:
+                title = "你的文章已发布";
+                content = "《" + article.getTitle() + "》已直接发布（审核未开启）。";
+                break;
+            default:
+                return;
+        }
+        notifySupport.notifyUser(article.getAuthorId(), title, content, "/article/" + article.getArticleId(), "system");
+    }
+
+    /**
      * 权限判定核心：用户对文章 A 是否有操作 op 权限。
      * 公式：userLvl(op) >= A.level OR author_id == userId（作者全权，不看等级/不看 visibility）。
      * admin 因 perms 含全 l3 自然 userLvl=3，对所有文章全权（系统权限分支）。
@@ -441,9 +505,14 @@ public class ArticleServiceImpl implements ArticleService {
         UserInfo user = currentUser();
         boolean author = isAuthor(article, user);
         vo.setIsAuthor(author);
-        // canView/canEdit：系统权限够 OR 作者全权
+        boolean systemEdit = article.getLevel() != null && lvl.edit() >= article.getLevel();
+        // canView/canEdit：系统权限够 OR 作者全权（canEdit 不含贡献者分支，此处是文章元信息编辑权限，与章节创建区分）
         vo.setCanView(author || (article.getLevel() != null && lvl.view() >= article.getLevel()));
-        vo.setCanEdit(author || (article.getLevel() != null && lvl.edit() >= article.getLevel()));
+        vo.setCanEdit(author || systemEdit);
+        // canManageChapters：能否像作者那样自由管理章节（排序/改文章元信息/发布/撤回/删除）。
+        // = 作者 OR 系统编辑级，不含被作者批准的贡献者。贡献者走 canEditArticle 第三分支可提交新章节/编辑自己章节，
+        // 但不可改章节顺序、不可发布/撤回/删除文章、不可删任意章节。chapters.vue 拖拽手柄/发布撤回按钮据此显隐。
+        vo.setCanManageChapters(author || systemEdit);
     }
 
     /** 校验文章载体字段：title 必填、level 必填在 1-3、visibility 必填合法 */

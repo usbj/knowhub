@@ -62,6 +62,15 @@ const metaExpanded = ref(false)
 
 const isPublished = computed(() => chapterStatus.value === 'PUBLISHED')
 const canEditNow = computed(() => ['DRAFT', 'REJECTED', 'REVOKED', ''].includes(chapterStatus.value))
+/** 待作者审「审核中」章节锁定预览：后端已禁改（editChapterInfo PENDING 前置挡），前端也要禁止输入/切换，
+ *  不让作者/贡献者误以为能改也只是被拦——编辑器强制预览态、章节名只读、保存/发布按钮置灰并提示原因。 */
+const isUnderReview = computed(() => chapterStatus.value === 'PENDING_AUTHOR_REVIEW')
+/** 鼠标悬停锁定按钮的 hint 文案，告诉用户为何禁用（区分审核中 vs 已发布须先撤回） */
+const lockHint = computed(() => {
+  if (isUnderReview.value) return '审核中章节不可改动，请等审核结果后再编辑'
+  if (isPublished.value) return '已发布章节请先撤回再编辑'
+  return ''
+})
 
 const validate = (): boolean => {
   if (!form.value.chapterName.trim()) {
@@ -207,20 +216,34 @@ onMounted(() => {
           <button class="ace__back" type="button" @click="router.push(`/article/${articleId}/chapters`)">
             <el-icon><ArrowLeft /></el-icon> 返回章节
           </button>
-          <input v-model="form.chapterName" class="ace__name-input" placeholder="输入章节名…" maxlength="200" />
-          <span v-if="statusText" class="ace__status">{{ statusText }}</span>
+          <input
+            v-model="form.chapterName"
+            class="ace__name-input"
+            :class="{ 'ace__name-input--locked': isUnderReview }"
+            placeholder="输入章节名…"
+            maxlength="200"
+            :readonly="isUnderReview"
+          />
+          <span v-if="statusText" class="ace__status" :class="{ 'ace__status--locked': isUnderReview }">{{ statusText }}</span>
         </div>
         <div class="ace__bar-right">
+          <!-- 审核中/已发布 禁用所有改稿按钮，title 提示原因（lockHint） -->
           <button
             class="ace__btn ace__btn--ghost"
             type="button"
             title="从 .md 文件导入章节正文（本地图片路径会标为占位，需手动重插图；章节名为空时自动填文件名）"
-            :disabled="saving || publishing"
+            :disabled="saving || publishing || isUnderReview"
             @click="openMdPicker"
           >
             <KhIcon name="file" :size="14" /> 导入 .md
           </button>
-          <button class="ace__btn ace__btn--ghost" type="button" :disabled="saving || publishing" @click="handleSaveDraft">
+          <button
+            class="ace__btn ace__btn--ghost"
+            type="button"
+            :title="lockHint || undefined"
+            :disabled="saving || publishing || isUnderReview"
+            @click="handleSaveDraft"
+          >
             {{ saving ? '保存中…' : (isEdit ? '保存修改' : '存草稿') }}
           </button>
           <button
@@ -234,7 +257,8 @@ onMounted(() => {
             v-else
             class="ace__btn ace__btn--primary"
             type="button"
-            :disabled="saving || publishing || isPublished"
+            :title="lockHint || undefined"
+            :disabled="saving || publishing || isPublished || isUnderReview"
             @click="handlePublish"
           >{{ publishing ? '提交中…' : (isEdit ? '发布/再提交' : '提交章节') }}</button>
         </div>
@@ -242,12 +266,17 @@ onMounted(() => {
     </header>
 
     <div class="ace__wrap">
-      <!-- 正文编辑器（content-first）：复用通用 KhMarkdownEditor；height="100%" 占满（父用 flex:1 + min-height:0
-           链约束高度，正文滚动由组件内部 .v-md-editor__main 自带 overflow:auto 负责，
-           不会随内容往下蔓延、超出范围由组件内部滚动条兜底) -->
+      <!-- 审核中锁定横幅：明确告知本页已锁定预览、不可改，等审核结果 -->
+      <div v-if="isUnderReview" class="ace__lock-banner">
+        <KhIcon name="lock" :size="14" />
+        <span>该章节正在作者审核中，已锁定为预览态，请等待审核结果后再编辑。</span>
+      </div>
+      <!-- 正文编辑器（content-first）：审核中强制预览态（mode=preview + 隐藏切换），作者可就地审阅不改稿 -->
       <section class="ace__editor">
         <KhMarkdownEditor
           v-model="form.content"
+          :mode="isUnderReview ? 'preview' : undefined"
+          :show-mode-switch="!isUnderReview"
           height="100%"
           placeholder="写章节正文…"
           business-type="BLOG_BODY"
@@ -255,9 +284,10 @@ onMounted(() => {
         />
       </section>
 
-      <!-- 章节元信息折叠面板（正文下方，仿博客 meta）：排序杂项置此，默认折叠，content-first -->
-      <section class="ace__meta">
-        <button class="ace__meta-head" type="button" @click="metaExpanded = !metaExpanded">
+      <!-- 章节元信息折叠面板（正文下方，仿博客 meta）：排序杂项置此，默认折叠，content-first。
+           审核中时整面板禁交互（排序不可改） -->
+      <section class="ace__meta" :class="{ 'ace__meta--locked': isUnderReview }">
+        <button class="ace__meta-head" type="button" :disabled="isUnderReview" @click="metaExpanded = !metaExpanded">
           <KhIcon name="tag" :size="14" />
           <span>章节信息</span>
           <span class="ace__meta-summary">排序 {{ form.sortOrder ?? 0 }}</span>
@@ -277,6 +307,7 @@ onMounted(() => {
               min="0"
               max="9999"
               placeholder="0"
+              :readonly="isUnderReview"
             />
           </div>
         </div>
@@ -298,7 +329,12 @@ onMounted(() => {
 .ace__back:hover { border-color: var(--kh-primary-border); color: var(--kh-primary); }
 .ace__name-input { flex: 1; min-width: 0; border: none; outline: none; background: transparent; font-size: var(--kh-font-size-xl); font-weight: 700; color: var(--kh-text); }
 .ace__name-input::placeholder { color: var(--kh-text-tertiary); font-weight: 600; }
+.ace__name-input--locked { cursor: not-allowed; }
 .ace__status { font-size: 12px; color: var(--kh-text-tertiary); padding: 2px 8px; border: 1px solid var(--kh-border-soft); border-radius: var(--kh-radius-pill); flex: none; }
+.ace__status--locked { color: var(--kh-warm); border-color: var(--kh-warm); background: var(--kh-warm-soft); }
+
+/* 审核中锁定横幅：通栏暖色提示，告知已锁预览、等审核 */
+.ace__lock-banner { display: flex; align-items: center; gap: 6px; padding: var(--kh-space-3) var(--kh-space-4); border-radius: var(--kh-radius-sm); background: var(--kh-warm-soft); color: var(--kh-warm); font-size: var(--kh-font-size-sm); font-weight: 500; }
 .ace__bar-right { display: flex; align-items: center; gap: var(--kh-space-2); flex: none; }
 .ace__btn { display: inline-flex; align-items: center; gap: 5px; height: 36px; padding: 0 var(--kh-space-4); border-radius: var(--kh-radius-sm); font-size: var(--kh-font-size-sm); font-weight: 600; cursor: pointer; border: 1px solid transparent; transition: all var(--kh-transition-fast); }
 .ace__btn:disabled { opacity: 0.5; cursor: not-allowed; }
@@ -324,6 +360,8 @@ onMounted(() => {
   font-size: var(--kh-font-size-sm); color: var(--kh-text-secondary); transition: background var(--kh-transition-fast);
 }
 .ace__meta-head:hover { background: var(--kh-surface-muted); }
+.ace__meta-head:disabled { cursor: not-allowed; opacity: 0.6; }
+.ace__meta-head:disabled:hover { background: transparent; }
 .ace__meta-head > :first-child { color: var(--kh-primary); }
 .ace__meta-summary { margin-left: auto; font-size: 12px; color: var(--kh-text-tertiary); font-family: var(--kh-font-mono); }
 .ace__meta-caret { transition: transform var(--kh-transition-fast); color: var(--kh-text-tertiary); font-size: 12px; }
@@ -334,4 +372,5 @@ onMounted(() => {
 .ace__label-hint { font-size: 12px; font-weight: 400; color: var(--kh-text-tertiary); }
 .ace__sort-input { width: 120px; height: 34px; padding: 0 10px; border: 1px solid var(--kh-border); border-radius: var(--kh-radius-sm); background: var(--kh-surface); font-size: var(--kh-font-size-sm); color: var(--kh-text); }
 .ace__sort-input:focus { outline: none; border-color: var(--kh-primary-border); }
+.ace__sort-input[readonly] { cursor: not-allowed; color: var(--kh-text-tertiary); background: var(--kh-bg-soft); }
 </style>

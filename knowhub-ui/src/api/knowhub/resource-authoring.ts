@@ -10,7 +10,7 @@
  * - like/collect/rating：登录即可对任意已发布资源互动。
  * - myCollected：我的收藏列表（前台可见口径）。
  */
-import { get, getPage, post, put } from '@/utils/http'
+import { del, get, getPage, post, put } from '@/utils/http'
 import type { ApiResult, NormalizedPageResult } from '@/types/api/common'
 import type {
   ResourceAuthoringPayload,
@@ -50,6 +50,10 @@ export const publishMyResourceApi = (resourceId: number) =>
 /** 前台撤回资源（复用 revokeResource → REVOKED，撤回后可再编辑/换源/再发布）。仅 PUBLISHED 可撤回。 */
 export const revokeMyResourceApi = (resourceId: number) =>
   put<ApiResult<boolean>>(`/authoring/resource/${resourceId}/revoke`)
+
+/** 前台删除资源（软删 resource.deleted=1，复用 deleteResourceInfo，仅作者或 admin；普通用户仅删自己上传的）。 */
+export const deleteMyResourceApi = (resourceId: number) =>
+  del<ApiResult<boolean>>(`/authoring/resource/${resourceId}`)
 
 /**
  * FILE 资源下载链接下发（复用 downloadResource，校验 PUBLISHED+FILE，下载量 +1）。

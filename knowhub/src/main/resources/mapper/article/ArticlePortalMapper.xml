@@ -33,6 +33,7 @@
         <result property="summary" column="summary"/>
         <result property="coverUrl" column="cover_url"/>
         <result property="level" column="level"/>
+        <result property="visibility" column="visibility"/>
         <result property="publishTime" column="publish_time"/>
         <result property="viewCount" column="view_count"/>
         <result property="likeCount" column="like_count"/>
@@ -54,7 +55,7 @@
     <sql id="articlePortalColumns">
         a.article_id, a.author_id, u.nick_name as author_nickname,
         a.title, a.summary, a.cover_object_key as cover_url,
-        a.level, a.publish_time,
+        a.level, a.visibility, a.publish_time,
         a.view_count, a.like_count, a.collect_count,
         a.comment_enabled, a.comment_curated
     </sql>

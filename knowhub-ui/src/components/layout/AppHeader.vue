@@ -6,7 +6,7 @@
   公告下拉用 el-popover，展示系统公告列表，"查看全部公告"跳 /notices。
 -->
 <script setup lang="ts">
-import { computed, nextTick, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   Search,
@@ -90,10 +90,16 @@ const noticeItems = computed(() =>
   })),
 )
 
-/** 公告下拉可见性（受控，便于点"查看全部"时先关闭再跳转） */
-const noticeVisible = ref(false)
+/**
+ * el-dropdown 实例 ref：Visibleity 不可控，但组件暴露 handleClose()（内部 popperRef.onClose()）可手动收起。
+ * 替代死绑定的 v-model:visible（el-dropdown 没有 visible prop，也不传 visible 给 el-tooltip，
+ * 故写 noticeVisible=false 对 popper 无效——#3「点公告后不收起」根因）。
+ */
+const noticeDropdown = ref<{ handleClose?: () => void } | null>(null)
+
 const goNotices = () => {
-  noticeVisible.value = false
+  // 跳公告列表前同样要收起下拉：直接调实例 handleClose（noticeVisible=false 无效）
+  noticeDropdown.value?.handleClose?.()
   router.push('/notices')
 }
 
@@ -101,13 +107,13 @@ const goNotices = () => {
 const goSearch = () => router.push('/search')
 
 /**
- * 点某条公告：先收起下拉（noticeVisible=false），等一帧让下拉的收起过渡与详情弹窗的展开过渡错开，
- * 避免两套动画同帧竞争导致卡顿；再标记已读（乐观，未读才请求）+ 开全局详情弹窗。
- * 详情弹窗挂在 AppLayout 的 <KhNoticeDetailDialog>，store.openDetail 注入当前 notice。
+ * 点某条公告：先用暴露的 handleClose() 真正收起下拉（不靠死绑定 noticeVisible），
+ * 再等一帧让下拉收起过渡与详情弹窗展开过渡拉开，避免同帧竞争卡顿；
+ * 然后标记已读（乐观，未读才请求）+ 开全局详情弹窗（挂在 AppLayout 的 <KhNoticeDetailDialog>，store.openDetail 注入当前 notice）。
  * 失败由 store 内 next fetch 纠正，不阻塞弹窗。
  */
 const openNotice = async (noticeId: number) => {
-  noticeVisible.value = false
+  noticeDropdown.value?.handleClose?.()
   await nextTick()
   const notice = noticeStore.getNoticeById(noticeId)
   if (notice) {
@@ -118,6 +124,34 @@ const openNotice = async (noticeId: number) => {
     router.push('/notices')
   }
 }
+
+/**
+ * 轮播拉公告：登录态下每 60s 强制刷新一次（force=true 绕过 store 内 loaded 去重），
+ * 防止长时间停留页面漏收新公告（路由守卫只在首次进入拉一次）。
+ * 未登录不启动轮询；用户 store 登录态变化时自动挂/卸。
+ */
+let noticePollTimer: ReturnType<typeof setInterval> | undefined
+const startNoticePolling = () => {
+  if (noticePollTimer) return
+  noticePollTimer = setInterval(() => {
+    void noticeStore.fetchMyNotices(true)
+  }, 60_000)
+}
+const stopNoticePolling = () => {
+  if (noticePollTimer) {
+    clearInterval(noticePollTimer)
+    noticePollTimer = undefined
+  }
+}
+watch(
+  () => userStore.isAuthenticated,
+  (authed) => {
+    if (authed) startNoticePolling()
+    else stopNoticePolling()
+  },
+  { immediate: true },
+)
+onBeforeUnmount(stopNoticePolling)
 
 /**
  * 退出登录：前台无后端登出接口，纯前端清态后整页跳 /login。
@@ -164,14 +198,17 @@ const handleLogout = () => {
           <kbd>⌘K</kbd>
         </button>
 
-        <!-- 公告下拉：已登录显示铃铛+未读徽标+下拉列表（参考后台 NavBar 通知下拉形态） -->
+        <!-- 公告下拉：已登录显示铃铛+未读徽标+下拉列表（参考后台 NavBar 通知下拉形态）。
+             el-dropdown 无 visible 双向，v-model:visible 是死绑定（不传 visible 给 el-tooltip）；
+             收起只能走 noticeDropdown 暴露的 handleClose()（见 openNotice/goNotices）。@command 收命令式事件。 -->
         <el-dropdown
           v-if="userStore.isAuthenticated"
-          v-model:visible="noticeVisible"
+          ref="noticeDropdown"
           trigger="click"
           placement="bottom-end"
           popper-class="kh-notice-dropdown"
           :hide-on-click="false"
+          @command="openNotice"
         >
           <button class="kh-icon-btn kh-icon-btn--badge" type="button" aria-label="系统公告">
             <el-icon><Bell /></el-icon>
@@ -185,27 +222,32 @@ const handleLogout = () => {
                   查看全部 <el-icon><CaretBottom /></el-icon>
                 </button>
               </div>
-              <div v-if="noticeItems.length === 0" class="kh-notice-menu__empty">暂无公告</div>
-              <el-dropdown-item
-                v-for="item in noticeItems"
-                :key="item.id"
-                class="kh-notice-menu__item"
-                @click="openNotice(item.id)"
-              >
-                <div class="kh-notice-menu__copy">
-                  <div class="kh-notice-menu__top-row">
-                    <KhTag size="sm" :type="item.tagType">{{ item.typeLabel }}</KhTag>
-                    <span v-if="item.isTop" class="kh-notice-menu__pin">置顶</span>
-                    <span v-if="item.unread" class="kh-notice-menu__dot"></span>
+              <!-- 下拉栏高度封顶 + 列表内滚动：通知条数多时不无限往下扩，避免视觉过长 -->
+              <div class="kh-notice-menu__scroll">
+                <div v-if="noticeItems.length === 0" class="kh-notice-menu__empty">暂无公告</div>
+                <el-dropdown-item
+                  v-for="item in noticeItems"
+                  :key="item.id"
+                  class="kh-notice-menu__item"
+                  :command="item.id"
+                >
+                  <div class="kh-notice-menu__copy">
+                    <div class="kh-notice-menu__top-row">
+                      <KhTag size="sm" :type="item.tagType">{{ item.typeLabel }}</KhTag>
+                      <span v-if="item.isTop" class="kh-notice-menu__pin">置顶</span>
+                      <span v-if="item.unread" class="kh-notice-menu__dot"></span>
+                    </div>
+                    <div class="kh-notice-menu__title kh-line-clamp-1">{{ item.title }}</div>
+                    <div class="kh-notice-menu__summary kh-line-clamp-1">{{ item.summary }}</div>
+                    <small class="kh-notice-menu__time">{{ item.time }}</small>
                   </div>
-                  <div class="kh-notice-menu__title kh-line-clamp-1">{{ item.title }}</div>
-                  <div class="kh-notice-menu__summary kh-line-clamp-1">{{ item.summary }}</div>
-                  <small class="kh-notice-menu__time">{{ item.time }}</small>
-                </div>
-              </el-dropdown-item>
+                </el-dropdown-item>
+              </div>
             </el-dropdown-menu>
           </template>
         </el-dropdown>
+        <!-- el-dropdown @command：用 command 模式替代 item 直接 @click（el-dropdown-item 的 click 派发不稳定，
+             且 hide-on-click=false 时 popper 不会自动收起）。统一走 openNotice，其内 noticeDropdown.handleClose() 真正收起下拉 -->
 
         <!-- 用户入口：未登录显示登录/注册，已登录显示用户下拉 -->
         <template v-if="userStore.isAuthenticated">
@@ -554,6 +596,23 @@ const handleLogout = () => {
   text-align: center;
   color: var(--kh-text-tertiary);
   font-size: var(--kh-font-size-sm);
+}
+/* 列表区高度封顶 + 内部滚动：通知多时不无限往下扩，头部固定不滚走。
+   480px ≈ 6~7 项可见，超出在区内 scroll，下拉整体长度收敛（与方案"需要最大长度而非无限阔"对齐） */
+.kh-notice-menu__scroll {
+  max-height: 480px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+.kh-notice-menu__scroll::-webkit-scrollbar {
+  width: 6px;
+}
+.kh-notice-menu__scroll::-webkit-scrollbar-thumb {
+  background: var(--kh-border);
+  border-radius: 3px;
+}
+.kh-notice-menu__scroll::-webkit-scrollbar-thumb:hover {
+  background: var(--kh-border-strong);
 }
 /* 列表项：el-dropdown-item 默认自带 padding/border-radius/white 背景，
    前台需要贴边、圆角内嵌、hover 用主题色 */

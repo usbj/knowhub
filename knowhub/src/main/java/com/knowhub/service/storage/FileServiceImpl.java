@@ -266,8 +266,11 @@ public class FileServiceImpl implements FileService {
                 ? fileObject.getContentType()
                 : resp.contentType();
         long contentLength = resp.contentLength() > 0 ? resp.contentLength() : fileObject.getContentLength();
-        // PRIVATE 中转下载带 attachment;filename 强制下载（防浏览器直显私有文件）；PUBLIC 回显走 streamPublicObject 不带
-        String disposition = "attachment;filename=\"" + sanitizeFilename(fileObject.getOriginalName()) + "\"";
+        // PRIVATE 中转下载带 attachment;filename 强制下载（防浏览器直显私有文件）；PUBLIC 回显走 streamPublicObject 不带。
+        // 双段：filename*=UTF-8''<enc> 走 RFC 5987 中文真名（现代浏览器用），旧段 filename="" 只放同源 ASCII 百分号
+        // 编码兜底——旧式 filename 只能存 ISO-8859-1(0-255) 字节，中文会被 Tomcat 10 头校验抛 IllegalArgumentException 移除头，
+        // 故旧段不塞原文，与 ProjectPortalController 项目打包下载同口径（见 buildDisposition）。
+        String disposition = buildDisposition(fileObject.getOriginalName());
         return new PublicObjectStream(contentType, contentLength, resp.eTag(), disposition, ris);
     }
 
@@ -564,14 +567,16 @@ public class FileServiceImpl implements FileService {
         return absoluteUrl;
     }
 
-    /** 签 GET 预签名；originalName 非空时带 attachment;filename 强制下载 */
+    /** 签 GET 预签名；originalName 非空时带 attachment;filename 双段指定下载名 */
     private PresignedGetObjectRequest presignGet(FileObject fo, String originalName) {
         return s3Presigner.presignGetObject(p -> p
                 .getObjectRequest(b -> {
                     b.bucket(fo.getBucket()).key(fo.getObjectKey());
                     if (originalName != null && !originalName.isEmpty()) {
-                        b.responseContentDisposition("attachment;filename=\""
-                                + sanitizeFilename(originalName) + "\"");
+                        // 预签名 URL 的 response-content-disposition 由浏览器直请 S3 回显，
+                        // 不经本服务 Tomcat 头校验，但 S3 仍要求合规；统一走 buildDisposition 双段口径，
+                        // 与中转下载一致，避免中文原名在 filename="" 旧段触发 S3/tomcat 任一侧的非法头风险。
+                        b.responseContentDisposition(buildDisposition(originalName));
                     }
                 })
                 .signatureDuration(Duration.ofMinutes(storageProperties.getDownloadExpireMinutes())));
@@ -580,6 +585,20 @@ public class FileServiceImpl implements FileService {
     /** 文件名清洗：去引号防注入预签名 URL */
     private String sanitizeFilename(String name) {
         return name.replace("\"", "").replace("\\", "");
+    }
+
+    /**
+     * 拼 RFC 6266 Content-Disposition 下载名（attachment；与 ProjectPortalController 项目打包下载同口径）。
+     * <p>
+     * 旧式 {@code filename="..."} 只能存 ISO-8859-1（0-255）字节，塞中文会被 Tomcat 10 MessageBytes 头校验
+     * 抛 IllegalArgumentException 并移除整个头、中断响应；中文真名只走 {@code filename*=UTF-8''<enc>}，
+     * 旧段放同源 ASCII 百分号编码兜底（旧浏览器只见 %xx 但不下错）。原文先经 sanitizeFilename 去 " 和 \，
+     * 再 URLEncoder 编码（+→%20 避免空格歧义），两段共用同一编码串。
+     */
+    private String buildDisposition(String originalName) {
+        String safe = sanitizeFilename(originalName == null ? "" : originalName);
+        String enc = java.net.URLEncoder.encode(safe, java.nio.charset.StandardCharsets.UTF_8).replace("+", "%20");
+        return "attachment; filename=\"" + enc + "\"; filename*=UTF-8''" + enc;
     }
 
     /** 置 FAILED */

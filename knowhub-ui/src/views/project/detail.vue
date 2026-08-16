@@ -88,8 +88,11 @@ const { viewerVisible, viewerUrls, viewerIndex, onContentClick, closeViewer } = 
 const files = ref<ProjectFileRecord[]>([])
 const members = ref<ProjectMemberRecord[]>([])
 const loading = ref(false)
-/** 权限态：能否管文件/成员（作者 OR canEdit=true OR 有 can_edit=1 的成员） */
+/** 权限态：能否管文件/项目信息（作者 OR canEdit=true OR LEADER）；
+ *  含接受邀请获 canEdit=1 的成员（可编辑文件/项目信息，但不可管成员，见 canManageMembers） */
 const canManage = ref(false)
+/** 权限态：能否管成员（仅作者 OR LEADER）。非负责人不显示成员管理入口，即便 canEdit=1 也不行。 */
+const canManageMembers = ref(false)
 /** 收藏交互态：interacting 期间禁用按钮防重复点击 */
 const interacting = ref(false)
 /** 成员管理弹窗显隐 */
@@ -249,6 +252,7 @@ const fetchDetail = async () => {
           // 也强制可管（作者天然可管自己项目，后端 service canOp 对 LEADER 全权，作者即创建者=LEADER）。
           const isAuthor = e.authorId != null && userStore.userInfo?.userId === e.authorId
           canManage.value = isAuthor || e.canEdit === true || e.myMemberRole === 'LEADER'
+          canManageMembers.value = isAuthor || e.myMemberRole === 'LEADER'
           authorized = true
           // authoring 返回不带互动态（hasCollected）与计数（ProjectVo 无冗余计数列场景下为空）。
           // 后台静默补拉一次公开 portal 详情：PUBLISHED 项目能拿到 hasCollected + 真实 view/like/collect/download 计数，
@@ -289,6 +293,7 @@ const fetchDetail = async () => {
       // d.authorId 与当前登录用户匹配 → 强制可管（管理操作走 /authoring/**，后端 service LEADER 全权兜底）。
       const autoIsAuthor = d.authorId != null && userStore.isAuthenticated && userStore.userInfo?.userId === d.authorId
       canManage.value = autoIsAuthor
+      canManageMembers.value = autoIsAuthor
       authorized = autoIsAuthor
       if (d.locked) {
         // 越级锁态：后端返回 locked=true + lockReason，description 已置 null
@@ -891,9 +896,9 @@ watch(projectId, () => {
         <KhCard padding="md" class="pd__members-card">
           <div class="pd__members-head">
             <h3 class="pd__members-title">参与人员 · {{ members.length }}</h3>
-            <!-- 成员管理按钮：仅授权态可管时显示（作者/LEADER/canEdit 成员） -->
+            <!-- 成员管理按钮：仅负责人/作者可管成员（canEdit=1 的成员可见但不能管成员） -->
             <button
-              v-if="canManage"
+              v-if="canManageMembers"
               class="pd__members-mgmt"
               type="button"
               title="成员管理"

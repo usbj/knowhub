@@ -9,7 +9,7 @@
  * - myLevel：当前用户博客 view 等级（0/1/2/3），创作页等级选择器据此禁用不可选等级。
  * - like/collect：query 参数 true|false 切换（缺省 true），主表 like_count/collect_count 同步。
  */
-import { get, getPage, post, put } from '@/utils/http'
+import { del, get, getPage, post, put } from '@/utils/http'
 import type { ApiResult, NormalizedPageResult } from '@/types/api/common'
 import type { BlogAuthoringPayload, BlogAuthoringDetail, BlogRecord, MyBlogListQuery } from '@/types/api/knowhub/authoring'
 import type { BlogPortalRecord } from '@/types/api/knowhub/blog'
@@ -29,6 +29,10 @@ export const publishBlogApi = (blogId: number) =>
 /** 前台撤回博客（复用 revokeBlog → REVOKED，撤回后可再编辑/再发布）。仅 PUBLISHED 可撤回。 */
 export const revokeBlogApi = (blogId: number) =>
   put<ApiResult<boolean>>(`/authoring/blog/${blogId}/revoke`)
+
+/** 前台删除博客（软删 blog.deleted=1，复用 deleteBlogInfo，仅作者或 admin；普通用户仅删自己写的）。 */
+export const deleteBlogApi = (blogId: number) =>
+  del<ApiResult<boolean>>(`/authoring/blog/${blogId}`)
 
 /** 编辑回填：复用后台 getBlogInfo（canOp 防越权，返回含全态+标签+canEdit/isAuthor 的 BlogVo）。 */
 export const getBlogForEditApi = (blogId: number) =>

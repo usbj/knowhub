@@ -111,14 +111,16 @@ public class ProjectPortalController {
             });
             return;
         }
-        // zip 文件名用项目标题：去 "...\\\\"非法字符后落 Content-Disposition；双下发包 ASCII filename 兜底 +
-        // RFC 5987 filename*=UTF-8''<enc> 兼容中文（旧浏览器走 filename 旧名，现代浏览器走 filename* 中文真名）。
+        // zip 文件名用项目标题：去 "\"\\/ : * ? < > | 等文件系统非法字符后落 Content-Disposition。
+        // 双段下发：filename*=UTF-8''<enc> 是 RFC 5987/6266 正道，现代浏览器据此显示中文真名；
+        // 旧式 filename="" 只能装 ISO-8859-1(0-255) 字节，中文越级会被 Tomcat 10 校验抛 IllegalArgumentException 移除头
+        // 致响应中断。故旧段改放同源 ASCII 百分号编码兜底（旧浏览器只见 %E6%B5%8B 但不下错），中文真名仅走 filename*。
         String title = bundle.getTitle();
         String safeName = (title == null || title.trim().isEmpty())
                 ? "project-" + projectId
                 : title.replace("\"", "").replace("\\", "").replace("/", "").replace(":", "").replace("*", "").replace("?", "").replace("<", "").replace(">", "").replace("|", "").trim();
         String asciiFallback = java.net.URLEncoder.encode(safeName, java.nio.charset.StandardCharsets.UTF_8).replace("+", "%20");
-        String disposition = "attachment;filename=\"" + safeName + ".zip\"; filename*=UTF-8''" + asciiFallback + ".zip";
+        String disposition = "attachment; filename=\"" + asciiFallback + ".zip\"; filename*=UTF-8''" + asciiFallback + ".zip";
         response.setStatus(jakarta.servlet.http.HttpServletResponse.SC_OK);
         response.setContentType("application/zip");
         response.setHeader("Content-Disposition", disposition);

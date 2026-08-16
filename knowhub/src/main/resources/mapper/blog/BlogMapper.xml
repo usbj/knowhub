@@ -58,6 +58,10 @@
             group by b.blog_id
             having count(distinct bt.tag_id) = #{tagIds.size()}
         </if>
+        <!-- 前台"我的博客"强制收紧：前台 BlogAuthoringController.myList 注入 authorId=当前用户 userId，
+             叠加此 AND 后"level<=userViewLevel OR author_id=userId"OR 分支被压回本人创建，
+             防登录用户在 /authoring/blog/list 召回他人博客（零 admin 回归——admin 不注入此字段，<if>不命中）。 -->
+        <if test="authorId != null">and b.author_id = #{authorId}</if>
         <!-- 权限过滤（service 层透传 userViewLevel/userId，博客无成员表轻量模型，对齐文章）：
              level <= userViewLevel OR author_id = userId（作者始终能看自己的博客，不看等级）。
              无系统查看权限者 userViewLevel=0，level<=0 永假，只走 author_id=userId 分支 → 只看自己写的。 -->

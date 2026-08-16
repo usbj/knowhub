@@ -19,6 +19,10 @@ defineProps<{
   <div class="kh-section-title">
     <div class="kh-section-title__head">
       <h2 class="kh-section-title__title">{{ title }}</h2>
+      <!-- 右侧自定义位（slot）：可在标题区右侧放附加元素（如行动按钮），与"查看更多"互斥或共用一行 -->
+      <div v-if="$slots.default" class="kh-section-title__slot">
+        <slot />
+      </div>
       <RouterLink v-if="moreTo" :to="moreTo" class="kh-section-title__more">
         {{ moreText ?? '查看更多' }}
         <el-icon><ArrowRight /></el-icon>
@@ -43,6 +47,10 @@ defineProps<{
   font-weight: 700;
   color: var(--kh-text);
   letter-spacing: -0.01em;
+}
+.kh-section-title__slot {
+  margin-left: auto;
+  flex: none;
 }
 .kh-section-title__more {
   display: inline-flex;

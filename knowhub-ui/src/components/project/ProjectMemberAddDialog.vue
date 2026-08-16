@@ -1,16 +1,18 @@
 <!--
-  ProjectMemberAddDialog —— 前台项目添加成员子弹窗
+  ProjectMemberAddDialog —— 前台项目邀请成员子弹窗
   ------------------------------------------------------------------
-  承接项目创作页成员管理面板"添加成员"时打开。顶部按字段类型（昵称/用户名/手机号）搜索
-  前台轻量选人接口（/authoring/user/search），下部展示用户分页表格，行内"加入"按钮把
-  用户抛给父层统一批量提交，已在父层已选集合中的用户显示"已加入"禁用态。
+  承接项目创作页成员管理面板"邀请成员"时打开。顶部按字段类型（昵称/用户名/手机号）搜索
+  前台轻量选人接口（/authoring/user/search），下部展示用户分页表格，行内"发邀请"按钮把
+  用户抛给父层统一发起邀请，已在父层已选集合中的用户显示"已邀请"禁用态。
   与后台 ProjectMemberAddDialog 的唯一差异：API 源从 /sys/user/list（系统 admin 接口）
   换为 /authoring/user/search（前台轻量选人接口，权限键 knowhub:authoring:user-search，
   默认分配给实验室成员角色），不依赖后台 system:user:quarry 按钮权限。
   关键参数：
-  - `excludeUserIds`：父层已加入的 userId 集合，控制"已加入"禁用态，避免重复加入。
+  - `excludeUserIds`：父层已加入项目成员的 userId 集合，控制"已邀请"禁用态，避免对已是成员者重复邀请。
+    （注意：仅含已落库 project_member 行；对处于 project_invite PENDING 的被邀请人不再点邀请，
+    后端 inviteMember 对 PENDING 会拒报"已邀请过待回应"，http 拦截器弹错、本子弹窗不卸载保留开启。）
   关键事件：
-  - `add`：抛出待加入的用户记录，父层维护本地成员集合。
+  - `add`：抛出待邀请的用户记录，父层统一调 inviteProjectMemberApi 发起邀请。
 -->
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
@@ -157,7 +159,7 @@ onMounted(() => {
 <template>
   <ElDialog
     v-model="visible"
-    title="添加成员"
+    title="邀请成员"
     width="720px"
     destroy-on-close
     append-to-body
@@ -211,9 +213,9 @@ onMounted(() => {
             size="small"
             @click="handleAdd(row as AuthoringUserRecord)"
           >
-            加入
+            发邀请
           </ElButton>
-          <ElButton v-else type="info" size="small" plain disabled>已加入</ElButton>
+          <ElButton v-else type="info" size="small" plain disabled>已邀请</ElButton>
         </template>
       </ElTableColumn>
     </ElTable>

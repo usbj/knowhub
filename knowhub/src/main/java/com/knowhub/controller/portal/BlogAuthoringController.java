@@ -10,14 +10,17 @@ import com.knowhub.support.BlogPermissionResolver;
 import com.rookie.common.annotation.Log;
 import com.rookie.common.enums.BusinessType;
 import com.rookie.common.pojo.Result;
+import com.rookie.framework.security.pojo.UserInfo;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -52,14 +55,21 @@ public class BlogAuthoringController {
     }
 
     @GetMapping("/list")
-    @Operation(summary = "前台我的博客列表（薄封装 quarryBlog，service 内回填 userId 走 author_id 分支）")
+    @Operation(summary = "前台我的博客列表（强制收紧到本人创建，叠加 BlogMapper authorId if 收紧到 author_id=me）")
     @PreAuthorize("isAuthenticated()")
     public Result<PageInfo<BlogVo>> myList(BlogQuarry quarry) {
-        // 复用后台 quarryBlog：service 内已回填当前用户 userId 走"author_id=userId OR level<=userViewLevel"
-        // 权限分支——前台登录用户调它天然只返回"自己写的 + 有权看的"。前端可传 status 过滤草稿/已发布。
-        // 无按钮权限键，登录即可看自己的作品列表。
+        // 强制只召回本人创建的博客：注入 authorId=当前用户 userId。BlogMapper quarryBlog 在 authorId 非空时
+        // 叠加 author_id = #{authorId} AND，把"level<=userViewLevel OR author_id=userId"OR 分支收紧到本人创建，
+        // 非本人创建的他人博客一律被排除（与 Article/Project 同位 myList 范式一致）。
+        // admin 后台不注入此字段，<if>不命中，原"有权看"召回口径不受影响。
+        quarry.setAuthorId(currentUserId());
         PageInfo<BlogVo> page = blogService.quarryBlog(quarry);
         return Result.success(page);
+    }
+
+    /** 当前登录用户 userId（principal 是 UserInfo，/authoring/** 已 authenticated 兜底）。 */
+    private Long currentUserId() {
+        return ((UserInfo) SecurityContextHolder.getContext().getAuthentication().getPrincipal()).getUserId();
     }
 
     @GetMapping("/{blogId}")
@@ -106,6 +116,21 @@ public class BlogAuthoringController {
     @PreAuthorize("isAuthenticated()")
     public Result<Boolean> revoke(@PathVariable Long blogId) {
         Boolean b = blogService.revokeBlog(blogId);
+        return Result.success(b);
+    }
+
+    /**
+     * 前台删除自己的博客（软删：blog.deleted=1 + 标签清理 + 缓存驱逐）。
+     * 复用 BlogService.deleteBlogInfo(Long[])，其内权限校验=作者 OR knowhub:blog:delete 按钮权限，
+     * 普通前台用户只能删自己写的（普通角色无 delete 按钮权限键）；admin 走框架短路全权。
+     * 单条入口包装 Long[]{blogId} 调底层批量接口。
+     */
+    @DeleteMapping("/{blogId}")
+    @Operation(summary = "前台删除博客（软删，仅作者或 admin）")
+    @Log(title = "博客创作", businessType = BusinessType.DELETE)
+    @PreAuthorize("isAuthenticated()")
+    public Result<Boolean> delete(@PathVariable Long blogId) {
+        Boolean b = blogService.deleteBlogInfo(new Long[]{blogId});
         return Result.success(b);
     }
 

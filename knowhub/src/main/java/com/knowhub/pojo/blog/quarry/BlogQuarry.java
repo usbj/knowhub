@@ -12,6 +12,10 @@ import org.springframework.format.annotation.DateTimeFormat;
  * 权限过滤透传字段（service 层从 BlogPermissionResolver 算出后回填，Mapper SQL 用）：
  * - userViewLevel：当前用户查看等级（0=无系统查看权限）
  * - userId：当前用户 userId（用于"作者能看自己的博客"分支：author_id = userId）
+ * 前台"我的博客"强制收紧字段（前台 controller 注入，admin 后台不注入）：
+ * - authorId：前台 myList 注入当前用户 userId → SQL 叠加 author_id=#{authorId} 强制AND，
+ *   把"level<=userViewLevel OR author_id=userId"OR 分支收紧到本人创建，避免召回他人博客。
+ *   后台 admin 管理台不注入此字段，<if>不命中，原"有权看"召回口径不受影响（与 Article/Project 同位范式）。
  * 博客无成员表（轻量权限模型，对齐文章模块），列表 SQL 过滤：
  *   level <= userViewLevel OR author_id = userId（作者始终能看自己的博客，不看等级）
  * 无系统查看权限者 userViewLevel=0，level<=0 永假，只走 author_id=userId 分支 → 只看自己写的。
@@ -46,6 +50,16 @@ public class BlogQuarry {
     /** 创建时间区间止（含）；前端 daterange 传 yyyy-MM-dd */
     @DateTimeFormat(iso = DateTimeFormat.ISO.DATE)
     private Date endTime;
+
+    // ---- "我的博客"前台列表强制收紧字段（BlogAuthoringController.myList 注入当前用户 userId） ----
+    /**
+     * 作者 userId 过滤（"我的博客"场景，由前台 controller 注入当前用户 userId）。
+     * Mapper SQL 在此字段非空时叠加 author_id = #{authorId} 强制 AND，
+     * 把"level<=userViewLevel OR author_id=userId"的 OR 分支收紧到本人创建，
+     * 与 Article/Project 同位 myList 范式一致——避免登录用户在 /authoring/blog/list 召回他人博客。
+     * 后台 admin 不注入此字段，<if> 不命中，原"有权看"召回口径不受影响。
+     */
+    private Long authorId;
 
     // ---- 权限过滤透传字段（service 层回填，非前端入参） ----
     /** 当前用户查看等级（0=无系统查看权限） */
@@ -145,6 +159,14 @@ public class BlogQuarry {
         this.userId = userId;
     }
 
+    public Long getAuthorId() {
+        return authorId;
+    }
+
+    public void setAuthorId(Long authorId) {
+        this.authorId = authorId;
+    }
+
     @Override
     public String toString() {
         return "BlogQuarry{" +
@@ -157,6 +179,7 @@ public class BlogQuarry {
                 ", createBy='" + createBy + '\'' +
                 ", beginTime=" + beginTime +
                 ", endTime=" + endTime +
+                ", authorId=" + authorId +
                 ", userViewLevel=" + userViewLevel +
                 ", userId=" + userId +
                 '}';

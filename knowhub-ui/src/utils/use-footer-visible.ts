@@ -30,6 +30,10 @@ export const useStickyBottom = (containerSelector: string) => {
   const recompute = () => {
     const vh = window.innerHeight
     let value = 0
+    // 惰性补绑：sticky 父容器带 v-else（docLoading 期未挂载），onMounted 时 querySelector 拿到 null，
+    // layout 渲染后必须在首个 scroll/resize 回调里重查补绑，否则只靠 footer 兜底、layout 末端上推不收缩 → aside 钻 header。
+    if (!containerEl) containerEl = document.querySelector<HTMLElement>(containerSelector)
+    if (!footerEl) footerEl = document.querySelector<HTMLElement>(FOOTER_SELECTOR)
     // 主：sticky 父容器末端进视口时收缩（sticky 上推触发点）
     if (containerEl) {
       const rect = containerEl.getBoundingClientRect()

@@ -11,7 +11,9 @@
   - `projectId`：项目主键，组件据此拉取成员列表。
   关键交互：
   - 成员列表展示昵称/账号/角色/权限标志位；
-  - 「添加成员」打开搜用户子弹窗（前台轻量选人接口），批量加（默认 MEMBER，已存在跳过）；
+  - 「邀请成员」打开搜用户子弹窗（前台轻量选人接口），选人后调 inviteProjectMemberApi 发起邀请
+    （插 project_invite PENDING + 通知受邀人前往 /profile?tab=collaboration 处理）；
+    被邀请人同意后后端才写 project_member 行，故发出邀请后此列表不立即出现新成员（受邀人同意后刷新可见）；
   - 每行「编辑/删除」：编辑改角色/权限标志位（单点编辑走 editProjectMemberApi）；
   - 删除成员：LEADER 不可直接删（后端拦截，前端按钮也禁用）。
 -->
@@ -31,7 +33,7 @@ import {
   ElTag,
 } from 'element-plus'
 import {
-  addProjectMembersBatchApi,
+  inviteProjectMemberApi,
   deleteProjectMemberApi,
   editProjectMemberApi,
   listProjectMembersApi,
@@ -79,7 +81,7 @@ const roleLabel: Record<string, string> = {
 const roleTagType = (role: string): 'primary' | 'warning' | 'info' =>
   role === 'LEADER' ? 'primary' : role === 'MENTOR' ? 'warning' : 'info'
 
-/** 已选成员 userId 集合，传给搜用户子弹窗控制"已加入"禁用态 */
+/** 已落库成员 userId 集合，传给搜用户子弹窗控制"已邀请"禁用态（避免对已是成员者重复邀请） */
 const excludeUserIds = computed(() => new Set(members.value.map((m) => Number(m.userId))))
 
 /**
@@ -111,7 +113,7 @@ watch(
   { immediate: true },
 )
 
-/** 打开搜用户子弹窗 */
+/** 打开邀请成员子弹窗 */
 const openAddDialog = () => {
   addDialogVisible.value = true
 }
@@ -124,16 +126,15 @@ watch(addDialogVisible, (v) => {
 
 /**
  * 方法效果：
- * 搜用户子弹窗「加入」回调：批量调接口加成员（默认 MEMBER），已存在的后端跳过；
- * 加完刷新列表。
+ * 搜用户子弹窗「发邀请」回调：对所选用户发起邀请（inviteProjectMemberApi → PENDING + 通知）；
+ * 受邀人同意后才会写入 project_member，故此处不刷新列表，仅提示「已邀请」。
  */
 const handleAddUser = async (user: AuthoringUserRecord) => {
   if (!props.projectId) return
   batchLoading.value = true
   try {
-    await addProjectMembersBatchApi(props.projectId, [Number(user.userId)])
-    ElMessage.success(`已加入：${user.nickName || user.username}`)
-    await fetchMembers()
+    await inviteProjectMemberApi(props.projectId, Number(user.userId))
+    ElMessage.success(`已邀请：${user.nickName || user.username}`)
   } finally {
     batchLoading.value = false
   }
@@ -181,7 +182,7 @@ defineExpose({ fetchMembers })
 <template>
   <div class="kh-member-panel">
     <div class="kh-member-panel__toolbar">
-      <ElButton size="small" type="primary" :loading="batchLoading" @click="openAddDialog">添加成员</ElButton>
+      <ElButton size="small" type="primary" :loading="batchLoading" @click="openAddDialog">邀请成员</ElButton>
     </div>
 
     <ElTable v-loading="loading" :data="members" size="small" border stripe>

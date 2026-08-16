@@ -4,6 +4,7 @@ import com.github.pagehelper.PageInfo;
 import com.knowhub.pojo.article.quarry.ArticleQuarry;
 import com.knowhub.pojo.article.vo.ArticlePortalVo;
 import com.knowhub.pojo.article.vo.ArticleVo;
+import com.knowhub.service.article.impl.ArticleContributorService;
 import com.knowhub.service.article.impl.ArticlePortalService;
 import com.knowhub.service.article.impl.ArticleService;
 import com.knowhub.support.ArticlePermissionResolver;
@@ -20,6 +21,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -44,6 +46,9 @@ public class ArticleAuthoringController {
 
     @Autowired
     ArticlePortalService articlePortalService;
+
+    @Autowired
+    ArticleContributorService articleContributorService;
 
     // ============================ 创作 ============================
 
@@ -118,6 +123,31 @@ public class ArticleAuthoringController {
     @PreAuthorize("isAuthenticated()")
     public Result<Boolean> revoke(@PathVariable Long articleId) {
         Boolean b = articleService.revokeArticle(articleId);
+        return Result.success(b);
+    }
+
+    /**
+     * 前台删除自己的文章（软删：article.deleted=1 + 级联软删章节 + 软删封面 file_object）。
+     * 复用 ArticleService.deleteArticleInfo(Long[])，其内权限校验=作者 OR knowhub:article:delete 按钮权限，
+     * 普通前台用户只能删自己写的（无 delete 按钮权限键）；admin 全权。单条包装 Long[]。
+     */
+    @DeleteMapping("/{articleId}")
+    @Operation(summary = "前台删除文章（软删，仅作者或 admin；级联软删章节与封面）")
+    @Log(title = "文章创作", businessType = BusinessType.DELETE)
+    @PreAuthorize("isAuthenticated()")
+    public Result<Boolean> delete(@PathVariable Long articleId) {
+        Boolean b = articleService.deleteArticleInfo(new Long[]{articleId});
+        return Result.success(b);
+    }
+
+    @PostMapping("/{articleId}/apply-contributor")
+    @Operation(summary = "前台申请成为该文章贡献者（建一条 PENDING 申请并通知作者去协作页审批）")
+    @Log(title = "文章贡献申请", businessType = BusinessType.INSERT)
+    @PreAuthorize("isAuthenticated()")
+    public Result<Boolean> applyContributor(@PathVariable Long articleId) {
+        // service 内去重（已有 PENDING/APPROVED 的 ACTIVE 行则提示，REJECTED 行允许重申软删旧行再插新 PENDING）；
+        // 防作者申请自己（作者天然能写自己文章的章节）。通知文章作者 routePath=/collaboration?tab=received-applications。
+        Boolean b = articleContributorService.apply(articleId);
         return Result.success(b);
     }
 

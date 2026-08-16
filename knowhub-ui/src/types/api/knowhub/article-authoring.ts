@@ -48,6 +48,13 @@ export interface ArticleAuthoringDetail {
   tagNames?: string[]
   isAuthor?: boolean
   canEdit?: boolean
+  /**
+   * 能否像作者那样自由管理章节（排序/改文章元信息/发布/撤回/删除章节）。
+   * = 文章作者 OR 系统编辑级，不含被作者批准的贡献者。贡献者可提交新章节/编辑自己章节（canEdit），
+   * 但不可改章节顺序、不可发布/撤回/删除文章、不可删任意章节。chapters.vue 拖拽手柄/发布撤回按钮据此显隐。
+   * 后端 getArticleInfo 回填。
+   */
+  canManageChapters?: boolean
   /** 评论区开关 1开/0关，编辑回填用 */
   commentEnabled?: number
   /** 评论精选开关 0关1开，编辑回填用 */
@@ -88,6 +95,11 @@ export interface ArticleRecord {
   updateTime?: string
   tagNames?: string[]
   tagIds?: number[]
+  /**
+   * 「我的作品」列表回填的角色标识：AUTHOR=我是作者；CONTRIBUTOR=我被批准为贡献者。
+   * 仅 /authoring/article/my 列表回填，驱动前端行显「贡献者」标识（作者默认不显）。其它列表场景为 undefined。
+   */
+  myRole?: 'AUTHOR' | 'CONTRIBUTOR'
 }
 
 /**
@@ -116,6 +128,8 @@ export interface ChapterAuthoringDetail {
   sortOrder?: number
   content?: string
   status?: string
+  /** 章节作者 userId（提交者），chapters.vue 判「我的章节」/下架按钮显隐（非自己章节作者才显下架） */
+  authorId?: number
   /** 章节作者昵称（join sys_user 带出，列表展示用） */
   authorNickname?: string
   /** 所属文章标题（join article 带出，章节管理页头部展示用） */

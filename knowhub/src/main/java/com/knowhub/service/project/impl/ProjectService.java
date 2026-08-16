@@ -66,6 +66,15 @@ public interface ProjectService {
     /** 删除成员（LEADER 不可删，需先换负责人） */
     Boolean deleteMember(Long memberId);
 
+    /** 发起项目成员邀请（PENDING 待受邀人同意，canOp(edit) 校验；去重/重邀幂等，受邀请人随后在个人中心「我的协作」处理） */
+    Boolean inviteMember(Long projectId, Long inviteeUserId);
+
+    /** 判定指定用户对项目是否为「负责人或作者」（前台成员管理操作前置鉴权用，后台 admin controller 不走此口径） */
+    boolean isLeaderOrAuthor(Long projectId, Long userId);
+
+    /** 同 isLeaderOrAuthor，但按 memberId 反查 projectId（前台删除成员路由只有 memberId 入参时用） */
+    boolean isLeaderOrAuthorByMemberId(Long memberId, Long userId);
+
     // ---- 文件树管理 ----
 
     /** 文件树（扁平节点 + join file_object 元数据，供前端组装树） */

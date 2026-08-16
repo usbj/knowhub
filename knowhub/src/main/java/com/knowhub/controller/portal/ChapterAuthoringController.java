@@ -3,6 +3,7 @@ package com.knowhub.controller.portal;
 import com.github.pagehelper.PageInfo;
 import com.knowhub.pojo.article.quarry.ChapterQuarry;
 import com.knowhub.pojo.article.vo.ChapterReviewLogVo;
+import com.knowhub.pojo.article.vo.ChapterReviewVo;
 import com.knowhub.pojo.article.vo.ChapterVo;
 import com.knowhub.service.article.impl.ChapterService;
 import com.rookie.common.annotation.Log;
@@ -19,6 +20,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
@@ -33,7 +35,8 @@ import java.util.List;
  * 章节不分等级、可见性随文章、无标签无封面，创作表单精简（章节名+排序+正文）。章节状态机由文章 visibility
  * + 提交者是否作者决定（详见 ChapterServiceImpl）。无按钮权限键——登录即可在自己有权的文章下提交/管理章节。
  * <p>
- * 章节审核（仅 SEMIPUBLIC 文章非作者提交）：前台文章作者可在此走 reviewChapter 审核，本控制器复用后台 reviewChapter。
+ * 章节审核（仅 SEMIPUBLIC 文章非作者提交）：前台文章作者可在此走 reviewChapter 审核，本控制器复用后台 reviewChapter
+ * （PUT /authoring/chapter/review，接 ChapterReviewVo，薄封装，鉴权在 service 内）。
  */
 @Tag(name = "章节创作", description = "前台作者/编辑写章节：列表/编辑回填/提交/编辑/发布/撤回/删除/审核")
 @RestController
@@ -124,5 +127,27 @@ public class ChapterAuthoringController {
     public Result<List<ChapterReviewLogVo>> reviewLog(@PathVariable Long chapterId) {
         List<ChapterReviewLogVo> list = chapterService.listReviewLog(chapterId);
         return Result.success(list);
+    }
+
+    @PutMapping("/review")
+    @Operation(summary = "前台章节审核（复用 reviewChapter，文章作者审 SEMIPUBLIC 非作者提交章节，pass=true 通过/false 驳回需 advice）")
+    @Log(title = "章节审核", businessType = BusinessType.UPDATE)
+    @PreAuthorize("isAuthenticated()")
+    public Result<Boolean> review(@RequestBody ChapterReviewVo vo) {
+        // 复用后台 reviewChapter：内部校验章节态=PENDING_AUTHOR_REVIEW + 审核人=文章作者 OR knowhub:chapter:review
+        // + 不能审自己提交的（回避）。落 review 流水 + 通知章节提交者（routePath=/article/{articleId}/read/{chapterId}）。
+        Boolean b = chapterService.reviewChapter(vo);
+        return Result.success(b);
+    }
+
+    @PutMapping("/{chapterId}/takedown")
+    @Operation(summary = "前台作者下架贡献者章节（复用 takedownChapter，advice 必填，REVOKED + 写 REJECT 流水 + 通知贡献者带原因）")
+    @Log(title = "章节下架", businessType = BusinessType.UPDATE)
+    @PreAuthorize("isAuthenticated()")
+    public Result<Boolean> takedown(@PathVariable Long chapterId, @RequestParam String advice) {
+        // 复用 takedownChapter：内部校验操作人是文章作者 OR knowhub:chapter:delete 按钮权限，advice 必填，
+        // 章节状态置 REVOKED + 写 chapter_review_log REJECT 流水（advice=下架原因）+ 通知章节作者（贡献者）。
+        Boolean b = chapterService.takedownChapter(chapterId, advice);
+        return Result.success(b);
     }
 }

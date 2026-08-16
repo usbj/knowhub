@@ -63,7 +63,7 @@
         <if test="status != null and status != ''">and p.status = #{status}</if>
         <if test="reviewStatus != null and reviewStatus != ''">and p.review_status = #{reviewStatus}</if>
         <if test="createBy != null and createBy != ''">and p.create_by = #{createBy}</if>
-        <if test="authorId != null">and p.author_id = #{authorId}</if>
+        <if test="authorId != null">and (p.author_id = #{authorId} or p.project_id in (select pm.project_id from project_member pm where pm.user_id = #{authorId} and pm.deleted = 0))</if>
         <if test="beginTime != null">and p.create_time &gt;= #{beginTime}</if>
         <if test="endTime != null">and p.create_time &lt;= #{endTime}</if>
         and (

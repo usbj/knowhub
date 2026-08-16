@@ -63,7 +63,7 @@
         <if test="status != null and status != ''">and a.status = #{status}</if>
         <if test="reviewStatus != null and reviewStatus != ''">and a.review_status = #{reviewStatus}</if>
         <if test="createBy != null and createBy != ''">and a.create_by = #{createBy}</if>
-        <if test="authorId != null">and a.author_id = #{authorId}</if>
+        <if test="authorId != null">and (a.author_id = #{authorId} or a.article_id in (select ac.article_id from article_contributor ac where ac.user_id = #{authorId} and ac.status = 'APPROVED' and ac.deleted = 0))</if>
         <if test="beginTime != null">and a.create_time &gt;= #{beginTime}</if>
         <if test="endTime != null">and a.create_time &lt;= #{endTime}</if>
         <if test="tagIds != null and tagIds.size() > 0">

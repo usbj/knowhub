@@ -23,7 +23,9 @@ import com.knowhub.pojo.common.vo.ReviewLogVo;
 import com.knowhub.pojo.common.vo.ReviewVo;
 import com.knowhub.service.blog.impl.BlogService;
 import com.knowhub.service.history.impl.ViewHistoryService;
+import com.knowhub.service.review.ReviewNotifyService;
 import com.knowhub.enums.history.ViewBizType;
+import com.knowhub.support.NotifySupport;
 import com.rookie.common.exception.ServiceException;
 import com.knowhub.pojo.blog.entity.Blog;
 import com.knowhub.pojo.blog.entity.BlogCollect;
@@ -89,6 +91,12 @@ public class BlogServiceImpl implements BlogService {
 
     @Autowired
     ViewHistoryService viewHistoryService;
+
+    @Autowired
+    NotifySupport notifySupport;
+
+    @Autowired
+    ReviewNotifyService reviewNotifyService;
 
     @Autowired
     StringRedisTemplate redisTemplate;
@@ -301,6 +309,9 @@ public class BlogServiceImpl implements BlogService {
             action = ReviewAction.SUBMIT;
             // 标记存在待审核文章，供对账定时任务快速判断是否需要扫表收口（不计数仅标记存在性）
             redisTemplate.opsForValue().set(baseKey + CACHE_PENDING_FLAG, "1");
+            // 提审通知：按系统设置 knowhub.review.notify_role_key 通知持该角色的有效用户（总开关缺省关）
+            reviewNotifyService.notifyReviewers("blog", blogId, exist.getTitle(),
+                    userInfo.getUsername(), userInfo.getUsername());
         } else {
             update.setStatus(BlogStatus.PUBLISHED.getCode());
             update.setPublishTime(now);
@@ -630,18 +641,45 @@ public class BlogServiceImpl implements BlogService {
     }
 
     /**
-     * 审核结果通知作者。**当前为预留空实现**——rookie 现只有分组通知、无个人通知通道，
-     * 待 rookie 通知模块支持投递给单个 userId 后在此接入 SysNoticeService，签名零改动。
-     * 当前后台审核记录+前台审核时间线展示已能闭环传达审核结果，通知为增强项非必需。
+     * 审核结果通知作者。2026-08-15 落地个人通知通道（NotifySupport）——反转旧策略"前后台展示代替通知"。
+     *
+     * 通知范围：
+     * - APPROVE/REJECT 发审核结果通知（作者通过顶栏铃铛得知作品过了没过）；
+     * - PUBLISH（审核开关关时直通发布）发"已发布"通知，告知作者作品已直接发布无需审核；
+     * - SUBMIT（作者自己提交进 PENDING_REVIEW）不发——作者是动作发起人，已知晓提交结果；
+     * - REVOKE 不发（撤回是作者主动行为，无需自通知自己）。
+     * 回避保障：reviewBlog 在调用前已对 author_id==userId 抛"不能审核自己提交的文章"，
+     *           因此通知分支不会给作者自己发审核结果通知；publish 的 PUBLISH 直通分支无回避顾虑。
+     * 失败由 NotifySupport 内部 try/catch 吞掉，不阻断已落库的审核状态变更（与 writeReviewLog 同口径）。
      *
      * @param blog   被审文章（用其 title/authorId 拼通知内容、定位收件人）
      * @param action 本次动作（SUBMIT/APPROVE/REJECT/REVOKE/PUBLISH）
-     * @param advice 审核意见（驳回必填，通过可选）
+     * @param advice 审核意见（驳回必填，通过可选；PUBLISH 直通为 null）
      */
     private void notifyReviewResult(Blog blog, ReviewAction action, String advice) {
-        // 预留：待 rookie 支持个人通知后实现，例如
-        // sysNoticeService.addSysNoticeInfo(new SysNoticeVo(... 标题/内容/收件人 authorId ...));
-        // 当前前台审核时间线展示已代替通知闭环，此处不报错不阻断。
+        if (blog == null || blog.getAuthorId() == null) {
+            return;
+        }
+        String title;
+        String content;
+        switch (action) {
+            case APPROVE:
+                title = "你的博客审核通过";
+                content = "《" + blog.getTitle() + "》审核通过，已发布。" + (advice != null && !advice.isEmpty() ? "审核意见：" + advice : "");
+                break;
+            case REJECT:
+                title = "你的博客被驳回";
+                content = "《" + blog.getTitle() + "》被驳回，请修改后重新发布。" + (advice != null && !advice.isEmpty() ? "驳回原因：" + advice : "");
+                break;
+            case PUBLISH:
+                title = "你的博客已发布";
+                content = "《" + blog.getTitle() + "》已直接发布（审核未开启）。";
+                break;
+            default:
+                // SUBMIT / REVOKE 不通知：作者主动行为，已知晓提交/撤回，无需自提醒。
+                return;
+        }
+        notifySupport.notifyUser(blog.getAuthorId(), title, content, "/blog/" + blog.getBlogId(), "system");
     }
 
     private void fillTagNamesForList(List<BlogVo> list) {

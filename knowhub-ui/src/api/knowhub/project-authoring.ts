@@ -58,6 +58,10 @@ export const publishProjectAuthoringApi = (projectId: number) =>
 export const revokeProjectAuthoringApi = (projectId: number) =>
   put<ApiResult<boolean>>(`/authoring/project/${projectId}/revoke`)
 
+/** 前台删除项目（软删 project.deleted=1 + 级联软删项目文件，仅作者或 admin；普通用户仅删自己创建的）。 */
+export const deleteProjectAuthoringApi = (projectId: number) =>
+  del<ApiResult<boolean>>(`/authoring/project/${projectId}`)
+
 // ============================ 成员管理（前台创作者管理自己的项目成员） ============================
 
 /** 前台项目成员列表（薄封装 listMembers，service 内 canOp(view) 校验防越权）。 */
@@ -71,6 +75,14 @@ export const addProjectMemberApi = (projectId: number, data: ProjectMemberRecord
 /** 前台批量新增项目成员（默认 MEMBER；薄封装 addMembersBatch）。 */
 export const addProjectMembersBatchApi = (projectId: number, userIds: number[]) =>
   post<ApiResult<boolean>, number[]>(`/authoring/project/${projectId}/member/batch`, userIds)
+
+/**
+ * 前台发起项目成员邀请（POST /authoring/project/{projectId}/invite?userId=...，薄封装 inviteMember）。
+ * 替代直加成员：负责人选人→PENDING 邀请→受邀人在「我的协作」页同意/拒绝，同意才落 project_member。
+ * 后端 service 校验 canOp(edit) + 不邀请自己/已成员 + 去重/重邀幂等，并通知受邀人。
+ */
+export const inviteProjectMemberApi = (projectId: number, userId: number) =>
+  post<ApiResult<boolean>>(`/authoring/project/${projectId}/invite`, undefined, { params: { userId } })
 
 /** 前台编辑项目成员（薄封装 editMember，LEADER 唯一性 + 换负责人同步 author_id）。 */
 export const editProjectMemberApi = (data: ProjectMemberRecord) =>
