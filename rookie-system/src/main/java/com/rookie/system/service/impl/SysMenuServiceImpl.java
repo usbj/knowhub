@@ -136,6 +136,10 @@ public class SysMenuServiceImpl implements SysMenuService {
             SysMenuVo parentMenu = hashMap.get(sysMenuVo.getParentId());
             if (parentMenu != null) {
                 parentMenu.getSonMenus().add(sysMenuVo);
+            } else {
+                // 父节点不在当前结果集（如按名称/状态过滤时父节点被滤掉）：作为顶级节点保留，
+                // 避免整棵子树被静默丢弃，导致前端列表"数据消失"
+                menuVos.add(sysMenuVo);
             }
         }
 

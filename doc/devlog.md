@@ -10,6 +10,343 @@
 
 ---
 
+## 2026-08-17
+### 04:40 — 修复通知下拉滚动失效：改用 EP 原生 max-height 滚动机制
+
+用户反馈：下拉高度只显示 6 条半（60vh 截断生效），但滚轮滚不动。排查 EP 2.14 源码发现：`ElDropdown` 内部用 `ElScrollbar` 包裹下拉内容（`.el-scrollbar__wrap { height:100%; overflow:auto }`），此前把 `max-height: 60vh` + `overflow-y: auto` 加在内层 `.el-dropdown-menu` 上，形成「外层 scrollbar wrap + 内层 ul」双层滚动容器，滚轮事件被外层吞掉、内层永远滚不动（仅高度被截断）。
+
+- `rookie-ui/src/layout/components/NavBar/index.vue` — 通知下拉 `ElDropdown` 加 `max-height="60vh"` prop（EP 官方滚动机制：wrap 收到 `max-height` 内联样式后成为滚动容器，与 Select 下拉同款，自带滚动条）；全局样式删除 `.el-dropdown-menu` 上的 `max-height`/`overflow-y`（避免双层滚动容器），吸顶标题与 hover 残留修复保留；`NOTICE_MENU_SELECTOR` 改为 `.nav-bar-notice-dropdown .el-scrollbar__wrap`，滚动懒加载监听与自动补页判断（`scrollHeight - clientHeight`）都改挂/改量到 wrap
+- 验证：前端 `npx vue-tsc -p tsconfig.app.json --noEmit` 通过
+
+## 2026-08-17
+### 04:10 — 修复通知下拉无法下滑：打开时自动补页直到可滚动
+
+用户反馈下拉栏无法下滑。根因：首屏每页 10 条在 `max-height: 60vh` 内往往刚好放得下（或只超出一点），菜单没有滚动条时滚轮无处可滚，滚动懒加载事件永远触发不了，用户看不到后面的通知。
+
+- `rookie-ui/src/layout/components/NavBar/index.vue` — 新增 `ensureNoticeMenuScrollable`：下拉打开后（及列表数据每次变化后）检查菜单容器 `scrollHeight - clientHeight <= 2`（内容不满一屏）且 `hasMore` 时自动加载下一页，递归补页直到可滚动或没有更多，之后交给用户滚轮触发；下拉隐藏后不再自动补页（`isNoticeDropdownVisible` 守卫）；补页失败静默停止、滚动/重新打开时重试；滚动触发加载也补上 `.catch` 防未处理拒绝
+- 验证：前端 `npx vue-tsc -p tsconfig.app.json --noEmit` 通过
+
+## 2026-08-17
+### 03:50 — 通知下拉懒加载测试数据脚本
+
+- `sql/sys_notice_lazy_load_test.sql` — 新建 20 条已发布通知测试数据（标题前缀「【懒加载测试】」）：全部 `publish_scope='ALL'`（admin 登录即全可见）、2 条置顶（测试置顶恒排最前）、3 条预置 admin 已读记录（第 3/5/12 条，未读数应显示 17）、1 条 `need_confirm=1`（第 6 条）、发布时间从近到远错开（第 11 条起跨页边界）；脚本可重复执行（先清理前缀数据再插入），用于验证通知下拉分页、滚动加载更多、未读徽标、置顶排序
+
+## 2026-08-17
+### 03:40 — 通知下拉懒加载（分页 + 滚动加载更多 + 独立未读数接口）
+
+用户要求通知下拉在已有 max-height + 内部滚动基础上做懒加载，避免一次拉全量通知正文。改造思路：**后端 `/sys/notice/my` 改分页**（复用 `PageUtil.startPage` + PageHelper，排序与可见范围不变），**新增独立未读计数接口**（铃铛徽标不能再依赖已加载的部分列表）。
+
+- `rookie-system/.../SysNoticeMapper.java` + `mapper/system/SysNoticeMapper.xml` — 新增 `countUnreadNoticesForUser`：未读 = 可见范围内 `NOT EXISTS (sys_notice_read where read_time is not null)`，可见范围 SQL 与 `getNoticesForUser` 保持一致（ALL / 分组 / 指定成员）
+- `rookie-system/.../SysNoticeService.java` / `SysNoticeServiceImpl.java` — `getMyNotices` 返回类型 `List<SysNoticeVo>` 改为 `PageInfo<SysNoticeVo>`（`PageUtil.startPage()` 前置 + 分页装配 `hasRead`/`hasConfirmed`，每页逐条按读记录集合打标）；新增 `countUnreadNotices` 实现
+- `rookie-system/.../SysNoticeController.java` — `/sys/notice/my` 响应改为 `Result<PageInfo<SysNoticeVo>>`（pageNum/pageSize 可选，默认 1/10）；新增 `GET /sys/notice/unread-count` 返回 `Result<Long>`
+- `rookie-ui/src/api/system/notice.ts` — `getMyNoticesApi` 改为分页版 `getMyNoticesPageApi`（`getPage` 归一化为 records/total/pages）；新增 `getUnreadCountApi`
+- `rookie-ui/src/stores/notice.ts` — 列表改分页累积：`hasMore`/`loadingMore` 标记 + `loadMoreNotices`（滚动到底追加下一页，防并发）；`unreadCount` 由「列表内取反统计」改为独立 ref，来自 `fetchUnreadCount` 接口；`markAsRead` 乐观更新时同步递减未读数；`resetNoticeState` 全量重置
+- `rookie-ui/src/layout/components/NavBar/index.vue` — 下拉 `@visible-change`：显示时拉首屏 + 刷未读数，并在菜单容器（teleport 到 body，按 `.nav-bar-notice-dropdown .el-dropdown-menu` 选择器查找）挂载 scroll 监听，滚动近底部（`scrollTop + clientHeight >= scrollHeight - 8`）触发 `loadMoreNotices`，隐藏时卸载（含组件卸载兜底）；新增底部状态行「继续滚动加载更多 / 加载中… / 已加载全部」，首屏未加载完显示「加载中…」而非误报「暂无通知」
+- `doc/api.md` — 消息通知「获取我的消息」改为分页四段式文档（Query 参数 + PageInfo 响应），新增「获取我的未读数」小节，原第 9/10 节顺延
+- 验证：后端 `mvnw compile` 通过；前端 `npx vue-tsc -p tsconfig.app.json --noEmit` 通过
+
+## 2026-08-17
+### 03:10 — 头导航通知下拉最大高度限制 + 内部滚动
+
+- `rookie-ui/src/layout/components/NavBar/index.vue` — 全局样式块（popper teleport 到 body 后 scoped 不命中）新增：`.nav-bar-notice-dropdown .el-dropdown-menu` 设 `max-height: 60vh` + `overflow-y: auto`（通知过多时菜单内滚动，不撑出视口）；`.nav-bar__notice-head` 设 `position: sticky; top: 0` 吸顶（背景 `--el-bg-color-overlay` 与 popper 同色，盖住滚动内容）
+- 验证：前端 `npx vue-tsc -p tsconfig.app.json --noEmit` 通过
+
+## 2026-08-17
+### 02:50 — 问号图标垂直居中微调
+
+用户反馈问号偏上。原因：inline-flex 元素的默认 `vertical-align: baseline` 使其底部贴文字基线、视觉偏上。在 label flex 容器内用 `align-self: center` 强制垂直居中。
+
+- `rookie-ui/src/views/system/menu/index.vue` — `.sort-help` 增加 `align-self: center`
+- 验证：前端 `npx vue-tsc -p tsconfig.app.json --noEmit` 通过
+
+## 2026-08-17
+### 02:40 — 问号图标放回标签「排序」后面（label 插槽直接子项）
+
+用户要求问号放在标签文字后面。确认 EP 的 `.el-form-item__label` 为 inline-flex + `justify-content: flex-end`，插槽内容天然横排；此前竖排源于多包了一层 inline-flex span 被容器挤压。改为：**label 插槽直接放两个子项**——"排序"文本节点 + ElTooltip 包裹的 18px 文本问号 span（不包中间层），问号与文字同行、右对齐、margin-left 4px 间距；字体继承 label 与其他标签一致。
+
+- `rookie-ui/src/views/system/menu/index.vue` — 排序表单项 label 插槽结构调整（文本 + 问号直接子项）；移除 `.sort-field` 输入框右侧方案
+- 验证：前端 `npx vue-tsc -p tsconfig.app.json --noEmit` 通过
+
+## 2026-08-17
+### 02:25 — 排序问号图标改纯文本实现（修复 231px 尺寸失控）
+
+用户反馈图标渲染成 231×231px 并把输入框挤没。原因：Element Plus 的 `el-icon`（QuestionFilled）在该组合下尺寸继承失控（`font-size: inherit` 未吃到覆盖，按异常大尺寸渲染），且 ElTooltip 的 trigger 包裹影响 scoped 样式命中。改为**纯文本问号**：`<span class="sort-help">?</span>`，宽高固定 18px（输入框 32px 的一半）、圆形边框背景，尺寸完全由 CSS 控制、无任何继承依赖。
+
+- `rookie-ui/src/views/system/menu/index.vue` — 排序表单项说明图标由 `QuestionFilled`（el-icon）改为纯文本 `?` span（固定 18px 圆形）；移除 `QuestionFilled` import 与旧样式
+- 验证：前端 `npx vue-tsc -p tsconfig.app.json --noEmit` 通过
+
+## 2026-08-17
+### 02:10 — 排序说明图标改放输入框右侧（放弃 label 内绝对定位）
+
+用户反馈图标定位在输入框下方/大小异常。原因：label 区域固定 92px 且文字右对齐，紧贴输入框（input 从 92px 起），label 文字右侧无可用空间；此前绝对定位 `left: 94px` 恰好叠在输入框左边缘上。改为：图标放**输入框右侧**，`.sort-field` flex 水平排列 + `align-items: center` 垂直居中，`font-size: 16px` 固定大小（输入框 32px 的一半），悬浮说明不变。
+
+- `rookie-ui/src/views/system/menu/index.vue` — 排序表单项内容改为 `.sort-field`（ElInputNumber + ElTooltip 图标）flex 布局；移除 `.sort-item` 绝对定位与 `.label-help` 样式
+- 验证：前端 `npx vue-tsc -p tsconfig.app.json --noEmit` 通过
+
+## 2026-08-17
+### 01:55 — 排序说明图标重构：label 属性原生渲染 + 图标绝对定位
+
+用户反馈三点：标签与输入框未居中对齐、标签字体与其他标签不一致、问号图标过大且压住输入框。根因：`#label` 插槽内容脱离 EP label 的默认渲染（字体/行高/对齐异常）。改为：`label` 用普通属性（与其他标签原生一致），问号图标**绝对定位**于 label 文字右侧（left 基于 label-width 92px）、`top:50%+translateY` 与输入框垂直居中、固定 `font-size:16px`（输入框 32px 的一半），不参与文档流布局。
+
+- `rookie-ui/src/views/system/menu/index.vue` — 排序表单项改回 `label="排序"` + `.sort-item` 定位参照；`.label-help` 改为绝对定位样式；移除 `#label` 插槽与 `label-help-wrap` 样式
+- 验证：前端 `npx vue-tsc -p tsconfig.app.json --noEmit` 通过
+
+## 2026-08-17
+### 01:40 — 修复排序 label 竖排：说明图标改行内结构
+
+用户反馈排序标签"排/？/序"竖排。原因：label 插槽内用 `inline-flex` span 被容器挤压换行。改为纯行内结构：`display: inline` + `white-space: nowrap` 的包装 span，问号图标 `inline-block` + `vertical-align`，保证「排序」与图标恒同行。
+
+- `rookie-ui/src/views/system/menu/index.vue` — 排序 label 插槽结构调整（`.label-help-wrap` inline + nowrap；`.label-help` inline-block），悬浮说明逻辑不变
+- 验证：前端 `npx vue-tsc -p tsconfig.app.json --noEmit` 通过
+
+## 2026-08-17
+### 01:30 — 菜单排序说明改为 label 后问号图标悬浮提示
+
+- `rookie-ui/src/views/system/menu/index.vue` — 排序表单项改用 `#label` 插槽：「排序」文字 + `QuestionFilled` 问号图标（ElTooltip 包裹，悬浮显示"同级内按排序值升序展示（越小越靠前，可填负数）"）；问号图标悬停变主色、cursor: help；移除输入框上的 title 说明
+- 验证：前端 `npx vue-tsc -p tsconfig.app.json --noEmit` 通过
+
+## 2026-08-17
+### 01:20 — 菜单排序输入说明改为悬浮提示
+
+- `rookie-ui/src/views/system/menu/index.vue` — 删除排序输入框下方的说明文字，改为 `title` 属性悬浮提示（鼠标悬停显示"同级内按排序值升序展示（越小越靠前，可填负数）"），并移除对应样式
+- 验证：前端 `npx vue-tsc -p tsconfig.app.json --noEmit` 通过
+
+## 2026-08-17
+### 01:10 — 菜单操作列分组修正：内联仅「编辑」，新增/启停/删除全部进更多
+
+上轮改动把「停用/启用」「删除」移回了内联，与用户要求不符（用户只要求「新增」进更多）。修正为：内联仅「编辑」，更多下拉包含「新增 / 启停 / 删除」。
+
+- `rookie-ui/src/views/system/menu/index.vue` — `getInlineMenuActions` 仅保留 `edit`；`getOverflowMenuActions` 返回除 `edit` 外的全部操作（新增/启停/删除）
+- 验证：前端 `npx vue-tsc -p tsconfig.app.json --noEmit` 通过
+
+## 2026-08-17
+### 01:00 — 菜单管理页 UI 调整（表格不再撑开视图 + 新增移入更多）
+
+- `rookie-ui/src/views/system/menu/index.vue` —
+  - 布局：`.system-menu-view` 加 `min-width: 0`，卡片及其内容区同样允许收缩，菜单树表格列宽总和超出时在表格内部横向滚动，不再把整个视图撑开产生页面级水平移动
+  - 操作列：内联按钮固定为「编辑 / 启停 / 删除」，「新增」移入“更多”下拉（原逻辑为按数量截断，超过 3 个时前 2 个内联，新增/删除顺序不稳定）
+- 验证：前端 `npx vue-tsc -p tsconfig.app.json --noEmit` 通过
+
+## 2026-08-17
+### 00:30 — 修复菜单管理页渲染崩溃：formatCellValue 对数字 sort 调用 trim
+
+用户反馈"改排序后菜单项及后面数据获取不到、路由跳转异常"，并贴出前端报错：`Uncaught (in promise) TypeError: value.trim is not a function at formatCellValue (index.vue:552) at index.vue:620`。定位：排序列（sort）传入数字，原 `formatCellValue = (value) => value && value.trim() ? value : '--'` 对数字 0 走短路不报错，对数字 1（sort 有值）执行 `1.trim()` 抛 TypeError，**表格渲染在该行中断，该行及后续行全部不渲染**——数据未丢失，是渲染崩溃导致"获取不到"（此前的孤儿节点丢弃修复保留，属防御性改进）。
+
+- `rookie-ui/src/views/system/menu/index.vue` — `formatCellValue` 改为类型安全实现：空值（null/undefined/空串）返回 '--'，其余 `String(value).trim()`（数字/字符串均可），方法注释补充说明
+- 验证：前端 `npx vue-tsc -p tsconfig.app.json --noEmit` 通过
+- 未改动：后端与数据库（此前排查确认 85 条数据完整、排序 SQL 正常、无接口报错）
+
+## 2026-08-16
+### 23:50 — 修复菜单数据"消失"：buildMenuTree 孤儿节点静默丢弃
+
+用户反馈"改排序后菜单管理数据项消失"。排查：数据库 85 条菜单全在、菜单接口无报错、前端无过滤逻辑。定位根因：`buildMenuTree` 对**父节点不在当前结果集**的节点（如菜单管理页按名称/状态筛选时父节点被过滤掉）**静默丢弃**，整棵子树在响应中缺失——"该条及其后数据获取不到"。用户在查询区残留筛选条件时编辑保存（改 sort），保存后按残留条件刷新即触发。
+
+- `rookie-system/.../service/impl/SysMenuServiceImpl.java` — `buildMenuTree`：父节点不在结果集时改为**作为顶级节点保留**（不再静默丢弃），过滤场景下子树不再消失
+- `rookie-system/.../service/impl/SysLoginServiceImpl.java` — 同名 `buildMenuTree` 同样修复（侧边栏菜单树防御）
+- 验证：后端 `mvnw compile` 通过
+- 说明：sort 与"消失"是相关性而非因果（sort 是编辑内容，触发条件是残留筛选 + 孤儿丢弃）；顺带确认菜单排序 SQL 与数据本身均正常（85 行全量、52/69 sort=1 已落库）
+
+## 2026-08-16
+### 22:50 — 修复菜单排序联调问题（树折叠误判"数据消失" + 排序规则/负数支持）
+
+联调反馈"改排序后侧边栏顺序不变、菜单管理数据项消失"。排查结论：数据未丢失（sys_menu 85 行全在、无删除标记）、排序已生效（操作日志确认 sort 落库），两个表现均为前端观感/规则问题：
+
+- 数据项"消失"：菜单管理页 ElTable 树默认折叠，刷新/重新拉取后二级菜单收起，误以为数据丢失
+- 顺序"不变"：① 测试改的菜单（日志管理/系统设置 sort=1）本来就排在同级末尾，1>0 仍在末尾故无可见变化；② ElInputNumber min=0 导致无法设负数，排不到默认 0 的项前面
+
+- `rookie-ui/src/views/system/menu/index.vue` — 修复：`fetchMenuList` 成功后自动展开全部节点（抽取 `expandAllRows`/`collapseAllRows`/`walkMenus`，折叠/展开按钮复用）；排序输入 min 改为 -9999（允许负数排到默认 0 项之前）；表单补充排序规则提示文案
+- 验证：前端 `npx vue-tsc -p tsconfig.app.json --noEmit` 通过
+- 未改动：后端与数据库（排序 SQL/数据均正常）；侧边栏菜单树在登录/刷新时重新拉取，修改排序后刷新页面即生效
+
+## 2026-08-16
+### 00:10 — 菜单排序支持 + 头像加载失败/为空兜底首字母
+
+- `sql/sys_menu_sort.sql`（新建）— sys_menu 增加 `sort` 列（int NOT NULL DEFAULT 0，幂等：information_schema 判断列是否存在 + PREPARE 动态 ALTER）；存量数据归零（顺序由 `order by sort, menu_id` 兜底保持）；排序规则：同一父级下 sort 升序，相同按 menu_id
+- `rookie-common/.../pojo/entity/SysMenu.java` / `rookie-system/.../pojo/vo/SysMenuVo.java` — 新增 `sort` 字段
+- `rookie-system/.../resources/mapper/system/SysMenuMapper.xml` — resultMap 补 sort；quarrySysMenu 补 `order by parent_id, sort, menu_id`（原无排序）；getSysMenuByMenuIds / getSysMenuAllEnabled 排序改为 `parent_id, sort, menu_id`；addSysMenu / editSysMenuInfo 支持 sort 列
+- `rookie-ui/src/types/api/system/menu.ts` — SysMenuRecord 新增 `sort?`
+- `rookie-ui/src/views/system/menu/config.ts` — createDefaultMenuForm 新增 `sort: 0`
+- `rookie-ui/src/views/system/menu/index.vue` — 树表格新增「排序」列（icon 后、状态前）；表单新增「排序」输入（ElInputNumber，0-9999，越小越靠前）
+- `rookie-ui/src/components/UserAvatar.vue`（新建）— 用户头像公共组件：有 src 且加载成功显示图片，无 src 或 **@error 加载失败**时回退展示名首字母大写；src 变化重置失败标志；尺寸由外层容器控制
+- `rookie-ui/src/layout/components/NavBar/index.vue` / `views/profile/index.vue` — 头像改用 UserAvatar（原 img/字母分支与专用样式删除，字母字号继承外层容器与原行为一致）
+- 验证：后端 `mvnw compile` 通过；前端 `npx vue-tsc -p tsconfig.app.json --noEmit` 通过
+- 待用户操作：执行 `sql/sys_menu_sort.sql` 后重启后端（侧边栏/菜单管理页按 sort 排序生效）；菜单管理页可调整各菜单「排序」值，保存后刷新页面即按新顺序展示
+
+## 2026-08-15
+### 23:50 — 删除定时任务测试用 Demo 任务
+
+测试完成，按用户要求清理测试产物。
+
+- `rookie-system/.../task/DemoTask.java`（删除）— 定时任务测试任务类（含 task 目录）
+- `sql/sys_job_demo.sql`（删除）— 测试任务数据脚本（「测试任务-每30秒」「测试任务-带参数」）
+- 验证：后端 `mvnw compile` 通过
+- 待用户操作：数据库 `sys_job` 表中的两条测试任务数据需一并清理（「任务管理」页删除，或执行 `DELETE FROM sys_job WHERE bean_name = 'demoTask';`），否则重启后任务仍会注册且因 Bean 不存在而执行失败
+
+## 2026-08-15
+### 23:40 — 系统监控模块 SQL 合并（sys_system_monitor.sql）
+
+按用户要求把在线用户 / 定时任务 / 服务监控三个模块的 SQL 合并为一个脚本，菜单直接按最终结构书写（系统监控目录下：在线用户 → 定时任务 → 执行日志 → 服务监控）。
+
+- `sql/sys_system_monitor.sql`（新建）— 合并 sys_online + sys_job + sys_monitor 三脚本：建表 sys_job/sys_job_log（改 **CREATE TABLE IF NOT EXISTS**，不再 DROP，老库重跑不丢任务数据）+ 设置项 sys.online.timeout + 完整菜单树（系统监控目录 + 4 菜单 + 按钮，按显示顺序插入，menu_id 自增序即侧边栏序）+ 末尾 parent 收敛（老库已存在菜单迁入系统监控目录）+ 清理遗留「任务管理」目录
+- `sql/sys_online.sql` / `sql/sys_job.sql` / `sql/sys_monitor.sql` / `sql/sys_monitor_catalog.sql`（删除）— 被合并文件取代（catalog 的目录/收敛/清理功能已并入第 4/6/7 节）
+- 修复原 catalog 脚本的 MySQL 报错：`DELETE FROM sys_menu ... NOT EXISTS (SELECT ... FROM sys_menu ...)` 直接引用目标表会抛 "You can't specify target table for update in FROM clause"，合并脚本改为**派生表物化**（`FROM (SELECT parent_id FROM sys_menu ...) AS child_ref`）后再关联判断，可正常执行
+- 幂等：目录/菜单 NOT EXISTS、按钮 parent 反查、收敛 UPDATE 天然幂等、清理 DELETE 幂等；新旧库任意顺序重复执行均收敛到最终结构
+- 未改动：`sys_config.sql`（系统设置模块菜单仍为独立脚本）、`sys_job_demo.sql`（测试任务数据）、`dict-data-permission.sql`、`rookie.sql`
+
+## 2026-08-15
+### 23:10 — 任务详情弹窗 + 服务监控 ECharts 图表化（含中间件扩展预留）+ 系统监控目录 + 侧边栏滚动条隐藏
+
+- `rookie-ui/src/views/system/job/components/JobDetailDialog.vue`（新建）— 定时任务「查看详情」只读弹窗（ElDescriptions 展示全部配置，接弹窗栈，行数据直接展示不重复拉接口）
+- `rookie-ui/src/views/system/job/index.vue` — 行操作新增「详情」按钮（权限 system:job:info，plain 样式置首）
+- `rookie-system/.../monitor/MonitorProvider.java`（新建）— **监控扩展点接口**：type()/title()/collect()，接入 Redis/MySQL 等中间件只需实现并注册 Bean
+- `rookie-system/.../monitor/ServerMonitorProvider.java`（新建）— 服务器监控源（迁移原 SysMonitorServiceImpl 采集逻辑，type=server）
+- `rookie-system/.../pojo/vo/MonitorItemVo.java`（新建）— 聚合接口返回单元（type/title/data）
+- `rookie-system/.../controller/SysMonitorController.java` — `GET /sys/monitor/server` 改为 `GET /sys/monitor/items`（注入 List<MonitorProvider> 聚合返回，单源失败置 null 不影响其他）
+- `rookie-system/.../service/SysMonitorService.java` + `impl/SysMonitorServiceImpl.java`（删除）— 被 MonitorProvider 体系取代
+- `sql/sys_monitor_catalog.sql`（新建）— 新增「系统监控」目录（perm_key=monitor，icon=Odometer，挂系统模块下）；在线用户/定时任务/执行日志/服务监控 4 个菜单 parent 改为该目录；删除原「任务管理」目录（job，先挪子菜单再删，带子菜单残留保护）；无 menu_id 增量风格
+- `rookie-ui/package.json` — 新增依赖 `echarts`
+- `rookie-ui/src/views/system/monitor/components/MonitorGauge.vue`（新建）— ECharts 仪表盘（CPU/内存使用率，≥90% 切危险色，配色从主题 CSS 变量读取，resize/dispose 生命周期）
+- `rookie-ui/src/views/system/monitor/components/MonitorRing.vue`（新建）— ECharts 环形图（磁盘分区/堆内存，中心显示使用率）
+- `rookie-ui/src/views/system/monitor/components/UsageBar.vue`（删除）— 被 ECharts 图表取代
+- `rookie-ui/src/views/system/monitor/index.vue` — 重构为 items 驱动：遍历 MonitorItemRecord，type=server 渲染服务器卡片组（Gauge/Ring 图表 + 文字明细），**未知类型渲染占位卡**（预留中间件扩展的兜底）；自动/手动刷新逻辑保留
+- `rookie-ui/src/types/api/system/monitor.ts` + `api/system/monitor.ts` — 新增 MonitorItemRecord 类型与 getMonitorItemsApi（/sys/monitor/items）
+- `rookie-ui/src/layout/components/SideBar/index.vue` — 侧边栏滚动区隐藏滚动条（`.el-scrollbar__bar { display: none }`，内容仍可滚动）
+- `doc/api.md` — 服务监控接口改为 /items（含聚合结构响应示例与扩展点说明）+ 更新日志条目
+- 验证：后端 `mvnw compile` 通过；前端 `npx vue-tsc -p tsconfig.app.json --noEmit` 通过
+- 未改动：在线用户/定时任务/服务监控的接口与权限码（仅菜单归属变化，访问路径随之变化，前端刷新页面即重建菜单树与动态路由）
+
+## 2026-08-15
+### 22:30 — 定时任务测试用 Demo 任务
+
+配合定时任务管理模块验证调度链路（用户测试需求）。
+
+- `rookie-system/.../task/DemoTask.java`（新建）— 白名单包 `com.rookie.system.task` 下的测试任务（@Component("demoTask")）：`execute()` 无参方法打印执行日志（含当前时间）；`executeWithParam(String param)` 单参方法演示参数传递
+- `sql/sys_job_demo.sql`（新建，非通用脚本）— 两条测试任务数据（幂等）：「测试任务-每30秒」（execute，每 30 秒）+「测试任务-带参数」（executeWithParam，每 1 分钟，params=hello-rookie）；注释说明测试完成后可删除本文件与任务数据
+- 验证：后端 `mvnw compile` 通过
+- 未改动：sys_job.sql 通用脚本（测试数据独立成文件，不污染跨项目脚本）
+
+## 2026-08-15
+### 22:10 — 服务监控模块（CPU / 内存 / 磁盘 / 系统 / JVM，零依赖）
+
+读取运行服务所在服务器资源与 JVM 信息，零依赖实现（不引入 Oshi 等第三方库，便于多项目共用），仅实时快照不落库。
+
+- `sql/sys_monitor.sql`（新建）— 服务监控菜单（perm_key=`system:monitor`，parent 反查系统模块）+ 查询按钮（`system:monitor:quarry`），无 menu_id 自增增量风格
+- `rookie-system/.../pojo/vo/ServerMonitorVo.java`（新建）— 监控信息 VO（嵌套静态类：CpuInfo/MemoryInfo/DiskInfo/SystemInfo/JvmInfo/GcInfo，容量以字节为单位）
+- `rookie-system/.../service/SysMonitorService.java` + `impl/SysMonitorServiceImpl.java`（新建）— 零依赖采集：`com.sun.management.OperatingSystemMXBean`（CPU 使用率双采样 300ms 取真实值、物理内存、系统负载）、`File.listRoots()`（磁盘分区）、`java.lang.management`（RuntimeMXBean/MemoryMXBean/GarbageCollectorMXBeans/ThreadMXBean/ClassLoadingMXBean）+ 系统属性（os/java.version/java.home/user.dir）；单项失败置 null 不影响整体
+- `rookie-system/.../controller/SysMonitorController.java`（新建）— `GET /sys/monitor/server`（@PreAuthorize `system:monitor:quarry`，只读不记日志）
+- `rookie-ui/src/types/api/system/monitor.ts` + `api/system/monitor.ts`（新建）— 监控类型与 `getServerMonitorApi`
+- `rookie-ui/src/utils/format.ts` — 新增 `formatFileSize`（字节 → B/KB/MB/GB/TB）与 `formatDuration`（秒 → X天X小时X分X秒）
+- `rookie-ui/src/views/system/monitor/index.vue` + `components/UsageBar.vue`（新建）— 监控页：工具栏（上次刷新时间/自动刷新开关默认 30s/手动刷新）+ 卡片网格（CPU 使用率、内存、磁盘分区、系统信息、JVM 跨两列含堆内存进度条与 GC 列表）；进度条自绘走主题变量（≥90% 切危险色），深浅模式天然适配
+- `rookie-ui/src/constants/systemPermissions.ts` — 新增 `monitor: { quarry }` 权限键
+- `doc/api.md` — 服务监控接口四段式文档（含完整响应示例与字段表）+ 更新日志条目
+- 验证：后端 `mvnw compile` 通过；前端 `npx vue-tsc -p tsconfig.app.json --noEmit` 通过
+- 未改动：系统开机时长未采集（JDK 17 的 com.sun.management 接口无跨平台标准 API，用户需求未含此项）；监控历史/趋势为可选扩展，本轮未做
+
+## 2026-08-15
+### 21:40 — 定时任务管理模块（方案 A：Spring TaskScheduler 动态注册）+ sys_online.sql 菜单去 ID 通用化
+
+方案 A 落地：任务元数据落 sys_job 表，启用任务启动时注册进调度器（CronTrigger），增删改/启停动态注册或取消；每次执行写 sys_job_log。调用目标限 `com.rookie.system.task` 包（白名单反射安全边界），方法须 public、无参或 String 单参。另按用户要求把 sys_online.sql 菜单改为无 menu_id 增量风格（跨项目可跑）。
+
+- `sql/sys_online.sql` — 菜单插入**去掉 menu_id**（自增）与写死的 parent_id=1：parent 改为按 `perm_key='system'` 反查，幂等从 ON DUPLICATE KEY UPDATE 改为 NOT EXISTS + INSERT...SELECT（sys_menu 表无 perm_key 唯一键，去 ID 后无冲突触发点）；按钮 parent 反查 `system:online`；头注释补充通用化约定
+- `sql/sys_job.sql`（新建）— 建表 sys_job（任务元数据）与 sys_job_log（执行日志）；任务管理目录（perm_key='job'）+ 定时任务（system:job）/执行日志（system:jobLog）子菜单 + 9 个按钮权限点；全部无 menu_id 增量风格（parent 反查）
+- `rookie-common/.../pojo/entity/SysJob.java` / `SysJobLog.java`（新建）— 任务与执行日志实体
+- `rookie-system/.../pojo/quarry/SysJobQuarry.java` / `SysJobLogQuarry.java`（新建）— 分页查询条件
+- `rookie-system/.../pojo/vo/SysJobVo.java`（新建）— 任务展示 VO
+- `rookie-system/.../mapper/SysJobMapper.java` + `SysJobMapper.xml`（新建）— 分页查询/详情/全部启用任务/增改删/状态；`SysJobLogMapper.java` + XML（新建）— 日志分页/新增/按任务级联删除
+- `rookie-system/.../scheduler/SysJobScheduler.java`（新建）— 调度核心：独立 ThreadPoolTaskScheduler（5 线程，job-scheduler- 前缀）；启动时（ApplicationRunner）注册全部启用任务；`registerJob`（先取消旧调度再按新配置注册，停用仅取消）/`cancelJob`（cancel(false) 不中断执行中任务）/`runOnce`（手动执行）/`validateJobConfig`（保存前校验 cron 合法性 + Bean 存在 + 白名单包 + 方法存在）；执行包装：防重（ConcurrentHashMap+AtomicBoolean，执行中再次触发跳过并记日志）→ 反射调用（String 单参优先，其次无参，InvocationTargetException 解包）→ 记日志（耗时/结果/异常截断 2000）
+- `rookie-system/.../service/SysJobService.java` + `impl/SysJobServiceImpl.java`（新建）— CRUD（保存前 validateJobConfig，落库后同步 registerJob/cancelJob）、启停（启用时把实体 status 置 1 再注册，防 registerJob 按旧状态跳过）、立即执行、日志分页；删除级联清理日志
+- `rookie-system/.../controller/SysJobController.java`（新建）— `/sys/job/list`、`/{jobId}`、POST/PUT、DELETE、`/status`、`/run/{jobId}`、`/log/list`，@PreAuthorize 对齐 system:job:* 与 system:jobLog:quarry，写操作 @Log
+- `rookie-ui/src/types/api/system/job.ts` + `api/system/job.ts`（新建）— 任务/日志类型与全部接口方法
+- `rookie-ui/src/views/system/job/index.vue` + `config.ts`（新建）— 任务管理页：查询（任务名/状态/时间）+ 表格（状态 tag 渲染）+ 新增/编辑弹窗（cron 6 段式前端轻校验）+ 操作（编辑/停用/启用互斥按钮/立即执行/删除）；启停按钮因公共操作配置不支持动态文案，拆成两个 visible 互斥按钮
+- `rookie-ui/src/views/system/job-log/index.vue` + `config.ts`（新建）— 执行日志页：查询（任务名/触发方式/状态/时间）+ 只读表格（状态 tag、异常信息截断展示）
+- `rookie-ui/src/constants/systemPermissions.ts` — 新增 `job`（quarry/info/create/edit/delete/status/run）与 `jobLog`（quarry）权限键
+- `doc/api.md` — 定时任务模块 8 接口四段式文档 + 更新日志条目；在线模块文档补充菜单增量脚本说明
+- 验证：后端 `mvnw compile` 通过；前端 `npx vue-tsc -p tsconfig.app.json --noEmit` 通过
+- 未改动：无内置业务任务（任务 Bean 由用户后续在 `com.rookie.system.task` 包自行编写并在页面配置）；失败联动通知/错误日志体系为可选扩展，本轮未做；单机调度边界已注明（多实例需分布式锁或任务平台）
+
+## 2026-08-15
+### 21:10 — 文件存储规则优化（年/月/日分层 + 系统名命名）+ 删除文件测试页
+
+上传路径改为「根路径/年/月/日」三层目录（头像 `avatar/年/月/日`），存储名改为「系统名称 + 年月日 + 毫秒时间戳 + 扩展名」；年月日与毫秒同源于上传时刻，下载/删除时从存储名提取毫秒反推日期目录，无需记录路径。测试页已完成使命，删除。
+
+- `rookie-admin/src/main/resources/application.yml` — 新增 `rookie.system-name`（系统名称，默认 rookie，作为上传文件名前缀）；上传路径注释同步更新
+- `rookie-system/.../service/impl/SysFileServiceImpl.java` — `store()`：目标目录 = 根/子目录(可选)/年/月/日（毫秒时间戳推导日期，目录与名字同源）；存储名 = 系统名 + yyyyMMdd + 毫秒 + 扩展名；同毫秒并发重名时时间戳 +1 重试。`resolveFilePath()`：白名单校验 → 正则 `(\d{8})(\d{13})(?:\.\w+)?$` 从存储名提取日期 + 毫秒 → 反推 年/月/日 目录，并校验时间戳反推日期与内嵌 8 位日期一致（防手工伪造）；`resolveDailyDir`/`toLocalDate` 辅助方法；移除 `IdUtil`（不再用 UUID）；类注释更新
+- `rookie-system/.../service/SysFileService.java` — 接口 javadoc 同步存储规则说明
+- `rookie-ui/src/router/index.ts` — 移除临时测试路由 `file-test`
+- `rookie-ui/src/views/system/file-test/`（删除）— 文件上传/下载测试页
+- `doc/api.md` — 文件管理模块说明、上传/头像接口的存储名与目录描述更新（新存储名示例），更新日志新增规则变更条目
+- 验证：后端 `mvnw compile` 通过
+- 未改动：上传/下载接口路径与参数（前端 API 封装透明，无需变更）；头像上传/删除流程自动适配新目录规则
+
+## 2026-08-15
+### 20:45 — 文件上传/下载前端测试页
+
+验证后端轻量文件模块的临时测试入口：静态路由 /file-test 直连（不进侧边栏菜单），上传调 `POST /sys/file/upload`（选文件 → 上传 → 展示返回的存储名/原名/大小/扩展名并自动回填下载区），下载调 `GET /sys/file/download/{storedName}`（blob 触发浏览器保存，可指定保存文件名）。验证完成后可删除路由与页面。
+
+- `rookie-ui/src/router/index.ts` — layout 下新增静态子路由 `file-test`（requiresAuth，title「文件上传/下载测试」，注释标明临时用途）
+- `rookie-ui/src/views/system/file-test/index.vue`（新建）— 上传/下载测试页（BaseCard 布局、主题变量样式、方法级注释）
+- 验证：前端 `npx vue-tsc -p tsconfig.app.json --noEmit` 通过
+
+## 2026-08-15
+### 20:30 — 修复头像/文件上传 500：axios 默认 JSON 头把 FormData 序列化
+
+联调发现 `POST /person/avatar` 报 500（`MultipartException: Current request is not a multipart request`）。根因：`http.ts` 实例默认 `Content-Type: application/json`，axios 1.16 的 `transformRequest` 检测到该头后把 FormData 走 `formDataToJSON` 序列化成 JSON（`node_modules/axios/lib/defaults/index.js:56`），请求到后端不再是 multipart，`RequestParamMethodArgumentResolver` 解析 `@RequestParam("file")` 时抛异常。`/sys/file/upload` 未测过但同样会踩坑。
+
+- `rookie-ui/src/api/system/file.ts` — `uploadFileApi` 上传时显式传 `headers: { 'Content-Type': undefined }`：axios 合并 headers 时 undefined 覆盖实例默认值、`AxiosHeaders.toJSON` 过滤 undefined，最终由浏览器自动设置带 boundary 的 multipart 头；注释补充根因说明
+- `rookie-ui/src/api/system/user.ts` — `uploadPersonalAvatarApi` 同样处理
+- 验证：前端 `npx vue-tsc -p tsconfig.app.json --noEmit` 通过
+- 未改动：后端（接口本身无误，错误日志正常落库 sys_error_log）；`http.ts` 实例默认头（JSON 请求由 axios transformRequest 自动补 application/json，仅 FormData 场景受影响）
+
+## 2026-08-15
+### 19:20 — 在线用户统计模块（在线人数/在线列表/强制下线/退出登录/登录IP）
+
+无状态 JWT 体系无 session，"在线"改为基于 Redis 在线集合（ZSET，member=username，score=最后活跃时间戳）判定：TokenVerifyFilter 每个已登录请求写入活跃时间，score 距今超过阈值（sys_config `sys.online.timeout`，分钟，默认 30）视为离线，统计按分数区间实时计算。前端登录后每 60s 心跳维持挂机在线。
+
+- `rookie-common/.../cache/RedisCache.java` — 新增 ZSET 操作：`zAdd`（写成员分数，幂等更新）/`zCount`（分数区间计数）/`zRevRangeWithScores`（倒序取成员与分数）/`zRem`（移除成员）/`zRemRangeByScore`（按分数区间批量移除，供在线集合剪枝）
+- `rookie-framework/.../security/pojo/UserInfo.java` — 新增 `loginIp` 字段（登录时写入，随 UserInfo 缓存，在线列表展示）
+- `rookie-framework/.../security/service/TokenService.java` — 新增 `deleteToken(username)`（退出/强踢时删除登录态缓存，旧 token 立即失效）与 `getUserInfoByUsername(username)`（在线列表读取展示信息，不走 JWT 解码）
+- `rookie-framework/.../service/OnlineUserEntry.java`（新建）— 在线用户展示条目（username/nickName/loginIp/loginTime/lastActive）
+- `rookie-framework/.../service/OnlineUserService.java` + `service/impl/OnlineUserServiceImpl.java`（新建）— 在线统计服务：`recordActivity`（写活跃时间）、`getOnlineCount`（阈值内计数，先按分数区间剪枝离线成员防集合无限累积）、`getOnlineUsers`（倒序列表，昵称/IP/登录时间从登录态缓存补充）、`removeOnline`（退出用）、`kickOfflineUser`（强踢 = 移除集合 + 删缓存，阻止对自己操作）；阈值读 `SysConfigUtil.getNumber("sys.online.timeout", 30)`，系统设置页可改、无需重启
+- `rookie-framework/.../security/filter/TokenVerifyFilter.java` — 校验通过后调用 `recordActivity`（内部 try-catch，在线统计失败绝不干扰鉴权主流程）
+- `rookie-system/.../service/impl/SysLoginServiceImpl.java` — 登录时用 hutool `JakartaServletUtil.getClientIP` 解析登录 IP 写入 UserInfo；新增 `logout`（在线集合移除 + 删登录态缓存，幂等）
+- `rookie-system/.../service/SysLoginService.java` — 接口新增 `logout(username)`
+- `rookie-system/.../controller/SysLoginController.java` — 新增 `POST /logout`（需登录，@Log）
+- `rookie-system/.../controller/SysOnlineController.java`（新建）— `GET /sys/online/ping`（心跳，仅需登录、无 @Log、无按钮权限）、`GET /sys/online/count` 与 `GET /sys/online/list`（@PreAuthorize `system:online:quarry`）、`POST /sys/online/logout/{username}`（强踢，@Log DELETE，@PreAuthorize `system:online:kick`，后端阻止对自己操作）
+- `sql/sys_online.sql`（新建）— 增量脚本：设置项 `sys.online.timeout`（NUMBER，默认 30，is_system=1，无 config_id 幂等插入）+ 菜单权限点 menu_id 100~102（在线用户 `system:online` / 在线查询 `system:online:quarry` / 在线强制下线 `system:online:kick`，挂系统模块下，admin 直通无需授权）
+- `rookie-ui/src/utils/http.ts` — 自定义请求配置扩展 `silent`（模块扩展 axios 类型 + 拦截器：silent 请求业务/网络错误不弹 ElMessage，401 跳转逻辑不受影响），供心跳等高频静默请求用
+- `rookie-ui/src/types/api/system/online.ts` + `api/system/online.ts`（新建）— `OnlineUserRecord` 类型、`pingOnlineApi`（silent 心跳）/`getOnlineCountApi`/`getOnlineListApi`/`kickOnlineUserApi`
+- `rookie-ui/src/api/system/login.ts` — 新增 `logoutApi`（POST /logout）
+- `rookie-ui/src/stores/user.ts` — `logout` 改为先调后端退出（失败静默降级，不阻塞本地清理）再清空本地登录态
+- `rookie-ui/src/App.vue` — 登录后每 60s 心跳（`pingOnlineApi`，静默失败；未登录不启动；组件卸载清理定时器）
+- `rookie-ui/src/constants/systemPermissions.ts` — 新增 `online: { quarry, kick }` 权限键
+- `rookie-ui/src/views/system/online/index.vue` + `config.ts`（新建）— 在线用户页：当前在线人数统计 + 在线列表（账号/昵称/IP/登录时间/最后活跃，毫秒时间戳转 Date 后走 formatDateTime）+ 强制下线（二次确认、隐藏自身行、每 30s 自动刷新 + 手动刷新）；按 README.dev 主题清单检查
+- `doc/api.md` — 新增在线模块四接口与退出登录接口四段式文档；认证管理补充登录 IP 说明
+- 验证：后端 `mvnw compile` 通过；前端 `npx vue-tsc -p tsconfig.app.json --noEmit` 通过
+- 未改动：`SecurityConfig`（新接口落入 anyRequest().authenticated() 兜底，无需放行配置）、`LogAspect`、`sys_config.sql`（在线阈值走独立增量脚本，不与现有内置项冲突）；离线语义：关浏览器不主动下线，最长延迟一个阈值周期（默认 30 分钟）掉线，属 JWT 无状态体系的标准取舍
+
+## 2026-08-15
+### 18:55 — 文件上传/下载模块（轻量）+ 用户头像上传
+
+承接轻量文件能力：上传路径用 application.yml 配置（`rookie.upload.path`，改后重启生效），不建表不落库、不建菜单不加按钮权限，接口仅需登录；头像上传复用同一存储体系，落到 `avatar/` 子目录并更新 `sys_user.avatar`。
+
+- `rookie-admin/src/main/resources/application.yml` — 新增 `rookie.upload.path`（默认 `./upload`，相对路径按应用工作目录解析）与 `spring.servlet.multipart.max-file-size/max-request-size`（默认 1MB 过小，放宽到 50MB）
+- `rookie-system/.../pojo/vo/FileUploadVo.java`（新建）— 上传结果 VO（storedName/originalName/size/ext）
+- `rookie-system/.../service/SysFileService.java` + `impl/SysFileServiceImpl.java`（新建）— 文件存储服务：上传（空文件校验 → UUID+原扩展名存储名 → 绝对路径落盘）、下载（存储名白名单 `^[a-zA-Z0-9._-]+$` + normalize 前缀双重防路径穿越 → FileSystemResource 流式返回，attachment + RFC 5987 UTF-8 文件名）、头像专用（`avatar/` 子目录、仅 png/jpg/jpeg/gif/webp 且 ≤2MB、inline 图片响应、幂等删除旧头像）
+- `rookie-system/.../controller/SysFileController.java`（新建）— `POST /sys/file/upload` + `GET /sys/file/download/{storedName}`（`originalName` 可选仅作展示名）；仅需登录，不标 @Log（LogAspect 会序列化方法参数，MultipartFile.getBytes() 会把文件整体读入内存转 JSON，开销不可接受）
+- `rookie-system/.../pojo/vo/SysUserVo.java` — 新增 `avatar` 字段（BeanUtil 自动随 `/person` 返回）
+- `rookie-system/.../mapper/SysUserMapper.java` + `SysUserMapper.xml` — 新增 `updateSysUserAvatar`（仅更新 avatar 列，独立于 editUserInfo 白名单）
+- `rookie-system/.../service/SysLoginService.java` + `impl/SysLoginServiceImpl.java` — 新增 `uploadPersonalAvatar`（存新头像 → 更新 avatar 列，失败回滚删新文件 → 清理旧头像文件）与 `getPersonalAvatar`（按 avatar 存储名 inline 返回图片流）
+- `rookie-system/.../controller/SysLoginController.java` — 新增 `POST /person/avatar`（multipart，仅需登录）与 `GET /person/avatar`（inline 图片流，前端 blob 加载）
+- `rookie-ui/src/utils/http.ts` — 新增 `getBlob`（blob 方式 GET，供下载与头像读取；`<img>` 无法携带 Token 请求头）
+- `rookie-ui/src/types/api/system/file.ts` + `api/system/file.ts`（新建）— `FileUploadResult` 类型、`uploadFileApi`（FormData 上传）、`downloadFileApi`/`saveBlobAsFile`（blob 下载保存，延迟 revoke 兼容 Firefox）
+- `rookie-ui/src/types/api/system/user.ts` — `SysUserProfile` 新增 `avatar?`；`api/system/user.ts` 新增 `uploadPersonalAvatarApi`/`fetchPersonalAvatarApi`
+- `rookie-ui/src/stores/user.ts` — 新增 `avatarUrl`（blob objectURL）与 `refreshAvatar`/`updateAvatar`/`clearAvatarUrl`；`fetchUserProfile` 拉资料后同步刷新头像（内部容错，失败回退字母占位）；退出登录 revoke objectURL
+- `rookie-ui/src/layout/components/NavBar/index.vue` — 用户入口头像：有头像显示图片（圆形铺满），无头像保留字母占位
+- `rookie-ui/src/views/profile/index.vue` — 头像区改为可点击上传（隐藏 file input，前端预检类型/大小与后端口径一致；悬停遮罩提示"更换头像"，上传中禁用），上传成功后经 store 刷新资料与头像
+- `doc/api.md` — 新增文件管理模块两接口四段式文档；认证管理新增上传/获取个人头像两接口；`/person` 响应补充 avatar 字段
+- 验证：后端 `mvnw compile` 通过；前端 `npx vue-tsc -p tsconfig.app.json --noEmit` 通过
+- 未改动：`SecurityConfig`（新接口落入 anyRequest().authenticated() 全局兜底）、`editUserInfo` 白名单（不碰 avatar）、`sys_config` 体系（上传路径不落 sys_config，按需求选 application.yml 配置）
+
 ## 2026-08-14
 ### 13:00 — 注册开关改专用公开接口：收回系统设置按 key 读取的游客放行
 

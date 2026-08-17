@@ -22,6 +22,9 @@ public class UserInfo implements UserDetails {
 
     private Long expireTime;
 
+    /** 登录 IP（登录时从请求头解析，随 UserInfo 缓存进 Redis，供在线用户列表展示） */
+    private String loginIp;
+
     private List<Permission> permissions;
 
     /**
@@ -82,6 +85,14 @@ public class UserInfo implements UserDetails {
         this.expireTime = expireTime;
     }
 
+    public String getLoginIp() {
+        return loginIp;
+    }
+
+    public void setLoginIp(String loginIp) {
+        this.loginIp = loginIp;
+    }
+
     public List<Permission> getPermissions() {
         return permissions;
     }
@@ -107,6 +118,7 @@ public class UserInfo implements UserDetails {
                 ", nickName='" + nickName + '\'' +
                 ", status=" + status +
                 ", admin=" + admin +
+                ", loginIp='" + loginIp + '\'' +
                 ", permissions=" + permissions +
                 '}';
     }

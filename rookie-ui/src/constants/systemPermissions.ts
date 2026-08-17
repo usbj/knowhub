@@ -213,4 +213,23 @@ export const SYSTEM_PERMISSION_KEYS = {
       regenerate: ['knowhub:audit:report:regenerate'],
     },
   },
+  online: {
+    quarry: ['system:online:quarry'],
+    kick: ['system:online:kick'],
+  },
+  job: {
+    quarry: ['system:job:quarry'],
+    info: ['system:job:info'],
+    create: ['system:job:add', 'sys:job:add'],
+    edit: ['system:job:edit', 'sys:job:edit'],
+    delete: ['system:job:delete', 'sys:job:delete'],
+    status: ['system:job:status', 'sys:job:status'],
+    run: ['system:job:run', 'sys:job:run'],
+  },
+  jobLog: {
+    quarry: ['system:jobLog:quarry'],
+  },
+  monitor: {
+    quarry: ['system:monitor:quarry'],
+  },
 } as const

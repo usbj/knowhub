@@ -153,11 +153,17 @@ public class SysNoticeServiceImpl implements SysNoticeService {
         return true;
     }
 
+    /**
+     * 分页获取当前用户可见的通知（按 is_top / publish_time / notice_id 排序），
+     * 每页逐条装配 hasRead / hasConfirmed 后返回 PageInfo。
+     * 分页参数 pageNum / pageSize 由 PageUtil 从请求参数读取（默认 1 / 10）。
+     */
     @Override
-    public List<SysNoticeVo> getMyNotices(Long userId) {
+    public PageInfo<SysNoticeVo> getMyNotices(Long userId) {
+        PageUtil.startPage();
         List<SysNotice> list = sysNoticeMapper.getNoticesForUser(userId);
         if (list == null || list.isEmpty()) {
-            return new ArrayList<>();
+            return new PageInfo<>(new ArrayList<>());
         }
 
         List<SysNoticeRead> reads = sysNoticeReadMapper.getSysNoticeReadByUserId(userId);
@@ -170,12 +176,19 @@ public class SysNoticeServiceImpl implements SysNoticeService {
                 .map(SysNoticeRead::getNoticeId)
                 .collect(Collectors.toSet());
 
-        return list.stream().map(n -> {
-            SysNoticeVo vo = BeanUtil.toBean(n, SysNoticeVo.class);
-            vo.setHasRead(readNoticeIds.contains(n.getNoticeId()));
-            vo.setHasConfirmed(confirmedNoticeIds.contains(n.getNoticeId()));
-            return vo;
-        }).collect(Collectors.toList());
+        PageInfo<SysNotice> page = PageUtil.packagedPageInfo(list);
+        PageInfo<SysNoticeVo> pageInfo = PageUtil.copyPageInfo(page, SysNoticeVo.class);
+        for (SysNoticeVo vo : pageInfo.getList()) {
+            vo.setHasRead(readNoticeIds.contains(vo.getNoticeId()));
+            vo.setHasConfirmed(confirmedNoticeIds.contains(vo.getNoticeId()));
+        }
+        return pageInfo;
+    }
+
+    @Override
+    public Long countUnreadNotices(Long userId) {
+        Long count = sysNoticeMapper.countUnreadNoticesForUser(userId);
+        return count == null ? 0L : count;
     }
 
     @Override
