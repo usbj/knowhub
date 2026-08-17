@@ -1498,19 +1498,26 @@ PUBLISHED → REVOKED | **响应：** `Result<Boolean>`
 
 ---
 
-### 8. 获取我的消息
+### 8. 获取我的消息（分页）
 
 #### 8.1 基本信息
 **请求接口：** `/sys/notice/my`
 **请求方式：** GET
 **所需权限：** 需要登录
-**基本信息：** 查询当前用户可见的消息列表。可见范围 = `publishScope=ALL` 全员消息 + 通过所属 group 命中的消息 + `publishScope=USER` 中直接指名该用户的消息。返回每条消息附带 `hasRead`（是否已读）和 `hasConfirmed`（是否已确认）字段
+**基本信息：** 分页查询当前用户可见的消息列表，供头导航通知下拉滚动懒加载使用。可见范围 = `publishScope=ALL` 全员消息 + 通过所属 group 命中的消息 + `publishScope=USER` 中直接指名该用户的消息。排序规则 `is_top desc, publish_time desc, notice_id desc`，与懒加载前一致。返回每条消息附带 `hasRead`（是否已读）和 `hasConfirmed`（是否已确认）字段。分页参数由 `PageUtil` 从请求参数读取，默认 pageNum=1 / pageSize=10
 
 #### 8.2 请求头
 无
 
 #### 8.3 请求体
 无
+
+**请求参数（Query）：**
+
+| 参数名   | 参数说明   | 参数类型 | 必填 | 默认值 |
+| -------- | ---------- | -------- | ---- | ------ |
+| pageNum  | 页码       | int      | 否   | 1      |
+| pageSize | 每页条数   | int      | 否   | 10     |
 
 #### 8.4 响应示例
 
@@ -1519,33 +1526,63 @@ PUBLISHED → REVOKED | **响应：** `Result<Boolean>`
 {
   "code": 200,
   "msg": "请求成功",
-  "data": [
-    {
-      "noticeId": 1,
-      "title": "系统升级通知",
-      "content": "系统将于本周六凌晨进行升级维护",
-      "noticeType": "NOTICE",
-      "level": "IMPORTANT",
-      "publishScope": "ALL",
-      "status": "PUBLISHED",
-      "needConfirm": 0,
-      "hasRead": true,
-      "hasConfirmed": false,
-      "createTime": "2026-06-20T10:00:00"
-    }
-  ]
+  "data": {
+    "total": 12,
+    "list": [
+      {
+        "noticeId": 1,
+        "title": "系统升级通知",
+        "content": "系统将于本周六凌晨进行升级维护",
+        "noticeType": "NOTICE",
+        "level": "IMPORTANT",
+        "publishScope": "ALL",
+        "status": "PUBLISHED",
+        "needConfirm": 0,
+        "hasRead": true,
+        "hasConfirmed": false,
+        "createTime": "2026-06-20T10:00:00"
+      }
+    ],
+    "pageNum": 1,
+    "pageSize": 10,
+    "pages": 2
+  }
 }
 ```
 
 | 响应字段     | 参数说明      | 参数类型             |
 | ------------ | ------------- | -------------------- |
+| list         | 当前页通知列表 | array               |
+| total        | 可见通知总数   | long               |
+| pageNum      | 当前页码       | int                |
+| pageSize     | 每页条数       | int                |
+| pages        | 总页数         | int                |
 | hasRead      | 当前用户是否已读 | boolean            |
 | hasConfirmed | 当前用户是否已确认 | boolean           |
 | 其余字段     | 同 `SysNotice` 实体 | —                |
 
 ---
 
-### 9. 标记已读
+### 9. 获取我的未读数
+
+#### 9.1 基本信息
+**请求接口：** `/sys/notice/unread-count`
+**请求方式：** GET
+**所需权限：** 需要登录
+**基本信息：** 查询当前用户可见且未读的消息数，驱动头导航铃铛徽标。未读 = 可见范围内无 `read_time` 记录（`NOT EXISTS sys_notice_read`），可见范围与「获取我的消息」一致。懒加载后已加载列表只是部分数据，未读数必须走本独立计数接口
+
+#### 9.2 请求头
+无
+
+#### 9.3 请求体
+无
+
+#### 9.4 响应示例
+**成功示例：** `Result<Long>`，data 为未读消息数（如 `5`）
+
+---
+
+### 10. 标记已读
 
 #### 9.1 基本信息
 **请求接口：** /sys/notice/read/{noticeId}

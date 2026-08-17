@@ -11,6 +11,47 @@
 ---
 
 ## 2026-08-17
+### 04:40 — 修复通知下拉滚动失效：改用 EP 原生 max-height 滚动机制
+
+用户反馈：下拉高度只显示 6 条半（60vh 截断生效），但滚轮滚不动。排查 EP 2.14 源码发现：`ElDropdown` 内部用 `ElScrollbar` 包裹下拉内容（`.el-scrollbar__wrap { height:100%; overflow:auto }`），此前把 `max-height: 60vh` + `overflow-y: auto` 加在内层 `.el-dropdown-menu` 上，形成「外层 scrollbar wrap + 内层 ul」双层滚动容器，滚轮事件被外层吞掉、内层永远滚不动（仅高度被截断）。
+
+- `rookie-ui/src/layout/components/NavBar/index.vue` — 通知下拉 `ElDropdown` 加 `max-height="60vh"` prop（EP 官方滚动机制：wrap 收到 `max-height` 内联样式后成为滚动容器，与 Select 下拉同款，自带滚动条）；全局样式删除 `.el-dropdown-menu` 上的 `max-height`/`overflow-y`（避免双层滚动容器），吸顶标题与 hover 残留修复保留；`NOTICE_MENU_SELECTOR` 改为 `.nav-bar-notice-dropdown .el-scrollbar__wrap`，滚动懒加载监听与自动补页判断（`scrollHeight - clientHeight`）都改挂/改量到 wrap
+- 验证：前端 `npx vue-tsc -p tsconfig.app.json --noEmit` 通过
+
+## 2026-08-17
+### 04:10 — 修复通知下拉无法下滑：打开时自动补页直到可滚动
+
+用户反馈下拉栏无法下滑。根因：首屏每页 10 条在 `max-height: 60vh` 内往往刚好放得下（或只超出一点），菜单没有滚动条时滚轮无处可滚，滚动懒加载事件永远触发不了，用户看不到后面的通知。
+
+- `rookie-ui/src/layout/components/NavBar/index.vue` — 新增 `ensureNoticeMenuScrollable`：下拉打开后（及列表数据每次变化后）检查菜单容器 `scrollHeight - clientHeight <= 2`（内容不满一屏）且 `hasMore` 时自动加载下一页，递归补页直到可滚动或没有更多，之后交给用户滚轮触发；下拉隐藏后不再自动补页（`isNoticeDropdownVisible` 守卫）；补页失败静默停止、滚动/重新打开时重试；滚动触发加载也补上 `.catch` 防未处理拒绝
+- 验证：前端 `npx vue-tsc -p tsconfig.app.json --noEmit` 通过
+
+## 2026-08-17
+### 03:50 — 通知下拉懒加载测试数据脚本
+
+- `sql/sys_notice_lazy_load_test.sql` — 新建 20 条已发布通知测试数据（标题前缀「【懒加载测试】」）：全部 `publish_scope='ALL'`（admin 登录即全可见）、2 条置顶（测试置顶恒排最前）、3 条预置 admin 已读记录（第 3/5/12 条，未读数应显示 17）、1 条 `need_confirm=1`（第 6 条）、发布时间从近到远错开（第 11 条起跨页边界）；脚本可重复执行（先清理前缀数据再插入），用于验证通知下拉分页、滚动加载更多、未读徽标、置顶排序
+
+## 2026-08-17
+### 03:40 — 通知下拉懒加载（分页 + 滚动加载更多 + 独立未读数接口）
+
+用户要求通知下拉在已有 max-height + 内部滚动基础上做懒加载，避免一次拉全量通知正文。改造思路：**后端 `/sys/notice/my` 改分页**（复用 `PageUtil.startPage` + PageHelper，排序与可见范围不变），**新增独立未读计数接口**（铃铛徽标不能再依赖已加载的部分列表）。
+
+- `rookie-system/.../SysNoticeMapper.java` + `mapper/system/SysNoticeMapper.xml` — 新增 `countUnreadNoticesForUser`：未读 = 可见范围内 `NOT EXISTS (sys_notice_read where read_time is not null)`，可见范围 SQL 与 `getNoticesForUser` 保持一致（ALL / 分组 / 指定成员）
+- `rookie-system/.../SysNoticeService.java` / `SysNoticeServiceImpl.java` — `getMyNotices` 返回类型 `List<SysNoticeVo>` 改为 `PageInfo<SysNoticeVo>`（`PageUtil.startPage()` 前置 + 分页装配 `hasRead`/`hasConfirmed`，每页逐条按读记录集合打标）；新增 `countUnreadNotices` 实现
+- `rookie-system/.../SysNoticeController.java` — `/sys/notice/my` 响应改为 `Result<PageInfo<SysNoticeVo>>`（pageNum/pageSize 可选，默认 1/10）；新增 `GET /sys/notice/unread-count` 返回 `Result<Long>`
+- `rookie-ui/src/api/system/notice.ts` — `getMyNoticesApi` 改为分页版 `getMyNoticesPageApi`（`getPage` 归一化为 records/total/pages）；新增 `getUnreadCountApi`
+- `rookie-ui/src/stores/notice.ts` — 列表改分页累积：`hasMore`/`loadingMore` 标记 + `loadMoreNotices`（滚动到底追加下一页，防并发）；`unreadCount` 由「列表内取反统计」改为独立 ref，来自 `fetchUnreadCount` 接口；`markAsRead` 乐观更新时同步递减未读数；`resetNoticeState` 全量重置
+- `rookie-ui/src/layout/components/NavBar/index.vue` — 下拉 `@visible-change`：显示时拉首屏 + 刷未读数，并在菜单容器（teleport 到 body，按 `.nav-bar-notice-dropdown .el-dropdown-menu` 选择器查找）挂载 scroll 监听，滚动近底部（`scrollTop + clientHeight >= scrollHeight - 8`）触发 `loadMoreNotices`，隐藏时卸载（含组件卸载兜底）；新增底部状态行「继续滚动加载更多 / 加载中… / 已加载全部」，首屏未加载完显示「加载中…」而非误报「暂无通知」
+- `doc/api.md` — 消息通知「获取我的消息」改为分页四段式文档（Query 参数 + PageInfo 响应），新增「获取我的未读数」小节，原第 9/10 节顺延
+- 验证：后端 `mvnw compile` 通过；前端 `npx vue-tsc -p tsconfig.app.json --noEmit` 通过
+
+## 2026-08-17
+### 03:10 — 头导航通知下拉最大高度限制 + 内部滚动
+
+- `rookie-ui/src/layout/components/NavBar/index.vue` — 全局样式块（popper teleport 到 body 后 scoped 不命中）新增：`.nav-bar-notice-dropdown .el-dropdown-menu` 设 `max-height: 60vh` + `overflow-y: auto`（通知过多时菜单内滚动，不撑出视口）；`.nav-bar__notice-head` 设 `position: sticky; top: 0` 吸顶（背景 `--el-bg-color-overlay` 与 popper 同色，盖住滚动内容）
+- 验证：前端 `npx vue-tsc -p tsconfig.app.json --noEmit` 通过
+
+## 2026-08-17
 ### 02:50 — 问号图标垂直居中微调
 
 用户反馈问号偏上。原因：inline-flex 元素的默认 `vertical-align: baseline` 使其底部贴文字基线、视觉偏上。在 label flex 容器内用 `align-self: center` 强制垂直居中。
