@@ -6,16 +6,16 @@
 -->
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
-import { Search, ArrowDown, ArrowUp } from '@element-plus/icons-vue'
+import { Search, ArrowDown } from '@element-plus/icons-vue'
 import KhCard from '@/components/common/KhCard.vue'
 import KhTag from '@/components/common/KhTag.vue'
 import KhSectionTitle from '@/components/common/KhSectionTitle.vue'
 import KhIcon from '@/components/common/KhIcon.vue'
 import KhPagination from '@/components/common/KhPagination.vue'
 import BlogRow from '@/components/blog/BlogRow.vue'
-import { searchBlogsApi, recommendBlogsApi, hotTagsApi, getBlogStatsApi } from '@/api/knowhub/blog'
+import { searchBlogsApi, recommendBlogsApi, hotTagsApi, listEnabledTagsApi, getBlogStatsApi } from '@/api/knowhub/blog'
 import type { BlogPortalRecord, BlogPortalSearchQuery, PortalBlogStatsRecord } from '@/types/api/knowhub/blog'
-import type { HotTagRecord } from '@/types/api/knowhub/tag'
+import type { HotTagRecord, TagRecord } from '@/types/api/knowhub/tag'
 import type { NormalizedPageResult } from '@/types/api/common'
 import { formatDateTime } from '@/utils/format'
 
@@ -36,14 +36,30 @@ const keyword = ref('')
 const hotTags = ref<HotTagRecord[]>([])
 const tagRanking = computed(() => hotTags.value.slice(0, 10))
 
-/** 标签云最大展示数：超出折叠进"更多"（按标签排行 contentCount 降序，与侧栏排行同序） */
+/** 全部启用标签（/portal/tag/list，不受热度/已发布内容限制，含暂无内容的标签） */
+const allTags = ref<TagRecord[]>([])
+/** 热度计数映射：tagId → contentCount（blog+article 合计，来自 hotTags 榜），供标签云计数徽标回填 */
+const hotCountMap = computed(() => {
+  const m = new Map<number, number>()
+  for (const t of hotTags.value) m.set(t.tagId, t.contentCount ?? 0)
+  return m
+})
+
+/** 标签云最大展示数：超出折叠进"更多"下拉菜单（按 sort 顺序，全部启用标签） */
 const TAG_LIMIT = 12
-const tagExpanded = ref(false)
-/** 标签云展示项：折叠时只取前 TAG_LIMIT 个，展开时全部（展开内容进固定高度滚动区，不撑高 hero） */
-const visibleTags = computed(() =>
-  tagExpanded.value ? hotTags.value : hotTags.value.slice(0, TAG_LIMIT),
-)
-const hasMoreTags = computed(() => hotTags.value.length > TAG_LIMIT)
+/** 标签云展示项：只取前 TAG_LIMIT 个内联展示，超出进"更多"下拉菜单（不撑高 hero） */
+const visibleTags = computed(() => allTags.value.slice(0, TAG_LIMIT))
+const hasMoreTags = computed(() => allTags.value.length > TAG_LIMIT)
+/** 标签云"更多"下拉里的剩余项 */
+const moreTags = computed(() => allTags.value.slice(TAG_LIMIT))
+/** el-dropdown 无 v-model:visible（死绑定），收起只能走 ref.handleClose()。
+ *  见 memory el-dropdown-vmodel-visible-dead-binding。 */
+const moreDropdownRef = ref<{ handleClose?: () => void } | null>(null)
+/** 下拉点标签后：切换选中 + 手动收起 popper */
+const onMoreTagCommand = (tagId: number) => {
+  toggleTag(tagId)
+  moreDropdownRef.value?.handleClose?.()
+}
 
 /**
  * 标签名是否「过长」需循环滚动播放（照首页 isTagNameLong 范式）。
@@ -117,15 +133,19 @@ const onPageChange = (p: number, sz: number) => {
   void fetchBlogs()
 }
 
-/** 拉取标签云 + 侧栏热门 + 概览统计（三个独立口径，进页面拉一次，不随搜索/翻页变） */
+/** 拉取标签云 + 侧栏热门 + 概览统计（三个独立口径，进页面拉一次，不随搜索/翻页变）。
+ *  hotTags 只含热度前 N（已发布内容多的标签）；allTags 取全部启用标签供"全部标签"云展示，
+ *  云计数徽标用 hotCountMap 回填（不在热度榜的标签显示 0）。 */
 const fetchTagsHotAndStats = async () => {
-  const [tagRes, hotRes, statsRes] = await Promise.all([
+  const [hotRes, allRes, hotNotesRes, statsRes] = await Promise.all([
     hotTagsApi(50),
+    listEnabledTagsApi(),
     recommendBlogsApi(5),
     getBlogStatsApi(),
   ])
-  hotTags.value = tagRes.data ?? []
-  hotNotes.value = (hotRes.data ?? []).map((b) => ({
+  hotTags.value = hotRes.data ?? []
+  allTags.value = allRes.data ?? []
+  hotNotes.value = (hotNotesRes.data ?? []).map((b) => ({
     ...b,
     publishTime: b.publishTime ? formatDateTime(b.publishTime) : b.publishTime,
   }))
@@ -171,7 +191,8 @@ onMounted(() => {
             <button class="notes__search-btn" type="button" @click="onSearch">搜索</button>
           </div>
 
-          <!-- 标签云（最全，公开 /portal/tag/hot；超出 TAG_LIMIT 折叠进"更多"固定高度滚动区） -->
+          <!-- 标签云：全部启用标签（/portal/tag/list，不受热度/已发布内容限制）；
+               超出 TAG_LIMIT 折叠进"更多"下拉菜单；计数徽标由 hotCountMap 回填 -->
           <div class="notes__tagcloud">
             <span class="notes__tagcloud-label">
               <KhIcon name="tag" :size="14" /> 全部标签
@@ -185,32 +206,35 @@ onMounted(() => {
               @click="toggleTag(t.tagId)"
             >
               {{ t.tagName }}
-              <span class="notes__tagchip-count">{{ t.contentCount ?? 0 }}</span>
+              <span class="notes__tagchip-count">{{ hotCountMap.get(t.tagId) ?? 0 }}</span>
             </button>
-            <span v-if="!hotTags.length" class="notes__tagcloud-empty">暂无标签，待博客发文后收录</span>
-            <button
+            <span v-if="!allTags.length" class="notes__tagcloud-empty">暂无标签</span>
+            <el-dropdown
               v-if="hasMoreTags"
-              class="notes__tag-more"
-              type="button"
-              @click="tagExpanded = !tagExpanded"
+              ref="moreDropdownRef"
+              trigger="click"
+              placement="bottom-start"
+              popper-class="notes__tagcloud-popper"
+              @command="onMoreTagCommand"
             >
-              {{ tagExpanded ? '收起' : `更多 (${hotTags.length - TAG_LIMIT})` }}
-              <el-icon><ArrowDown v-if="!tagExpanded" /><ArrowUp v-else /></el-icon>
-            </button>
-          </div>
-          <!-- 展开态：剩余标签进固定高度可滚动区，不再内联撑高 hero -->
-          <div v-if="tagExpanded" class="notes__tagcloud-more">
-            <button
-              v-for="t in hotTags.slice(TAG_LIMIT)"
-              :key="t.tagId"
-              class="notes__tagchip"
-              :class="{ 'is-active': selectedTagIds.includes(t.tagId) }"
-              type="button"
-              @click="toggleTag(t.tagId)"
-            >
-              {{ t.tagName }}
-              <span class="notes__tagchip-count">{{ t.contentCount ?? 0 }}</span>
-            </button>
+              <button class="notes__tag-more" type="button">
+                更多 ({{ allTags.length - TAG_LIMIT }})
+                <el-icon><ArrowDown /></el-icon>
+              </button>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item
+                    v-for="t in moreTags"
+                    :key="t.tagId"
+                    :command="t.tagId"
+                    :class="{ 'is-active': selectedTagIds.includes(t.tagId) }"
+                  >
+                    {{ t.tagName }}
+                    <span class="notes__tagchip-count">{{ hotCountMap.get(t.tagId) ?? 0 }}</span>
+                  </el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
           </div>
         </div>
 
@@ -508,18 +532,6 @@ onMounted(() => {
   color: var(--kh-text-tertiary);
   padding: 4px 0;
 }
-/* 展开态：剩余标签进固定高度可滚动区，不再内联撑高 hero */
-.notes__tagcloud-more {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--kh-space-2);
-  margin-top: var(--kh-space-3);
-  max-width: 1000px;
-  max-height: 200px;
-  overflow-y: auto;
-  padding-right: 4px;
-}
 .notes__tag-more {
   display: inline-flex;
   align-items: center;
@@ -759,5 +771,46 @@ onMounted(() => {
   .notes__overview-stat {
     flex: 1 1 40%;
   }
+}
+</style>
+
+<!-- 非 scoped：el-dropdown popper 被 teleport 到 body，scoped 属性选择器打不到，需全局样式 -->
+<style>
+.notes__tagcloud-popper {
+  max-height: 320px;
+  overflow-y: auto;
+  padding: 6px 0;
+}
+.notes__tagcloud-popper .el-dropdown-menu {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 0;
+  border: none;
+  box-shadow: none;
+  background: transparent;
+}
+.notes__tagcloud-popper .el-dropdown-menu__item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 180px;
+  padding: 6px 14px;
+  font-size: 13px;
+  border-radius: var(--kh-radius-sm);
+}
+.notes__tagcloud-popper .el-dropdown-menu__item.is-active {
+  color: var(--kh-primary);
+  background: var(--kh-primary-soft);
+  font-weight: 600;
+}
+.notes__tagcloud-popper .notes__tagchip-count {
+  font-family: var(--kh-font-mono);
+  font-size: 11px;
+  color: var(--kh-text-tertiary);
+}
+.notes__tagcloud-popper .el-dropdown-menu__item.is-active .notes__tagchip-count {
+  color: var(--kh-primary);
 }
 </style>

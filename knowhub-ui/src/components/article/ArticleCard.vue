@@ -40,7 +40,7 @@ const hasImageCover = computed(() => {
 <template>
   <KhCard clickable padding="none" class="doc-card" @click="goDetail">
     <div class="doc-card__cover" :class="{ 'doc-card__cover--img': hasImageCover }">
-      <img v-if="hasImageCover" :src="props.doc.coverUrl" alt="封面" class="doc-card__cover-img" />
+      <img v-if="hasImageCover" :src="props.doc.coverUrl ?? undefined" alt="封面" class="doc-card__cover-img" />
       <KhIcon v-else name="book" :size="28" class="doc-card__cover-icon" />
     </div>
 
