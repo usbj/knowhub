@@ -83,6 +83,7 @@
         <if test="nickName!='' and nickName!=null">nick_name=#{nickName},</if>
         <if test="phoneNumber!='' and phoneNumber!=null">phone_number=#{phoneNumber},</if>
         <if test="sex!='' and sex!=null">sex=#{sex},</if>
+        <if test="avatar!=null and avatar!=''">avatar=#{avatar},</if>
         <if test="status!=null">`status`=#{status},</if>
         update_by = #{updateBy},
         update_time=now()

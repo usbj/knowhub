@@ -33,6 +33,7 @@ import ResourceDetailDialog from './components/ResourceDetailDialog.vue'
 import ResourceReviewDialog from './components/ResourceReviewDialog.vue'
 import ResourceFileUploader from './components/ResourceFileUploader.vue'
 import { SYSTEM_PERMISSION_KEYS } from '@/constants/systemPermissions'
+import { useUserStore } from '@/stores/user'
 import type { NormalizedPageResult } from '@/types/api/system/common'
 import type {
   ResourceListQuery,
@@ -53,6 +54,11 @@ import {
 } from './config'
 
 type ResourceDialogMode = 'create' | 'edit'
+
+// 审核员回避前端对齐：自己不能审自己提交的资源（后端 reviewResource 强判 authorId==userId 拒，
+// 前端按钮显隐先挡避免点了报错；admin 亦回避——admin 自审自同样隐藏审核按钮）
+const userStore = useUserStore()
+const currentUserId = computed(() => userStore.userInfo?.userId ?? -1)
 
 const queryForm = reactive<ResourceQueryFormState>(createDefaultResourceQuery())
 const categoryTree = ref<ResourceCategoryTreeNode[]>([])
@@ -182,7 +188,8 @@ const tableActions = computed<SharedActionConfig<Record<string, unknown>>[]>(() 
     label: '审核',
     permKey: SYSTEM_PERMISSION_KEYS.resource.review,
     buttonType: 'primary',
-    visible: (row) => String(row.status) === 'PENDING_REVIEW',
+    // 仅 PENDING_REVIEW 可审；且不能审自己提交的（authorId==当前用户则隐藏，admin 亦回避）
+    visible: (row) => String(row.status) === 'PENDING_REVIEW' && Number(row.authorId) !== currentUserId.value,
     onClick: async (row) => {
       await openReviewDialog(Number(row.resourceId))
     },

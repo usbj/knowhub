@@ -92,3 +92,40 @@ export interface BindPayload {
   objectId: number
   bizRefId: number
 }
+
+// ---- 扩展点1：OSS 数据打包下载 ----
+// 后端 GET /file/pack-size 返回打包预估总字节数（Result<Long> 裸值，累加 deleted=0 + CONFIRMED 的 content_length），
+// 供前端在发起打包下载前做大小预估、超 50G 弹警告确认。
+// 后端 POST /file/pack-download-server 返回落盘绝对路径（Result<String> 裸值，SERVER 模式，中转模式强制走此）。
+
+// ---- 扩展点2：OSS 数据迁移 ----
+// 后端 POST /file/migration/start 传源类型 + 目标 OSS 连接参数（凭证内存用完即弃、不落库），返 taskId。
+// sourceType：'OSS'（源 OSS→目标 OSS，需 source* 参数）/ 'LOCAL'（本地→目标 OSS，source* 留空，源是后端本地磁盘）。
+export interface MigrationApplyPayload {
+  /** 源端类型：OSS / LOCAL */
+  sourceType: string
+  // 源 OSS 连接参数（sourceType=OSS 时必填，=LOCAL 时留空）
+  sourceEndpoint?: string
+  sourceRegion?: string
+  sourceAccessKey?: string
+  sourceSecretKey?: string
+  sourceBucket?: string
+  sourcePathStyleAccess?: boolean
+  // 目标 OSS 连接参数（始终必填）
+  targetEndpoint: string
+  targetRegion?: string
+  targetAccessKey: string
+  targetSecretKey: string
+  targetBucket: string
+  targetPathStyleAccess?: boolean
+}
+
+// 后端 GET /file/migration/progress/{taskId} 返回迁移进度（前端轮询展示进度条 + 状态）。
+export interface MigrationProgressRecord {
+  taskId: number
+  status: string // PENDING / RUNNING / SUCCESS / FAILED / CANCELED
+  totalCount: number
+  doneCount: number
+  failedCount: number
+  errorMessage?: string
+}

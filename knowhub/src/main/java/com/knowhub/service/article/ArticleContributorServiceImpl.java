@@ -10,6 +10,7 @@ import com.knowhub.pojo.article.entity.ArticleContributor;
 import com.knowhub.pojo.article.quarry.ArticleContributorQuarry;
 import com.knowhub.pojo.article.vo.ArticleContributorVo;
 import com.knowhub.service.article.impl.ArticleContributorService;
+import com.knowhub.support.ArticlePermissionResolver;
 import com.knowhub.support.NotifySupport;
 import com.rookie.common.exception.ServiceException;
 import com.rookie.common.pojo.entity.SysUser;
@@ -69,6 +70,13 @@ public class ArticleContributorServiceImpl implements ArticleContributorService 
         // 文章作者无需申请自己是贡献者（作者天然能写自己文章的章节）
         if (article.getAuthorId() != null && article.getAuthorId().equals(userId)) {
             throw new ServiceException(500, "文章作者无需申请贡献者");
+        }
+        // 申请人查看等级校验（2026-08-18 权限大修，决策#7）：申请人 view 等级 >= 文章 level 才能申请，
+        // 比文章自身等级（非作者等级）——防止低权用户向高等级文章申请贡献者越权写章节。
+        // admin 走 resolver 自然得 3 全过；未授权者得 0 只能申请 L1 文章。
+        int userLevel = ArticlePermissionResolver.resolve().level();
+        if (article.getLevel() != null && userLevel < article.getLevel()) {
+            throw new ServiceException(500, "无权申请该等级文章的贡献者（自身查看等级不足）");
         }
         // 去重：查当前 ACTIVE 行
         ArticleContributor exist = articleContributorMapper.getActiveByArticleAndUser(articleId, userId);

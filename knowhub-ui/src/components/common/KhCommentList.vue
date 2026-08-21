@@ -17,6 +17,7 @@ import KhEmpty from '@/components/common/KhEmpty.vue'
 import KhLoading from '@/components/common/KhLoading.vue'
 import KhComment from '@/components/common/KhComment.vue'
 import KhCommentInput from '@/components/common/KhCommentInput.vue'
+import KhIcon from '@/components/common/KhIcon.vue'
 import {
   createCommentApi,
   deleteCommentApi,
@@ -44,6 +45,12 @@ const props = defineProps<{
   commentCurated?: number
   /** 当前用户是否该作品作者（控制 inline 审核 + 删任意） */
   isAuthor?: boolean
+  /**
+   * 越级锁态 flag：作品 level 高于当前用户查看等级时后端返 locked=true，越级看不了完整内容也不能发评论。
+   * locked=true 时发表条与回复都禁用（看不了内容却发评论不合常理），但评论列表/点赞/删除/作者 inline 精选照常可用
+   * （只锁发，不锁看——与「评论锁只是不让发评论，没说不让看」口径一致）。
+   */
+  locked?: boolean
 }>()
 
 const userStore = useUserStore()
@@ -188,6 +195,11 @@ const onPickReplyImage = () => {
   pickReplyFiles()
 }
 const onReplyClick = (p: { commentId: number; replyToUserId: number; replyToNickname: string }) => {
+  // 越级锁态兜底拦回复（reply-disabled 已隐藏回复按钮，此处双保险防绕过）
+  if (props.locked) {
+    ElMessage.warning('等级不足，无法评论该作品')
+    return
+  }
   replyingTo.value = {
     parentId: p.commentId,
     replyToUserId: p.replyToUserId,
@@ -321,10 +333,14 @@ fetchComments()
     <div v-if="closed" class="kh-comment-list__closed">评论区已关闭</div>
 
     <template v-else>
-      <!-- 发表条（顶级） -->
-      <KhCommentInput :hint="curatedHintForUser" placeholder="写下你的评论…" @submit="onCreate" />
+      <!-- 发表条（顶级）：越级锁态时不渲染发表条，改显锁态占位（评论列表照常可看，只锁发不锁看） -->
+      <div v-if="locked" class="kh-comment-list__locked">
+        <KhIcon name="lock" :size="16" :stroke="1.5" />
+        <span>等级不足，无法评论该作品（需更高权限查看完整内容后再参与讨论）</span>
+      </div>
+      <KhCommentInput v-else :hint="curatedHintForUser" placeholder="写下你的评论…" @submit="onCreate" />
 
-      <!-- 顶级评论列表 -->
+      <!-- 顶级评论列表：越级锁态与正常态都渲染（只锁发不锁看） -->
       <div class="kh-comment-list__items">
         <KhLoading v-if="loading" />
         <KhEmpty v-else-if="!comments.length" text="还没有评论，来发表第一条吧" />
@@ -335,6 +351,7 @@ fetchComments()
                 :comment="c"
                 :current-user-id="currentUserId"
                 :is-author="isAuthor"
+                :reply-disabled="locked"
                 @like="onLikeTop"
                 @reply="onReplyClick"
                 @delete="onDeleteTop"
@@ -435,6 +452,18 @@ fetchComments()
   color: var(--kh-text-muted);
   background: var(--kh-bg-soft);
   border-radius: var(--kh-radius-md);
+}
+/* 越级锁态发表条占位：锁图标 + 提示，置灰替代发表条（评论列表照常可看，只锁发不锁看） */
+.kh-comment-list__locked {
+  display: flex;
+  align-items: center;
+  gap: var(--kh-space-2);
+  padding: var(--kh-space-4) var(--kh-space-5);
+  color: var(--kh-text-muted);
+  background: var(--kh-bg-soft);
+  border: 1px solid var(--kh-border-soft);
+  border-radius: var(--kh-radius-md);
+  font-size: 13px;
 }
 .kh-comment-list__items {
   display: flex;

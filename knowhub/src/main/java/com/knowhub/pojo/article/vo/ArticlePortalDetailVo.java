@@ -8,7 +8,8 @@ import java.util.List;
  * 供 GET /portal/article/{articleId} 出参：
  * - 正常（article.level<=userViewLevel）：locked=false、chapterList 下发完整章节大纲（点章节跳阅读页拉正文）、lockReason=null。
  * - 越级（article.level>userViewLevel，分级开关关时 userViewLevel 恒视 1）：locked=true、lockReason="需 L{N} 权限查看完整内容"、
- *   chapterList 仍下发（章节大纲只是章节名，不含正文），但正文走章节接口时也会锁态（不泄整章正文）；越级不计浏览量。
+ *   **chapterList 置空**（2026-08-18 决策#4，L1 看 L2 文章连章节列表都不下发，防越级用户从大纲窥探章节结构）；
+ *   越级不计浏览量。正文走章节接口时也会锁态（不泄整章正文）。
  * 文章正文不在 article 主表（正文在 chapter 表），详情只给大纲，每章正文按需走 /portal/article/{id}/chapter/{chapterId}。
  */
 public class ArticlePortalDetailVo extends ArticlePortalVo {

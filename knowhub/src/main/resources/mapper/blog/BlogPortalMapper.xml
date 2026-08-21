@@ -4,14 +4,16 @@
         "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.knowhub.mapper.blog.BlogPortalMapper">
 
-    <!-- 前台博客列表 VO 结果映射（含 authorNickname join 带出） -->
+    <!-- 前台博客列表 VO 结果映射（含 authorNickname/authorAvatar join 带出） -->
     <resultMap id="BlogPortalVoMap" type="com.knowhub.pojo.blog.vo.BlogPortalVo">
         <id property="blogId" column="blog_id"/>
         <result property="authorId" column="author_id"/>
         <result property="authorNickname" column="author_nickname"/>
+        <result property="authorAvatar" column="author_avatar"/>
         <result property="title" column="title"/>
         <result property="summary" column="summary"/>
         <result property="coverUrl" column="cover_url"/>
+        <result property="level" column="level"/>
         <result property="publishTime" column="publish_time"/>
         <result property="viewCount" column="view_count"/>
         <result property="likeCount" column="like_count"/>
@@ -23,6 +25,7 @@
         <id property="blogId" column="blog_id"/>
         <result property="authorId" column="author_id"/>
         <result property="authorNickname" column="author_nickname"/>
+        <result property="authorAvatar" column="author_avatar"/>
         <result property="title" column="title"/>
         <result property="summary" column="summary"/>
         <result property="coverUrl" column="cover_url"/>
@@ -37,11 +40,13 @@
     </resultMap>
 
     <!--
-      公共 where 片段：前台铁律 = deleted=0 AND status='PUBLISHED' AND level<=userViewLevel。
-      L2/L3 永不下发前台（分级开关关时 userViewLevel 恒 1）。前台不看作者归属（访客不靠作者身份看草稿）。
+      公共 where 片段：前台可见口径 = deleted=0 AND status='PUBLISHED' AND level<=userViewLevel+1。
+      2026-08-18 权限大修搜索范围 +1：越级作品（level=userViewLevel+1）进列表带 locked=true 标记、summary 可见，
+      点进详情才锁正文 content。L3 用户 level=3→<=4 搜全部；L2→<=3 搜全部（L3 带 locked）；L1→<=2 搜 L1+L2（L2 带 locked）。
+      分级开关关时 userViewLevel 恒 1 → level<=2（L1+L2，L2 带 locked）。前台不看作者归属（访客不靠作者身份看草稿）。
     -->
     <sql id="portalBlogWhere">
-        b.deleted = 0 and b.status = 'PUBLISHED' and b.level &lt;= #{userViewLevel}
+        b.deleted = 0 and b.status = 'PUBLISHED' and b.level &lt;= #{userViewLevel} + 1
     </sql>
 
     <!--
@@ -51,8 +56,8 @@
       列表不 select content。
     -->
     <select id="searchBlogs" parameterType="com.knowhub.pojo.blog.quarry.BlogPortalSearchQuarry" resultMap="BlogPortalVoMap">
-        select b.blog_id, b.author_id, u.nick_name as author_nickname,
-               b.title, b.summary, b.cover_url, b.publish_time,
+        select b.blog_id, b.author_id, u.nick_name as author_nickname, u.avatar as author_avatar,
+               b.title, b.summary, b.cover_url, b.level, b.publish_time,
                b.view_count, b.like_count, b.collect_count
         from blog b
                 left join sys_user u on b.author_id = u.user_id
@@ -68,7 +73,7 @@
             and bt.tag_id in
             <foreach collection="tagIds" item="tid" open="(" separator="," close=")">#{tid}</foreach>
             group by b.blog_id
-            having count(distinct bt.tag_id) = #{tagIds.size()}
+            having count(distinct bt.tag_id) = #{tagCount}
         </if>
         <choose>
             <when test="sort == 'HOT'">
@@ -97,8 +102,8 @@
       tagIds 为空时本查询不召回（service 走兜底）。列表回 Service 层算 hotScore。
     -->
     <select id="recommendByTags" resultMap="BlogPortalVoMap">
-        select b.blog_id, b.author_id, u.nick_name as author_nickname,
-               b.title, b.summary, b.cover_url, b.publish_time,
+        select b.blog_id, b.author_id, u.nick_name as author_nickname, u.avatar as author_avatar,
+               b.title, b.summary, b.cover_url, b.level, b.publish_time,
                b.view_count, b.like_count, b.collect_count
         from blog b
                 left join sys_user u on b.author_id = u.user_id
@@ -118,8 +123,8 @@
 
     <!-- 兜底全局热门（按 like*2+collect*3+view desc, publish_time desc），排除已召回的 excludeBlogIds -->
     <select id="recommendHot" resultMap="BlogPortalVoMap">
-        select b.blog_id, b.author_id, u.nick_name as author_nickname,
-               b.title, b.summary, b.cover_url, b.publish_time,
+        select b.blog_id, b.author_id, u.nick_name as author_nickname, u.avatar as author_avatar,
+               b.title, b.summary, b.cover_url, b.level, b.publish_time,
                b.view_count, b.like_count, b.collect_count
         from blog b
                 left join sys_user u on b.author_id = u.user_id
@@ -138,8 +143,8 @@
       照前台铁律过滤未发布/越级博客，IN 给定的 blogIds。不排序——service 按收藏时间倒序的 blogIds 顺序拼装。
     -->
     <select id="listByIds" resultMap="BlogPortalVoMap">
-        select b.blog_id, b.author_id, u.nick_name as author_nickname,
-               b.title, b.summary, b.cover_url, b.publish_time,
+        select b.blog_id, b.author_id, u.nick_name as author_nickname, u.avatar as author_avatar,
+               b.title, b.summary, b.cover_url, b.level, b.publish_time,
                b.view_count, b.like_count, b.collect_count
         from blog b
                 left join sys_user u on b.author_id = u.user_id
@@ -155,8 +160,8 @@
       仅限 PUBLISHED 公开博客；非 PUBLISHED（草稿/待审/驳回）前台根本不下发，meta 也查不到。
     -->
     <select id="getPortalBlogMeta" resultMap="BlogPortalDetailVoMap">
-        select b.blog_id, b.author_id, u.nick_name as author_nickname,
-               b.title, b.summary, b.cover_url, b.publish_time,
+        select b.blog_id, b.author_id, u.nick_name as author_nickname, u.avatar as author_avatar,
+               b.title, b.summary, b.cover_url, b.level, b.publish_time,
                b.view_count, b.like_count, b.collect_count, b.level,
                b.comment_enabled, b.comment_curated
         from blog b
@@ -172,8 +177,8 @@
 
     <!-- 相关推荐：同 tag（命中任一所选 tag 即可），排除自身，按热度，limit size -->
     <select id="relatedBlogs" resultMap="BlogPortalVoMap">
-        select b.blog_id, b.author_id, u.nick_name as author_nickname,
-               b.title, b.summary, b.cover_url, b.publish_time,
+        select b.blog_id, b.author_id, u.nick_name as author_nickname, u.avatar as author_avatar,
+               b.title, b.summary, b.cover_url, b.level, b.publish_time,
                b.view_count, b.like_count, b.collect_count
         from blog b
                 left join sys_user u on b.author_id = u.user_id
@@ -207,14 +212,14 @@
                    sum(b.like_count * 2 + b.collect_count * 3 + b.view_count) as score
             from blog_tag bt
                      inner join blog b on b.blog_id = bt.blog_id
-            where b.deleted = 0 and b.status = 'PUBLISHED' and b.level = 1
+            where b.deleted = 0 and b.status = 'PUBLISHED' and b.level &lt;= #{userViewLevel} + 1
             group by bt.tag_id
             union all
             select at2.tag_id, count(distinct a.article_id) as cnt,
                    sum(a.like_count * 2 + a.collect_count * 3 + a.view_count) as score
             from article_tag at2
                      inner join article a on a.article_id = at2.article_id
-            where a.deleted = 0 and a.status = 'PUBLISHED' and a.visibility = 'PUBLIC'
+            where a.deleted = 0 and a.status = 'PUBLISHED' and a.level &lt;= #{userViewLevel} + 1
             group by at2.tag_id
         ) merged
                  inner join tag t on t.tag_id = merged.tag_id
@@ -258,8 +263,9 @@
 
     <!--
       前台博客全量统计（/portal/blog/stats）：三段独立 count/sum 子查询一次返回。
-      - publishedBlogCount：blog 前台铁律（deleted=0 AND status='PUBLISHED' AND level<=userViewLevel）
-      - totalReads：sum(view_count) 应用博客铁律（view_count 主表冗余列，浏览事实表同步累加）
+      - publishedBlogCount：blog 前台可见口径（deleted=0 AND status='PUBLISHED' AND level<=userViewLevel+1，
+        与搜索/列表口径一致——越级作品进列表带 locked 也计入统计）。
+      - totalReads：sum(view_count) 应用博客可见口径（view_count 主表冗余列，浏览事实表同步累加）
       - tagCount：tag deleted=0 AND status=1 全量启用标签数（与 /portal/tag/hot 的 tag 过滤口径一致，
         hot 只回有关联内容的 Top-N，全量数在此给）
       固定口径，与搜索/翻页/标签过滤互不影响——统计是"全库当前可见数"而非"当前筛选结果数"。
@@ -267,9 +273,9 @@
     <select id="getPortalStats" parameterType="int" resultType="com.knowhub.pojo.blog.vo.PortalBlogStatsVo">
         select
             (select count(*) from blog b
-                where b.deleted = 0 and b.status = 'PUBLISHED' and b.level &lt;= #{userViewLevel}) as publishedBlogCount,
+                where b.deleted = 0 and b.status = 'PUBLISHED' and b.level &lt;= #{userViewLevel} + 1) as publishedBlogCount,
             (select cast(coalesce(sum(b.view_count), 0) as unsigned) from blog b
-                where b.deleted = 0 and b.status = 'PUBLISHED' and b.level &lt;= #{userViewLevel}) as totalReads,
+                where b.deleted = 0 and b.status = 'PUBLISHED' and b.level &lt;= #{userViewLevel} + 1) as totalReads,
             (select count(*) from tag t where t.deleted = 0 and t.status = 1) as tagCount
     </select>
 

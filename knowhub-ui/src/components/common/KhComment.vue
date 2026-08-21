@@ -19,9 +19,11 @@
 -->
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElImageViewer } from 'element-plus'
 import KhAvatar from '@/components/common/KhAvatar.vue'
 import { useMarkdownImageZoom } from '@/composables/useMarkdownImageZoom'
+import { useMarkdownCodeBlock } from '@/composables/useMarkdownCodeBlock'
 import { formatDateTime } from '@/utils/format'
 import type { CommentRecord, CommentReplyRecord } from '@/types/api/knowhub/comment'
 
@@ -36,6 +38,8 @@ const props = defineProps<{
   isAuthor?: boolean
   /** 是否回复项（控制回复按钮显隐——回复不嵌套回复） */
   isReply?: boolean
+  /** 越级锁态时禁用回复按钮（看不了完整内容也不能发评论/回复；列表/点赞/删除照常，只锁发不锁看） */
+  replyDisabled?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -48,6 +52,18 @@ const emit = defineEmits<{
 const isMine = computed(() => props.currentUserId != null && props.comment.authorId === props.currentUserId)
 const isPending = computed(() => props.comment.reviewStatus === 'PENDING')
 const isRejected = computed(() => props.comment.reviewStatus === 'REJECTED')
+
+const router = useRouter()
+
+/**
+ * 点击评论人昵称 / @某人 跳该用户公开主页（/user/{userId}，游客可读）。
+ * authorId 后端必返（评论发起人 userId）；@某人跳 replyToUserId（回复项才有，顶级评论无）。
+ * userId 非法（0/null）时不跳，避免跳到无效主页。
+ */
+const goUserHome = (uid?: number) => {
+  if (uid == null || uid <= 0) return
+  void router.push(`/user/${uid}`)
+}
 /** 作者 inline 审核按钮显隐：当前用户是作品作者且评论 PENDING */
 const canReview = computed(() => Boolean(props.isAuthor) && isPending.value)
 /** @某人信息（仅回复项才有，作者 inline 审核也仅在顶级评论项需显——以 props.isReply 控制） */
@@ -74,6 +90,8 @@ const onReject = () => emit('review', { commentId: props.comment.commentId, acti
 const contentRef = ref<HTMLElement | null>(null)
 /** 配图放大画廊：6 站 v-md-preview 站点同款——点 <img> 收同容器 img src 组 list + 被点索引起 viewer */
 const { viewerVisible, viewerUrls, viewerIndex, onContentClick, closeViewer } = useMarkdownImageZoom(contentRef)
+// 代码块增强（语言标签 + 复制按钮）：与配图放大共用同一 contentRef，正交不冲突
+useMarkdownCodeBlock(contentRef)
 
 // ---- 长内容折叠：统一最大高度，超限默认折叠 + 渐隐 +「展开」/「收起」----
 /** 评论内容折叠态最大高度（px）。统一所有评论的"未展开首屏可见高度"，长评论不压后续评论。
@@ -119,12 +137,16 @@ const toggleExpand = () => {
 
 <template>
   <div class="kh-comment">
-    <KhAvatar :item="{ label: comment.authorNickname || '?' }" :size="36" />
+    <KhAvatar :item="{ label: comment.authorNickname || '?', src: comment.authorAvatar ?? undefined }" :size="36" />
     <div class="kh-comment__body">
       <div class="kh-comment__head">
-        <span class="kh-comment__name">{{ comment.authorNickname || '匿名用户' }}</span>
+        <span class="kh-comment__name" @click="goUserHome(comment.authorId)">{{ comment.authorNickname || '匿名用户' }}</span>
         <span v-if="replyToLabeled" class="kh-comment__arrow">回复</span>
-        <span v-if="replyToLabeled" class="kh-comment__reply-to">@{{ replyToLabeled }}</span>
+        <span
+          v-if="replyToLabeled"
+          class="kh-comment__reply-to"
+          @click="goUserHome((comment as CommentReplyRecord).replyToUserId)"
+        >@{{ replyToLabeled }}</span>
         <span class="kh-comment__time">{{ formatDateTime(comment.createTime) }}</span>
         <!-- 本人状态标签 -->
         <span v-if="isMine && isPending" class="kh-comment__tag kh-comment__tag--pending">待作者确认</span>
@@ -164,7 +186,7 @@ const toggleExpand = () => {
         <button class="kh-comment__act" :class="{ 'kh-comment__act--on': comment.hasLiked }" @click="onLike">
           ❤ {{ comment.likeCount }}
         </button>
-        <button v-if="!isReply" class="kh-comment__act" @click="onReply">回复</button>
+        <button v-if="!isReply && !replyDisabled" class="kh-comment__act" @click="onReply">回复</button>
         <!-- 自删（本人）或作者删任意 -->
         <button v-if="isMine || isAuthor" class="kh-comment__act kh-comment__act--danger" @click="onDelete">删除</button>
         <!-- 作者 inline 精选 -->
@@ -211,6 +233,12 @@ const toggleExpand = () => {
   font-weight: 600;
   font-size: 13px;
   color: var(--kh-text);
+  cursor: pointer;
+  transition: color var(--kh-transition-fast);
+}
+.kh-comment__name:hover {
+  color: var(--kh-primary);
+  text-decoration: underline;
 }
 .kh-comment__arrow {
   font-size: 12px;
@@ -219,6 +247,10 @@ const toggleExpand = () => {
 .kh-comment__reply-to {
   font-size: 13px;
   color: var(--kh-primary);
+  cursor: pointer;
+}
+.kh-comment__reply-to:hover {
+  text-decoration: underline;
 }
 .kh-comment__time {
   font-size: 12px;
@@ -276,10 +308,6 @@ const toggleExpand = () => {
   font-size: 14px;
   line-height: 1.7;
   color: inherit;
-}
-.kh-comment__content :deep(.github-markdown-body h1),
-.kh-comment__content :deep(.github-markdown-body h2) {
-  border-bottom: none;
 }
 .kh-comment__content :deep(.github-markdown-body) > :first-child {
   margin-top: 0;

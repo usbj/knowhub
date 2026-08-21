@@ -94,7 +94,9 @@
   /* —— 字体族 —— */
   --kh-font-display: 'Space Grotesk', 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   --kh-font-body: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  --kh-font-mono: 'JetBrains Mono', 'Fira Code', ui-monospace, SFMono-Regular, monospace;
+  /* 等宽字体：JetBrains Mono 主力（@fontsource 自托管 latin 子集），中英文混排时中文回退到系统字体，
+     避免等宽字体硬撑中文致间距异常。回退链：JetBrains Mono → 系统等宽 → 中文系统字体。 */
+  --kh-font-mono: 'JetBrains Mono', 'SF Mono', Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', 'PingFang SC', 'Microsoft YaHei', ui-monospace, SFMono-Regular, monospace;
 
   /* —— 布局尺寸 —— */
   --kh-header-height: 64px;
@@ -107,6 +109,31 @@
 
   /* —— 焦点环 —— */
   --kh-focus-ring: 0 0 0 3px var(--kh-primary-soft);
+
+  /* —— 代码块（Markdown fence）—— 亮色：浅色编辑器 #F8F8F2 + 行号区 #E9E9F2 + atom-one-light token；
+     暗色值在 [data-theme='dark'] 预留（hljs 暗主题待前台暗色体系建立后同步切换，现阶段亮色生效）。 —— */
+  --kh-code-bg: #f8f8f2;
+  --kh-code-gutter-bg: #e9e9f2;
+  --kh-code-linenum-color: #a0a0aa;
+  --kh-code-text: #383a42;
+  --kh-code-border: rgba(0, 0, 0, 0.06);
+  --kh-code-header-bg: #f1f1eb;
+  --kh-code-header-border: rgba(0, 0, 0, 0.06);
+  --kh-code-lang-color: #6e7681;
+  --kh-code-lang-bg: rgba(110, 118, 129, 0.1);
+  --kh-code-lang-border: rgba(110, 118, 129, 0.18);
+  --kh-code-lang-plain-color: #9aa0a6;
+  --kh-code-copy-icon: #6e7681;
+  --kh-code-copy-hover-bg: rgba(110, 118, 129, 0.16);
+  --kh-code-copy-focus: rgba(37, 99, 235, 0.45);
+  --kh-code-copy-success: #22c55e;
+  --kh-code-copy-success-bg: rgba(34, 197, 94, 0.12);
+  --kh-code-copy-fail: #ef4444;
+  --kh-code-copy-fail-bg: rgba(239, 68, 68, 0.12);
+  --kh-code-inline-bg: #e9e9f2;
+  --kh-code-inline-color: #bd93f9;
+  --kh-code-scrollbar-thumb: rgba(128, 128, 128, 0.3);
+  --kh-code-scrollbar-thumb-hover: rgba(128, 128, 128, 0.5);
 
   /* —— Element Plus 主色映射（让 EP 控件跟随前台主色） —— */
   --el-color-primary: var(--kh-primary);
@@ -135,4 +162,28 @@
 /* 深色主题钩子：demo 阶段不填实，仅留接口供后续接入 */
 [data-theme='dark'] {
   color-scheme: dark;
+
+  /* 代码块暗色（GitHub Dark 系 #0D1117 + 行号区 #161B22 + token 待 hljs 暗主题切换后生效） */
+  --kh-code-bg: #0d1117;
+  --kh-code-gutter-bg: #161b22;
+  --kh-code-linenum-color: #6e7681;
+  --kh-code-text: #c9d1d9;
+  --kh-code-border: rgba(255, 255, 255, 0.08);
+  --kh-code-header-bg: #161b22;
+  --kh-code-header-border: rgba(255, 255, 255, 0.08);
+  --kh-code-lang-color: #8b949e;
+  --kh-code-lang-bg: rgba(139, 148, 158, 0.12);
+  --kh-code-lang-border: rgba(139, 148, 158, 0.22);
+  --kh-code-lang-plain-color: #6e7681;
+  --kh-code-copy-icon: #8b949e;
+  --kh-code-copy-hover-bg: rgba(139, 148, 158, 0.18);
+  --kh-code-copy-focus: rgba(88, 166, 255, 0.5);
+  --kh-code-copy-success: #3fb950;
+  --kh-code-copy-success-bg: rgba(63, 185, 80, 0.14);
+  --kh-code-copy-fail: #f85149;
+  --kh-code-copy-fail-bg: rgba(248, 81, 73, 0.14);
+  --kh-code-inline-bg: rgba(110, 118, 129, 0.26);
+  --kh-code-inline-color: #d2a8ff;
+  --kh-code-scrollbar-thumb: rgba(139, 148, 158, 0.3);
+  --kh-code-scrollbar-thumb-hover: rgba(139, 148, 158, 0.5);
 }

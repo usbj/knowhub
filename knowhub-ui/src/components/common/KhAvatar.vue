@@ -4,7 +4,7 @@
   支持文字首字与图片两种；支持 group（重叠展示，+N 溢出）。
 -->
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 
 interface AvatarItem {
   /** 显示文字（首字）或图片 url */
@@ -35,6 +35,21 @@ const props = withDefaults(
 const palette = ['#2563eb', '#0ea5e9', '#f59e0b', '#16a34a', '#6366f1', '#dc2626', '#0f766e', '#db2777']
 const colorFor = (i: number) => palette[i % palette.length]
 
+/**
+ * 单头像图片加载失败标志：src 变化时重置，@error 时置位。
+ * 置位后回退显首字占位（与后台 rookie UserAvatar 同口径兜底）。
+ */
+const imgFailed = ref(false)
+watch(
+  () => props.item?.src,
+  () => {
+    imgFailed.value = false
+  },
+)
+
+/** 单头像是否走 <img>：有 src 且未加载失败才走图片，否则回退首字。 */
+const showImg = computed(() => Boolean(props.item?.src) && !imgFailed.value)
+
 /** 头像组实际展示 + 溢出计数 */
 const group = computed(() => {
   const list = props.items ?? []
@@ -52,7 +67,7 @@ const group = computed(() => {
     class="kh-avatar"
     :style="{ width: `${size}px`, height: `${size}px`, fontSize: `${size * 0.42}px`, background: item.color ?? colorFor((item.label ?? '').charCodeAt(0) ?? 0) }"
   >
-    <img v-if="item.src" :src="item.src" :alt="item.label ?? ''" />
+    <img v-if="showImg" :src="item.src" :alt="item.label ?? ''" @error="imgFailed = true" />
     <template v-else>{{ (item.label ?? '?').slice(0, 1) }}</template>
   </span>
 

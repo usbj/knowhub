@@ -10,6 +10,8 @@ import com.knowhub.pojo.storage.vo.PublicObjectStream;
 import com.knowhub.pojo.storage.vo.UploadApplyVo;
 import com.knowhub.pojo.storage.vo.UploadTokenVo;
 
+import java.io.IOException;
+
 /**
  * 文件存储服务。预签名直传链路：apply 签发上传令牌 → 前端直传 RustFS → confirm 用 HeadObject 核对。
  * 后端全程不经流文件字节，只管元数据 + 预签名签发。接口只暴露 DTO，不暴露实体。
@@ -113,4 +115,26 @@ public interface FileService {
 
     /** GC：扫描超时 PENDING + 已软删行，DeleteObject + 物理删元数据 */
     void gc();
+
+    /**
+     * 打包下载预估总字节数：累加所有 deleted=0 + CONFIRMED 的 file_object.content_length。
+     * 供前端在发起打包下载前做大小预估、超 50G 弹警告确认。
+     * @return 总字节数
+     */
+    long packTotalSize();
+
+    /**
+     * 流式打包下载全部 OSS 文件到指定 OutputStream（CLIENT 模式写 HttpServletResponse）。
+     * 遍历所有 deleted=0 + CONFIRMED 行，每行 ZipEntry(objectKey) + backend.get 裸流 transferTo，
+     * 目录结构对齐 OSS objectKey。单对象不进内存（transferTo 8KB 缓冲）。
+     * @param out 目标输出流（zip 字节流），调用方负责关闭
+     */
+    void streamPackDownload(java.io.OutputStream out) throws IOException;
+
+    /**
+     * 打包下载到服务器本地磁盘（SERVER 模式）：写 zip 到 storage.local-base-path 下的临时文件，
+     * 返回落盘绝对路径。供前端提示用户去服务器取包。
+     * @return 落盘绝对路径
+     */
+    String packDownloadToServer();
 }

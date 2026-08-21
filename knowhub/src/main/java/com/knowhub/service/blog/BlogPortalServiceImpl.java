@@ -41,8 +41,10 @@ import java.util.stream.Collectors;
  * 前台博客门户 Service 实现。
  * <p>
  * 前台无 @PreAuthorize、走 /portal/** permitAll，登录态在此防御性获取（principal 非 UserInfo 视为未登录）。
- * 分级开关 knowhub.portal.hierarchical.enabled 关→userViewLevel 恒 1（二元闸）；开→max(1, resolver.view())（阶梯闸）。
- * 越级详情返回锁态 VO（content 置空 + lockReason），不抛 403、不泄正文。
+ * 分级开关 knowhub.portal.hierarchical.enabled 关→userViewLevel 恒 1（二元闸）；开→max(1, resolver.level())（阶梯闸）。
+ * 2026-08-18 权限大修单键化 + 搜索范围 +1：resolver 改单键 knowhub:blog:lN（resolve().level() 取最高等级），
+ * 列表 SQL where 片段 level<=userViewLevel+1（越级作品进列表带 locked=true，summary 可见），详情 meta 不带 level 过滤
+ * 由 service 判越级 → 锁态 VO（content 置空 + locked + lockReason），不抛 403、不泄正文。
  */
 @Service
 public class BlogPortalServiceImpl implements BlogPortalService {
@@ -73,9 +75,13 @@ public class BlogPortalServiceImpl implements BlogPortalService {
     @Override
     public PageInfo<BlogPortalVo> search(BlogPortalSearchQuarry quarry) {
         quarry.setUserViewLevel(resolveUserViewLevel());
+        // 标签命中门槛值：tagCount 必须在 service 层算好回填，不能在 SQL 里写 #{tagIds.size()}——
+        // MyBatis createCacheKey 反射取 tagIds.size() 会走 CollectionWrapper.get("size") 抛 UnsupportedOperationException。
+        quarry.setTagCount(quarry.getTagIds() == null ? 0 : quarry.getTagIds().size());
         PageUtil.startPage();
         List<BlogPortalVo> list = blogPortalMapper.searchBlogs(quarry);
         fillTagsForList(list);
+        fillLockedForList(list, quarry.getUserViewLevel());
         return new PageInfo<>(list);
     }
 
@@ -131,6 +137,7 @@ public class BlogPortalServiceImpl implements BlogPortalService {
         }
 
         fillTagsForList(result);
+        fillLockedForList(result, userViewLevel);
         return result;
     }
 
@@ -141,11 +148,19 @@ public class BlogPortalServiceImpl implements BlogPortalService {
         if (meta == null) {
             return null; // 不存在或非 PUBLISHED，前台 404 语义由 controller 处理
         }
-        // 越级锁态：level > userViewLevel → 不下发正文，只给元数据 + lockReason
+        // 越级锁态：level > userViewLevel → content 置空（不下发完整正文），previewContent 下发前 N 字符作预览
+        // （预览式阅读锁：能看几行但后面被锁，PortalConfigReader.getLockPreviewLength 控制预览长度，默认 200，0=不预览回退整篇锁）
         Integer level = meta.getLevel();
         if (level != null && level > userViewLevel) {
             meta.setLocked(true);
             meta.setContent(null);
+            int previewLen = portalConfigReader.getLockPreviewLength();
+            if (previewLen > 0) {
+                String full = blogPortalMapper.getBlogContent(blogId);
+                meta.setPreviewContent(truncatePreview(full, previewLen));
+            } else {
+                meta.setPreviewContent(null);
+            }
             meta.setLockReason("需 L" + level + " 权限查看完整正文");
             // 越级不计浏览量（未达权限不算统计量，与第二条链路决策#3"未登录不计浏览量"同构）
             fillCurrentUserInteract(meta, blogId);
@@ -155,6 +170,7 @@ public class BlogPortalServiceImpl implements BlogPortalService {
         // 达权：取正文 + 计浏览量（仅登录态计，未登录不计）
         meta.setLocked(false);
         meta.setContent(blogPortalMapper.getBlogContent(blogId));
+        meta.setPreviewContent(null);
         meta.setLockReason(null);
         UserInfo user = currentUserOrNull();
         if (user != null) {
@@ -170,6 +186,7 @@ public class BlogPortalServiceImpl implements BlogPortalService {
         Integer userViewLevel = resolveUserViewLevel();
         List<BlogPortalVo> list = blogPortalMapper.relatedBlogs(blogId, userViewLevel, size);
         fillTagsForList(list);
+        fillLockedForList(list, userViewLevel);
         return list;
     }
 
@@ -202,12 +219,13 @@ public class BlogPortalServiceImpl implements BlogPortalService {
             }
         }
         fillTagsForList(ordered);
+        fillLockedForList(ordered, userViewLevel);
         return new PageInfo<>(ordered);
     }
 
     @Override
     public List<HotTagVo> hotTags(int size) {
-        return blogPortalMapper.hotTags(size == 0 ? 20 : size);
+        return blogPortalMapper.hotTags(size == 0 ? 20 : size, resolveUserViewLevel());
     }
 
     @Override
@@ -229,15 +247,25 @@ public class BlogPortalServiceImpl implements BlogPortalService {
 
     /**
      * 解析前台 userViewLevel：
-     * 分级开关关 → 恒 1（二元闸，所有人只看 L1）；
-     * 开 → max(1, BlogPermissionResolver.view())（未登录/无权限 view=0→1 看 L1；有等级者看 L1~LN）。
+     * 分级开关关 → 恒 1（二元闸，所有人只看 L1+L2 带 locked）；
+     * 开 → max(1, BlogPermissionResolver.level())（单键 knowhub:blog:lN，未登录/无权限 level=0→1 看 L1；有等级者看 L1~LN）。
+     * 2026-08-18 权限大修单键化：resolve().view() → resolve().level()。
+     * <p>
+     * admin 短路兜底：admin 默认拥有所有权限、能看任何级别作品，**在分级开关判定之前**直接返回 3。
+     * 不受 hierarchical 开关（关时普通用户恒 1）与 sys_role_menu 绑定（admin 角色未绑 l3 菜单也能得 3）影响。
+     * UserInfo.isAdmin() 由 rookie 框架 UserDetailServiceImpl 依 roleKey="admin" 装载。
      */
     private Integer resolveUserViewLevel() {
+        // admin 短路：admin 看任何级别，不受分级开关与角色菜单绑定影响
+        UserInfo user = currentUserOrNull();
+        if (user != null && user.isAdmin()) {
+            return 3;
+        }
         if (!portalConfigReader.isHierarchicalEnabled()) {
             return 1;
         }
-        int view = BlogPermissionResolver.resolve().view();
-        return Math.max(1, view);
+        int level = BlogPermissionResolver.resolve().level();
+        return Math.max(1, level);
     }
 
     /**
@@ -344,6 +372,19 @@ public class BlogPortalServiceImpl implements BlogPortalService {
     }
 
     /**
+     * 批量回填越级锁标记：vo.level > userViewLevel → locked=true（2026-08-18 搜索范围 +1 落地）。
+     * 越级作品进列表带锁标记、summary 可见，前端据此渲染锁图标；达权 locked=false。O(n) n=页大小，开销可忽略。
+     * 博客越级锁正文（content 在详情置空），列表层仅标 locked 不置空字段。
+     */
+    private void fillLockedForList(List<BlogPortalVo> list, Integer userViewLevel) {
+        if (list == null || list.isEmpty()) return;
+        for (BlogPortalVo vo : list) {
+            Integer level = vo.getLevel();
+            vo.setLocked(level != null && level > userViewLevel);
+        }
+    }
+
+    /**
      * 详情回填当前用户的点赞/收藏态（登录态查 blog_like/blog_collect 事实表，未登录置 null 不查库）。
      * 与 ResourcePortalServiceImpl.fillCurrentUserInteract 同范式：Boolean 包装类型，未登录留 null
      * 让前端按"游客态"渲染按钮（不比已点亮的真值）。
@@ -374,5 +415,19 @@ public class BlogPortalServiceImpl implements BlogPortalService {
         if (auth == null || !auth.isAuthenticated()) return null;
         Object p = auth.getPrincipal();
         return (p instanceof UserInfo) ? (UserInfo) p : null;
+    }
+
+    /**
+     * 越级预览截断：取正文前 max 字符作预览（超长追加 "…"，null/空返 null）。
+     * 预览式阅读锁用——越级用户能看到开篇几行，其后内容锁遮罩。
+     */
+    private static String truncatePreview(String s, int max) {
+        if (s == null || s.isEmpty() || max <= 0) {
+            return null;
+        }
+        if (s.length() <= max) {
+            return s;
+        }
+        return s.substring(0, max) + "…";
     }
 }

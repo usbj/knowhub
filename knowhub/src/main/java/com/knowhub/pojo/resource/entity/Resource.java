@@ -47,6 +47,9 @@ public class Resource extends BaseEntity {
     /** 状态：DRAFT/PUBLISHED/REVOKED/PENDING_REVIEW/REJECTED（见 ResourceStatus 枚举） */
     private String status;
 
+    /** 等级 1公开/2内部/3机密（见 ResourceLevel 枚举，2026-08-18 权限大修引入，缺省 L1） */
+    private Integer level;
+
     /** 审核状态：NONE/PENDING/APPROVED/REJECTED（见 ReviewStatus 枚举，复用） */
     private String reviewStatus;
 
@@ -89,7 +92,7 @@ public class Resource extends BaseEntity {
                     Long resourceId, Long authorId, String resourceType, Long resourceCategoryId,
                     String title, String summary, String description,
                     Long fileObjectId, String linkUrl, String linkIcon,
-                    String status, String reviewStatus, Date publishTime, Long downloadCount, Integer deleted) {
+                    String status, Integer level, String reviewStatus, Date publishTime, Long downloadCount, Integer deleted) {
         super(createTime, updateTime, createBy, updateBy);
         this.resourceId = resourceId;
         this.authorId = authorId;
@@ -102,6 +105,7 @@ public class Resource extends BaseEntity {
         this.linkUrl = linkUrl;
         this.linkIcon = linkIcon;
         this.status = status;
+        this.level = level;
         this.reviewStatus = reviewStatus;
         this.publishTime = publishTime;
         this.downloadCount = downloadCount;
@@ -194,6 +198,14 @@ public class Resource extends BaseEntity {
 
     public void setStatus(String status) {
         this.status = status;
+    }
+
+    public Integer getLevel() {
+        return level;
+    }
+
+    public void setLevel(Integer level) {
+        this.level = level;
     }
 
     public String getReviewStatus() {

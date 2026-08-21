@@ -31,6 +31,9 @@ export interface SysUserProfile {
   status: number
   createTime?: string
 
+  /** 头像 URL（/file/resolve/{objectId} 形态，无头像为 null/undefined，前端 <img> 直引失败回退首字） */
+  avatar?: string
+
   /** 后端返回 userRole 列表，用于展示角色名标签。 */
   userRole?: SysRoleRecord[]
 }

@@ -28,14 +28,15 @@ import com.knowhub.pojo.article.vo.ArticleReviewVo;
 import com.knowhub.pojo.article.vo.ArticleVo;
 import com.knowhub.service.article.impl.ArticleService;
 import com.knowhub.service.history.impl.ViewHistoryService;
-import com.knowhub.service.review.ReviewNotifyService;
+import com.knowhub.pojo.event.WorkReviewResultEvent;
+import com.knowhub.pojo.event.WorkSubmittedForReviewEvent;
 import com.knowhub.enums.history.ViewBizType;
-import com.knowhub.support.NotifySupport;
 import com.rookie.common.exception.ServiceException;
 import com.rookie.common.util.PageUtil;
 import com.rookie.framework.security.pojo.Permission;
 import com.rookie.framework.security.pojo.UserInfo;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
@@ -97,10 +98,7 @@ public class ArticleServiceImpl implements ArticleService {
     private ViewHistoryService viewHistoryService;
 
     @Autowired
-    private NotifySupport notifySupport;
-
-    @Autowired
-    private ReviewNotifyService reviewNotifyService;
+    private ApplicationEventPublisher applicationEventPublisher;
 
     @Autowired
     private StringRedisTemplate redisTemplate;
@@ -113,11 +111,14 @@ public class ArticleServiceImpl implements ArticleService {
 
     @Override
     public PageInfo<ArticleVo> quarryArticle(ArticleQuarry quarry) {
-        // 一次扫描 perms 取查看等级（admin 自然 3，无权限者 0）
+        // 一次扫描 perms 取查看等级（2026-08-18 单键化：level() 取最高等级，admin 自然 3，无权限者 0）
         ArticlePermissionLevel lvl = ArticlePermissionResolver.resolve();
         UserInfo user = currentUser();
-        quarry.setUserViewLevel(lvl.view());
+        quarry.setUserViewLevel(lvl.level());
         quarry.setUserId(user.getUserId());
+        // 标签命中门槛值：tagCount 在 service 层算好回填，不能在 SQL 里写 #{tagIds.size()}——
+        // MyBatis createCacheKey 反射取 tagIds.size() 会走 CollectionWrapper.get("size") 抛 UnsupportedOperationException。
+        quarry.setTagCount(quarry.getTagIds() == null ? 0 : quarry.getTagIds().size());
         PageUtil.startPage();
         List<Article> list = articleMapper.quarryArticle(quarry);
         PageInfo<Article> page = PageUtil.packagedPageInfo(list);
@@ -184,6 +185,9 @@ public class ArticleServiceImpl implements ArticleService {
         if (article.getLevel() == null) {
             article.setLevel(ArticleLevel.L1.getCode());
         }
+        // 分级创作闸（2026-08-18 权限大修，对齐博客 assertCanCreateLevel）：能创作的内容等级上限 <= 自身查看等级；
+        // 非 L2 级成员不能建 L2 文章。admin 走 resolver 自然得 3（登录时全 perm_key 已塞入）；未授权者得 0 只能建 L1。
+        assertCanCreateLevel(ArticlePermissionResolver.resolve().level(), article.getLevel());
         if (article.getVisibility() == null || article.getVisibility().isEmpty()) {
             article.setVisibility(ArticleVisibility.PRIVATE.getCode());
         }
@@ -215,8 +219,9 @@ public class ArticleServiceImpl implements ArticleService {
         if (ArticleStatus.PENDING_REVIEW.getCode().equals(cur)) {
             throw new ServiceException(500, "审核中文章不能编辑，如需修改请先驳回或撤回后操作");
         }
-        // 权限校验：canOp(edit)（作者能编辑自己的文章，不看等级）
-        if (!canOp(exist, "edit")) {
+        // 权限校验（2026-08-18 权限大修去 edit 分级）：仅作者本人 OR 超级管理员可编辑。
+        // 旧 canOp(edit) 扫 edit:lN 等级键已废；编辑口径统一 = 作者 OR admin，对齐博客 canEditBlog。
+        if (!canEditArticle(exist)) {
             throw new ServiceException(500, "无权编辑该文章");
         }
         validateArticlePayload(vo);
@@ -225,14 +230,8 @@ public class ArticleServiceImpl implements ArticleService {
         Article article = BeanUtil.toBean(vo, Article.class);
         UserInfo userInfo = currentUser();
         article.setUpdateBy(userInfo.getUsername());
-        // 改 level 要校验：操作者自己的 edit 等级 >= 新 level（否则能把自己够不着的文章降级再让别人改）
-        if (article.getLevel() != null && article.getLevel() > exist.getLevel()) {
-            ArticlePermissionLevel lvl = ArticlePermissionResolver.resolve();
-            // 作者改自己文章的 level 也要校验（防止作者把 PRIVATE 文章提到 L3 机密后自己又不想担）
-            if (lvl.edit() < article.getLevel() && !isAuthor(exist, userInfo)) {
-                throw new ServiceException(500, "无权提升文章到更高等级（自身编辑等级不足）");
-            }
-        }
+        // 2026-08-18 权限大修：删 level 升级校验块（旧 edit:lN 等级键已废，单键化后编辑不分等级）。
+        // 作者本人全权改 level（canEditArticle 已校验作者 OR admin），非作者已被 canEditArticle 拒，无需再校验等级。
         try {
             articleMapper.editArticleInfo(article);
         } catch (Exception e) {
@@ -291,8 +290,8 @@ public class ArticleServiceImpl implements ArticleService {
         if (ArticleStatus.PENDING_REVIEW.getCode().equals(cur)) {
             throw new ServiceException(500, "文章审核中，请勿重复提交");
         }
-        // 权限校验：canOp(edit)（发布属编辑范畴；作者能发布自己的文章）
-        if (!canOp(exist, "edit")) {
+        // 权限校验（2026-08-18 权限大修）：发布属编辑范畴，仅作者本人 OR 超级管理员可发布。
+        if (!canEditArticle(exist)) {
             throw new ServiceException(500, "无权发布该文章");
         }
         UserInfo userInfo = currentUser();
@@ -308,8 +307,9 @@ public class ArticleServiceImpl implements ArticleService {
             action = ReviewAction.SUBMIT;
             redisTemplate.opsForValue().set(baseKey + CACHE_PENDING_FLAG, "1");
             // 提审通知：按系统设置 knowhub.review.notify_role_key 通知持该角色的有效用户（总开关缺省关）
-            reviewNotifyService.notifyReviewers("article", articleId, exist.getTitle(),
-                    userInfo.getUsername(), userInfo.getUsername());
+            // 经事件 AFTER_COMMIT 由 WorkReviewNotifyListener 调 ReviewNotifyService 落通知，与审核状态变更解耦
+            applicationEventPublisher.publishEvent(new WorkSubmittedForReviewEvent("article", articleId, exist.getTitle(),
+                    userInfo.getUsername(), userInfo.getUsername()));
         } else {
             update.setStatus(ArticleStatus.PUBLISHED.getCode());
             update.setPublishTime(now);
@@ -318,8 +318,9 @@ public class ArticleServiceImpl implements ArticleService {
         }
         articleMapper.editArticleInfo(update);
         writeReviewLog(articleId, action, userInfo, null);
-        // 审核结果通知作者（SUBMIT 不通知：作者是提交人；PUBLISH 直通发"已发布"通知）
-        notifyReviewResult(exist, action, null);
+        // 审核结果通知作者（经事件 AFTER_COMMIT 落通知：SUBMIT 不发、PUBLISH 直通发"已发布"）
+        applicationEventPublisher.publishEvent(new WorkReviewResultEvent("article", articleId, exist.getAuthorId(),
+                exist.getTitle(), null, null, action, null, false, null, "system"));
         return true;
     }
 
@@ -333,7 +334,8 @@ public class ArticleServiceImpl implements ArticleService {
         if (!ArticleStatus.PUBLISHED.getCode().equals(exist.getStatus())) {
             throw new ServiceException(500, "仅已发布文章可撤回");
         }
-        if (!canOp(exist, "edit")) {
+        // 权限校验（2026-08-18 权限大修）：撤回属编辑范畴，仅作者本人 OR 超级管理员可撤回。
+        if (!canEditArticle(exist)) {
             throw new ServiceException(500, "无权撤回该文章");
         }
         UserInfo userInfo = currentUser();
@@ -388,8 +390,9 @@ public class ArticleServiceImpl implements ArticleService {
         }
         articleMapper.editArticleInfo(update);
         writeReviewLog(vo.getArticleId(), action, userInfo, advice);
-        // 审核结果通知作者（APPROVE/REJECT；avoid 已保障 author_id==userId 走不到这里）
-        notifyReviewResult(exist, action, advice);
+        // 审核结果通知作者（经事件 AFTER_COMMIT 落通知：APPROVE 发通过、REJECT 发驳回+advice）
+        applicationEventPublisher.publishEvent(new WorkReviewResultEvent("article", vo.getArticleId(), exist.getAuthorId(),
+                exist.getTitle(), null, null, action, null, false, advice, "system"));
         return true;
     }
 
@@ -434,54 +437,56 @@ public class ArticleServiceImpl implements ArticleService {
     // ============================ 私有辅助 ============================
 
     /**
-     * 审核结果通知作者（2026-08-15 落地，复用 NotifySupport 个人通道）。
-     * 通知口径同博客：APPROVE/REJECT 发审核结果通知，PUBLISH（审核开关关直通）发"已发布"通知，
-     * SUBMIT/REVOKE 不通知（作者主动行为）。reviewArticle 调用前 author_id==userId 回避已抛错，
-     * 不会给作者自己发审核结果。失败由 NotifySupport 内部吞掉，不阻断审核状态已落库。
+     * 审核结果通知：已迁移至 ReviewNotifyService.notifyReviewResult，由 WorkReviewNotifyListener
+     * 在审核事务 AFTER_COMMIT 后消费 WorkReviewResultEvent 落通知。本类不再直接发审核通知，与审核状态机解耦。
+     * 文案（APPROVE/REJECT/PUBLISH）与 routePath（/article/{id}）集中在 ReviewNotifyService，消除 4x 重复。
      */
-    private void notifyReviewResult(Article article, ReviewAction action, String advice) {
-        if (article == null || article.getAuthorId() == null) {
-            return;
-        }
-        String title;
-        String content;
-        switch (action) {
-            case APPROVE:
-                title = "你的文章审核通过";
-                content = "《" + article.getTitle() + "》审核通过，已发布。" + (advice != null && !advice.isEmpty() ? "审核意见：" + advice : "");
-                break;
-            case REJECT:
-                title = "你的文章被驳回";
-                content = "《" + article.getTitle() + "》被驳回，请修改后重新发布。" + (advice != null && !advice.isEmpty() ? "驳回原因：" + advice : "");
-                break;
-            case PUBLISH:
-                title = "你的文章已发布";
-                content = "《" + article.getTitle() + "》已直接发布（审核未开启）。";
-                break;
-            default:
-                return;
-        }
-        notifySupport.notifyUser(article.getAuthorId(), title, content, "/article/" + article.getArticleId(), "system");
-    }
 
     /**
-     * 权限判定核心：用户对文章 A 是否有操作 op 权限。
-     * 公式：userLvl(op) >= A.level OR author_id == userId（作者全权，不看等级/不看 visibility）。
-     * admin 因 perms 含全 l3 自然 userLvl=3，对所有文章全权（系统权限分支）。
+     * 权限判定核心：用户对文章 A 是否有 view 权限（2026-08-18 权限大修单键化，去 op 维度）。
+     * 公式：userLvl >= A.level OR author_id == userId（作者全权，不看等级/不看 visibility）。
+     * admin 因 perms 含全 l3 自然 userLvl=3，对所有文章可查（系统权限分支）。
+     * <p>
+     * 仅用于 getArticleInfo 二次校验与详情 canView 回填；编辑/发布/撤回走 {@link #canEditArticle}（作者 OR admin，不分等级）。
      */
     private boolean canOp(Article article, String op) {
+        // op 仅 "view" 有意义（edit 已走 canEditArticle，单键 resolver 无 op 维度）
         ArticlePermissionLevel lvl = ArticlePermissionResolver.resolve();
         // 系统权限等级够 → 直接通过
-        if (article.getLevel() != null && lvl.levelOf(op) >= article.getLevel()) {
+        if (article.getLevel() != null && lvl.level() >= article.getLevel()) {
             return true;
         }
         // 作者归属：作者对自己的文章全权（类比项目 LEADER，但无成员表，直接 author_id 比对）
         return isAuthor(article, currentUser());
     }
 
+    /**
+     * 编辑权限判定（2026-08-18 权限大修去 edit 分级，对齐博客 canEditBlog）：仅作者本人 OR 超级管理员可编辑/发布/撤回。
+     * 不看 level、不扫 edit:lN 等级键（已废，单键 knowhub:article:lN 只管 view/创作闸/贡献者申请校验）。
+     * admin 走 rookie 框架短路，currentUser().isAdmin() 直接放行。章节创作走贡献者机制（ArticleContributor APPROVED 第三分支），不取此值。
+     */
+    private boolean canEditArticle(Article article) {
+        UserInfo user = currentUser();
+        return isAuthor(article, user) || user.isAdmin();
+    }
+
     /** 当前用户是否该文章作者（author_id 比对，userId 稳定锁定） */
     private boolean isAuthor(Article article, UserInfo user) {
         return article.getAuthorId() != null && article.getAuthorId().equals(user.getUserId());
+    }
+
+    /**
+     * 分级创作闸（2026-08-18 权限大修，对齐博客 assertCanCreateLevel）：能创作的内容等级上限 <= 自身查看等级。
+     * 非 L2 级成员不能创建 L2 文章。userViewLevel 由 ArticlePermissionResolver.resolve().level() 给出
+     * （admin 自然 3，未授权 0）。targetLevel<=1 恒放行（L1 公开人人可建）。
+     */
+    private void assertCanCreateLevel(int userViewLevel, Integer targetLevel) {
+        if (targetLevel == null || targetLevel <= 1) {
+            return;
+        }
+        if (userViewLevel < targetLevel) {
+            throw new ServiceException(500, "无权创建 L" + targetLevel + " 级内容（自身查看等级不足）");
+        }
     }
 
     /** 判断当前用户是否拥有某按钮权限（非等级，如 knowhub:article:delete）。
@@ -499,20 +504,23 @@ public class ArticleServiceImpl implements ArticleService {
         return false;
     }
 
-    /** 详情接口回填当前用户对该文章的权限态（供前端控制编辑/发布按钮显隐） */
+    /** 详情接口回填当前用户对该文章的权限态（供前端控制编辑/发布按钮显隐）。
+     *  2026-08-18 权限大修：canEdit/canManageChapters 改为作者 OR admin（去 edit:lN 分级），
+     *  canView 改为 resolve().level() >= level OR 作者（单键）。 */
     private void fillPermissionState(ArticleVo vo, Article article) {
         ArticlePermissionLevel lvl = ArticlePermissionResolver.resolve();
         UserInfo user = currentUser();
         boolean author = isAuthor(article, user);
         vo.setIsAuthor(author);
-        boolean systemEdit = article.getLevel() != null && lvl.edit() >= article.getLevel();
-        // canView/canEdit：系统权限够 OR 作者全权（canEdit 不含贡献者分支，此处是文章元信息编辑权限，与章节创建区分）
-        vo.setCanView(author || (article.getLevel() != null && lvl.view() >= article.getLevel()));
-        vo.setCanEdit(author || systemEdit);
+        // canView：系统等级够 OR 作者全权（作者对自己的文章全权，不看等级）
+        vo.setCanView(author || (article.getLevel() != null && lvl.level() >= article.getLevel()));
+        // canEdit：作者 OR admin（不分等级，对齐 canEditArticle）。不含贡献者分支——此处是文章元信息编辑权限，
+        // 贡献者走 canEditArticle 第三分支可提交新章节/编辑自己章节，但不可改文章元信息。
+        vo.setCanEdit(author || user.isAdmin());
         // canManageChapters：能否像作者那样自由管理章节（排序/改文章元信息/发布/撤回/删除）。
-        // = 作者 OR 系统编辑级，不含被作者批准的贡献者。贡献者走 canEditArticle 第三分支可提交新章节/编辑自己章节，
-        // 但不可改章节顺序、不可发布/撤回/删除文章、不可删任意章节。chapters.vue 拖拽手柄/发布撤回按钮据此显隐。
-        vo.setCanManageChapters(author || systemEdit);
+        // = 作者 OR admin，不含被作者批准的贡献者。贡献者可提交新章节/编辑自己章节，但不可改章节顺序、
+        // 不可发布/撤回/删除文章、不可删任意章节。chapters.vue 拖拽手柄/发布撤回按钮据此显隐。
+        vo.setCanManageChapters(author || user.isAdmin());
     }
 
     /** 校验文章载体字段：title 必填、level 必填在 1-3、visibility 必填合法 */
@@ -543,6 +551,9 @@ public class ArticleServiceImpl implements ArticleService {
     private void validateArticleTagIds(List<Long> tagIds) {
         if (tagIds == null || tagIds.isEmpty()) {
             return; // 标签非必填
+        }
+        if (tagIds.size() > 8) {
+            throw new ServiceException(500, "标签最多选择 8 个");
         }
         List<Tag> enabled = tagMapper.getEnabledTagsByIds(tagIds);
         if (enabled.size() != tagIds.size()) {

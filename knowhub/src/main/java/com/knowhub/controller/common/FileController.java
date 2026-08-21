@@ -243,6 +243,28 @@ public class FileController {
     }
 
     /**
+     * 本地模式代理上传（LOCAL 模式上传用）：前端把文件字节流 PUT 到本接口，
+     * 后端用本地后端写本地磁盘（objectKey 即相对路径），再走 confirm 核对置 CONFIRMED。
+     * 与 {@link #proxyUpload} 同构，区别仅在 FileServiceImpl 内部按 accessMode 分发到 LocalStorageBackend。
+     * <p>
+     * 请求体同样用 {@code @RequestBody byte[]} 读取（与 proxy-upload 同口径避开 filter 消费流坑）。
+     * 无预签名概念：本地模式下 applyUploadToken 下发的 uploadUrl 即本接口的相对路径。
+     */
+    @PutMapping("/local-upload/{objectId}")
+    @Operation(summary = "本地模式代理上传（接收字节流写本地磁盘）")
+    @Log(title = "文件对象", businessType = BusinessType.INSERT)
+    @PreAuthorize("hasAuthority('knowhub:file:upload')")
+    public Result<Boolean> localUpload(@PathVariable Long objectId,
+                                       HttpServletRequest request,
+                                       @RequestBody(required = false) byte[] body) throws java.io.IOException {
+        long contentLength = (body != null) ? body.length : request.getContentLengthLong();
+        String contentType = request.getContentType();
+        java.io.InputStream in = (body != null) ? new java.io.ByteArrayInputStream(body) : request.getInputStream();
+        Boolean b = fileService.proxyUpload(objectId, in, contentLength, contentType);
+        return Result.success(b);
+    }
+
+    /**
      * 取 PUBLIC 对象回显链接（按当前访问模式）：
      * TRANSFER → /file/public/{id}（后端中转）；DIRECT → {directBaseUrl}/{bucket}/{objectKey}（公开读直链）。
      * 供不便在详情接口顺带返回链接的场景主动取用（多数场景由详情接口 coverUrl/previewUrl 顺带返回）。
@@ -251,6 +273,58 @@ public class FileController {
     @Operation(summary = "取 PUBLIC 回显链接（按访问模式）")
     public Result<String> getPublicAccessUrl(@PathVariable Long objectId) {
         return Result.success(fileService.getPublicAccessUrl(objectId));
+    }
+
+    /**
+     * 打包下载预估总字节数（扩展点1）：供前端在发起打包下载前做大小预估、超 50G 弹警告确认。
+     * 累加所有 deleted=0 + CONFIRMED 的 file_object.content_length。
+     */
+    @GetMapping("/pack-size")
+    @Operation(summary = "打包下载预估总字节数")
+    @PreAuthorize("hasAuthority('knowhub:file:pack-download')")
+    public Result<Long> packSize() {
+        return Result.success(fileService.packTotalSize());
+    }
+
+    /**
+     * 打包下载到客户端（扩展点1，CLIENT 模式）：同步流式写 HttpServletResponse 的 ZipOutputStream，
+     * 遍历所有 deleted=0 + CONFIRMED 行，每行 ZipEntry(objectKey) + backend.get 裸流 transferTo，
+     * 目录结构对齐 OSS。单对象不进内存；分页查防一次拉十万行。
+     * <p>
+     * 同步写 HttpServletResponse（与 /file/proxy 同口径：异步 dispatch 不传播 SecurityContext）。
+     * Content-Disposition 双段（RFC 5987 中文真名 + ASCII 百分号兜底），zip 名 knowhub-oss-backup-yyyyMMddHHmmss.zip。
+     * 空文件集打空 zip（浏览器得到合法空压缩包）。
+     */
+    @GetMapping("/pack-download")
+    @Operation(summary = "打包下载全部 OSS 文件到客户端（zip）")
+    @PreAuthorize("hasAuthority('knowhub:file:pack-download')")
+    public void packDownloadClient(HttpServletResponse response) {
+        java.text.SimpleDateFormat sdf = new java.text.SimpleDateFormat("yyyyMMddHHmmss");
+        String baseName = "knowhub-oss-backup-" + sdf.format(new java.util.Date());
+        String asciiFallback = java.net.URLEncoder.encode(baseName, java.nio.charset.StandardCharsets.UTF_8).replace("+", "%20");
+        String disposition = "attachment; filename=\"" + asciiFallback + ".zip\"; filename*=UTF-8''" + asciiFallback + ".zip";
+        response.setStatus(HttpServletResponse.SC_OK);
+        response.setContentType("application/zip");
+        response.setHeader(HttpHeaders.CONTENT_DISPOSITION, disposition);
+        try (java.io.OutputStream out = response.getOutputStream()) {
+            fileService.streamPackDownload(out);
+            out.flush();
+        } catch (Exception e) {
+            log.warn("[打包下载-客户端] 流式中断 reason={}", e.getMessage());
+        }
+    }
+
+    /**
+     * 打包下载到服务器本地磁盘（扩展点1，SERVER 模式）：写 zip 到 storage.local-base-path 下，
+     * 返回落盘绝对路径。供前端提示用户去服务器取包。中转模式下打包强制走本端点（用户浏览器不可达 OSS，
+     * 打包到客户端意义不大，但后端到 OSS 通畅，落服务器本地后再人工取）。
+     */
+    @PostMapping("/pack-download-server")
+    @Operation(summary = "打包下载全部 OSS 文件到服务器本地（zip，返回路径）")
+    @PreAuthorize("hasAuthority('knowhub:file:pack-download')")
+    public Result<String> packDownloadServer() {
+        String path = fileService.packDownloadToServer();
+        return Result.success(path);
     }
 
     @GetMapping("/list")

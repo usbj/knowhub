@@ -25,4 +25,25 @@ public class PortalConfigReader {
             return false;
         }
     }
+
+    /**
+     * 系统设置键：越级阅读锁预览长度（INT，字符数）。
+     * 越级用户查看高等级作品时，正文前 N 个字符可见作预览，其后锁遮罩。
+     * 默认 200 字符；0 = 不预览（回退到整篇锁 null 正文语义）。可由后台系统设置调。
+     */
+    public static final String CONFIG_KEY_LOCK_PREVIEW_LENGTH = "knowhub.portal.lock.preview.length";
+
+    /** 越级阅读锁预览字符数（默认 200；配置缺失或异常回退 200）。 */
+    public int getLockPreviewLength() {
+        try {
+            String raw = SysConfigUtil.getString(CONFIG_KEY_LOCK_PREVIEW_LENGTH, null);
+            if (raw == null || raw.isBlank()) {
+                return 200;
+            }
+            int len = Integer.parseInt(raw.trim());
+            return len < 0 ? 0 : len;
+        } catch (Exception e) {
+            return 200;
+        }
+    }
 }

@@ -13,10 +13,10 @@ export const viewLevelLabel: Record<ViewLevel, string> = {
   3: '机密',
 }
 
-/** 等级 → KhTag type 着色：公开低调、内部提醒、机密警示 */
-export const viewLevelTagType: Record<ViewLevel, 'neutral' | 'info' | 'warning' | 'danger'> = {
-  1: 'neutral',
-  2: 'info',
+/** 等级 → KhTag type 着色：公开绿（可自由访问）、内部黄（需提醒）、机密红（强警示） */
+export const viewLevelTagType: Record<ViewLevel, 'neutral' | 'info' | 'warning' | 'danger' | 'success'> = {
+  1: 'success',
+  2: 'warning',
   3: 'danger',
 }
 

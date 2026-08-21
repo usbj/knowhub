@@ -19,6 +19,8 @@ export interface ProjectPortalRecord {
   authorId?: number
   /** 作者昵称（后端 join sys_user on author_id 带出） */
   authorNickname?: string
+  /** 作者头像 URL（join sys_user.avatar 带出，无头像为 null，前端 <img> 直引失败回退首字） */
+  authorAvatar?: string
   publishTime?: string
   viewCount?: number
   likeCount?: number
@@ -77,6 +79,8 @@ export interface ProjectPortalSearchQuery {
   type?: string
   /** 项目等级过滤 1/2/3（通常不传——前台按 userViewLevel 自动收窄，不暴露等级筛选项给无权者） */
   level?: number
+  /** 作者 id 过滤（用户主页按作者筛作品，不传不过滤） */
+  authorId?: number
   /** 排序：HOT 热度（默认）/ LATEST 最新 */
   sort?: 'HOT' | 'LATEST'
   /**

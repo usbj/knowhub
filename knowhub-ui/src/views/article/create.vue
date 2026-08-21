@@ -111,6 +111,10 @@ const validate = (): boolean => {
     ElMessage.warning('请写文章前言（文档导言），用作摘要展示')
     return false
   }
+  if (form.value.tagIds.length > 8) {
+    ElMessage.warning('标签最多选择 8 个')
+    return false
+  }
   return true
 }
 
@@ -317,6 +321,7 @@ onMounted(async () => {
               v-model="form.tagIds"
               multiple
               filterable
+              :max="8"
               collapse-tags
               collapse-tags-tooltip
               placeholder="选择文章标签…"

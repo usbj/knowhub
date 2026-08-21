@@ -66,6 +66,13 @@ const router = createRouter({
       meta: { title: '系统公告' },
     },
     {
+      // 用户公开主页：点击评论区用户名 / 作品作者名跳转，游客可读（不带 requiresAuth，对齐列表公开口径）
+      path: '/user/:id',
+      name: 'user-home',
+      component: () => import('@/views/user/home.vue'),
+      meta: { title: '用户主页' },
+    },
+    {
       path: '/search',
       name: 'search',
       component: () => import('@/views/search/index.vue'),

@@ -23,6 +23,9 @@ public class ProjectPortalSearchQuarry {
     /** 排序：HOT 热度（默认）/ LATEST 最新；HOT 走打分公式 */
     private String sort;
 
+    /** 作者 id 过滤（用户主页按作者筛作品，不传不过滤） */
+    private Long authorId;
+
     // ---- 权限透传字段（service 层回填，非前端入参） ----
     /** 当前用户查看等级（分级开关关时恒 1，开时取 ProjectPermissionResolver.view；未登录=1） */
     private Integer userViewLevel;
@@ -65,5 +68,13 @@ public class ProjectPortalSearchQuarry {
 
     public void setUserViewLevel(Integer userViewLevel) {
         this.userViewLevel = userViewLevel;
+    }
+
+    public Long getAuthorId() {
+        return authorId;
+    }
+
+    public void setAuthorId(Long authorId) {
+        this.authorId = authorId;
     }
 }

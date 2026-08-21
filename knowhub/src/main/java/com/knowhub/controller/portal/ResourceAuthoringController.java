@@ -6,6 +6,7 @@ import com.knowhub.pojo.resource.vo.ResourcePortalVo;
 import com.knowhub.pojo.resource.vo.ResourceVo;
 import com.knowhub.service.resource.impl.ResourcePortalService;
 import com.knowhub.service.resource.impl.ResourceService;
+import com.knowhub.support.ResourcePermissionResolver;
 import com.rookie.common.annotation.Log;
 import com.rookie.common.enums.BusinessType;
 import com.rookie.common.pojo.Result;
@@ -33,7 +34,9 @@ import org.springframework.web.bind.annotation.RestController;
  * <p>
  * 状态机由 ResourceServiceImpl 现有逻辑兜底：PUBLISHED 禁编辑（须先撤回）、PENDING_REVIEW 禁编辑；
  * 已发布换源须先 revoke 再 edit——后端已挡，前端按 status 隐藏"换文件"入口。
- * 资源无按钮权限键（无 level 等级、无 review 按钮到前台）：登录即可创作自己的资源 + 互动任意已发布资源。
+ * <p>
+ * 2026-08-18 权限大修：资源引入 level 分级，前台创作页需 myLevel 接口给前端禁用不可选等级
+ * （L1 用户只能公开，L2 可选 L1/L2，L3 全开），后端 addResourceInfo 的 assertCanCreateLevel 兜底。
  */
 @Tag(name = "资源创作与互动", description = "前台资源创作：存草稿/编辑/发布/撤回/列表/下载 + 点赞/收藏/评分/我的收藏")
 @RestController
@@ -47,6 +50,15 @@ public class ResourceAuthoringController {
     ResourcePortalService resourcePortalService;
 
     // ============================ 创作 ============================
+
+    @GetMapping("/level")
+    @Operation(summary = "当前用户资源查看等级（创作页等级选择器权限感知，0/1/2/3）")
+    @PreAuthorize("isAuthenticated()")
+    public Result<Integer> myLevel() {
+        // 纯内存计算：扫描当前登录用户 perms 取最高等级（admin 自然 3，未授权 0）。
+        // 前端据此禁用不可选等级（L1 用户只能公开，L2 可选 L1/L2，L3 全开），后端 addResourceInfo 的 assertCanCreateLevel 兜底。
+        return Result.success(ResourcePermissionResolver.resolve().level());
+    }
 
     @GetMapping("/list")
     @Operation(summary = "前台我的资源列表（薄封装 listMyResources，service 内硬置 authorId=当前用户）")

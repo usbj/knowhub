@@ -27,6 +27,20 @@ export const configStatusOptions = [
   { label: '停用', value: 0 },
 ]
 
+/**
+ * 文件访问模式选项（与后端 FileAccessMode 枚举 code 对齐）。
+ * knowhub.file.access_mode 这个系统设置项的 configValue 渲染成此下拉，
+ * 而非自由文本，避免运维手敲 transfer/direct/local 拼错。
+ */
+export const FILE_ACCESS_MODE_OPTIONS = [
+  { label: '中转模式', value: 'transfer' },
+  { label: '直链模式', value: 'direct' },
+  { label: '本地模式', value: 'local' },
+]
+
+/** 判断某 configKey 是否为文件访问模式键，用于 configValue 切下拉渲染 */
+const isFileAccessModeKey = (configKey: string) => configKey === 'knowhub.file.access_mode'
+
 /** 值类型 → 值字段输入控件类型映射，控制 configValue 在表单中按类型切换控件 */
 const VALUE_TYPE_TO_INPUT: Record<string, SharedFieldInputType> = {
   STRING: 'text',
@@ -115,11 +129,14 @@ export const createSysConfigQuerySchema = (): SharedFieldSchemaMap<SysConfigQuer
  * 生成系统设置表格 + 表单 schema。
  * 动态行为：
  * - configValue 的 inputType 随当前 valueType 切换（STRING→文本、NUMBER→数字、BOOLEAN→开关、JSON→多行文本）。
+ * - 特殊键 knowhub.file.access_mode 的 configValue 渲染成三选项下拉（中转/直链/本地，见 FileAccessMode 枚举），
+ *   而非自由文本，避免运维手敲 transfer/direct/local 拼错。
  * - 编辑内置项（isSystem=1）时，configKey 与 valueType 禁用，仅可改值/名称/备注/状态。
  * 参数：
  * - `mode`：表单模式 'create' | 'edit'。
  * - `isSystem`：当前编辑项是否内置项（仅 edit 模式有意义）。
  * - `valueType`：当前值类型，决定 configValue 控件类型。
+ * - `configKey`：当前设置项的键，用于按键切换特殊控件的渲染。
  * 返回值：
  * - 表格与表单共用的字段 schema 映射。
  */
@@ -127,6 +144,7 @@ export const createSysConfigSchema = (
   mode: 'create' | 'edit',
   isSystem: number,
   valueType: string,
+  configKey: string = '',
 ): SharedFieldSchemaMap<SysConfigFormModel> => ({
   configId: {
     label: '编号',
@@ -161,16 +179,20 @@ export const createSysConfigSchema = (
   },
   configValue: {
     label: '设置值',
-    // 按 valueType 切换控件：BOOLEAN 开关、NUMBER 数字、JSON 多行文本、其余普通文本
-    inputType: VALUE_TYPE_TO_INPUT[valueType] ?? 'text',
+    // 文件访问模式键渲染成三选项下拉（中转/直链/本地）；其余按 valueType 切换控件
+    inputType: isFileAccessModeKey(configKey)
+      ? 'select'
+      : (VALUE_TYPE_TO_INPUT[valueType] ?? 'text'),
     placeholder: valueType === 'JSON' ? '请输入 JSON 对象或数组' : '请输入设置值',
+    // 文件访问模式下拉选项；其余控件无 options
+    options: isFileAccessModeKey(configKey) ? FILE_ACCESS_MODE_OPTIONS : undefined,
     tableVisible: true,
     formVisible: true,
     tableOrder: 4,
     formOrder: 4,
     span: 24,
     tableMinWidth: 180,
-    // JSON 类型多行编辑，其余单行；开关不需要 rows
+    // JSON 类型多行编辑，其余单行；开关/下拉不需要 rows
     props: valueType === 'JSON' ? { rows: 4 } : {},
     // 表格中 BOOLEAN 显示是/否，其余原值（JSON 等长文本由 show-overflow-tooltip 截断）
     formatter: (value, row) => {

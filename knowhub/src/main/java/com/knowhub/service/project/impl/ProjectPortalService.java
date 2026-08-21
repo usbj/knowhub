@@ -14,7 +14,8 @@ import java.util.List;
  * <p>
  * 接口只暴露 DTO，不暴露实体。前台无 @PreAuthorize，登录态在 service 内防御性获取
  * （principal 非 UserInfo 视为未登录，照博客 {@code BlogPortalServiceImpl.currentUserOrNull}）。
- * 分级开关 {@code knowhub.portal.hierarchical.enabled} 关→userViewLevel 恒 1，开→max(1, resolver.view())。
+ * 分级开关 {@code knowhub.portal.hierarchical.enabled} 关→userViewLevel 恒 1，开→max(1, resolver.level())。
+ * 2026-08-18 权限大修搜索范围 +1：列表 level<=userViewLevel+1，越级作品带 locked 标记。
  * <p>
  * 项目无标签体系，故无 hotTags/listEnabledTags（与博客门户差异点）——前台标签热度在博客门户。
  *

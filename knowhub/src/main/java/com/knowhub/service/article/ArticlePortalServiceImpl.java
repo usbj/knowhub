@@ -44,8 +44,10 @@ import java.util.stream.Collectors;
  * 前台文章门户 Service 实现。照搬 BlogPortalServiceImpl 范式，适配文章=章节集合（文档站）结构。
  * <p>
  * 前台读无 @PreAuthorize、走 /portal/** permitAll，登录态在此防御性获取（principal 非 UserInfo 视为未登录）。
- * 分级开关 knowhub.portal.hierarchical.enabled 关→userViewLevel 恒 1（二元闸）；开→max(1, resolver.view())（阶梯闸）。
- * 越级详情/章节正文返回锁态 VO（content 置空 + lockReason），不抛 403、不泄正文。
+ * 分级开关 knowhub.portal.hierarchical.enabled 关→userViewLevel 恒 1（二元闸）；开→max(1, resolver.level())（阶梯闸）。
+ * 2026-08-18 权限大修单键化 + 搜索范围 +1：resolver 改单键 knowhub:article:lN（resolve().level() 取最高等级），
+ * 列表 SQL where 片段 level<=userViewLevel+1（越级作品进列表带 locked=true，摘要可见），详情 meta 不带 level 过滤
+ * 由 service 判越级 → 锁态 VO（章节大纲置空 + locked + lockReason），不抛 403、不泄大纲/正文。
  * 收藏/点赞 toggle 走 /authoring/** authenticated，currentUser() 直接取。
  * coverUrl 由 SQL 用 file_object ARTICLE_COVER 反查后 concat 成 /file/resolve/{objectId}（service 不二次处理）。
  */
@@ -81,10 +83,14 @@ public class ArticlePortalServiceImpl implements ArticlePortalService {
     @Override
     public PageInfo<ArticlePortalVo> search(ArticlePortalSearchQuarry quarry) {
         quarry.setUserViewLevel(resolveUserViewLevel());
+        // 标签命中门槛值：tagCount 必须在 service 层算好回填，不能在 SQL 里写 #{tagIds.size()}——
+        // MyBatis createCacheKey 反射取 tagIds.size() 会走 CollectionWrapper.get("size") 抛 UnsupportedOperationException。
+        quarry.setTagCount(quarry.getTagIds() == null ? 0 : quarry.getTagIds().size());
         PageUtil.startPage();
         List<ArticlePortalVo> list = articlePortalMapper.searchArticles(quarry);
         fillTagsForList(list);
         fillChapterCountForList(list);
+        fillLockedForList(list, quarry.getUserViewLevel());
         // 仅当有 keyword 时回填命中章节（标出对应章节）
         if (quarry.getKeyword() != null && !quarry.getKeyword().isEmpty() && !list.isEmpty()) {
             fillMatchedChapters(list, quarry.getKeyword());
@@ -144,6 +150,7 @@ public class ArticlePortalServiceImpl implements ArticlePortalService {
 
         fillTagsForList(result);
         fillChapterCountForList(result);
+        fillLockedForList(result, userViewLevel);
         return result;
     }
 
@@ -154,22 +161,23 @@ public class ArticlePortalServiceImpl implements ArticlePortalService {
         if (meta == null) {
             return null; // 不存在或非 PUBLISHED，前台 404 语义由 controller 处理
         }
-        // 章节大纲无论是否越级都下发（只含章节名，不含正文）
-        meta.setChapterList(articlePortalMapper.listChapterOutline(articleId));
 
-        // 越级锁态：level > userViewLevel → 不计浏览量，仅给元数据+章节大纲+lockReason（正文走章节接口时也会锁态）
+        // 越级锁态：level > userViewLevel → 不计浏览量，仅给元数据 + lockReason，**章节大纲置空**（决策#4，
+        // L1 看 L2 文章时连章节列表都不下发，防越级用户从大纲窥探章节结构）。正文走章节接口时也会锁态。
         Integer level = meta.getLevel();
         if (level != null && level > userViewLevel) {
             meta.setLocked(true);
             meta.setLockReason("需 L" + level + " 权限查看完整内容");
+            meta.setChapterList(Collections.emptyList());
             fillCurrentUserInteract(meta, articleId);
             fillTagsForOne(meta);
             fillChapterCountForOne(meta);
             return meta;
         }
-        // 达权：计浏览量（仅登录态计，未登录不计）
+        // 达权：下发章节大纲（只含章节名，不含正文）+ 计浏览量（仅登录态计，未登录不计）
         meta.setLocked(false);
         meta.setLockReason(null);
+        meta.setChapterList(articlePortalMapper.listChapterOutline(articleId));
         UserInfo user = currentUserOrNull();
         if (user != null) {
             viewHistoryService.recordView(user.getUserId(), ViewBizType.ARTICLE.getCode(), articleId);
@@ -186,6 +194,7 @@ public class ArticlePortalServiceImpl implements ArticlePortalService {
         List<ArticlePortalVo> list = articlePortalMapper.relatedArticles(articleId, userViewLevel, size);
         fillTagsForList(list);
         fillChapterCountForList(list);
+        fillLockedForList(list, userViewLevel);
         return list;
     }
 
@@ -204,6 +213,21 @@ public class ArticlePortalServiceImpl implements ArticlePortalService {
             locked.setArticleId(articleId);
             locked.setLocked(true);
             locked.setLockReason("需 L" + level + " 权限查看完整内容");
+            // 预览式阅读锁：越级时取整章正文截前 N 字符作预览（PortalConfigReader.getLockPreviewLength，默认 200，0=不预览）。
+            // 用 getChapterContent 取已校验 PUBLISHED+归属的完整 vo，取其 content 截预览后置空（不泄完整正文）。
+            int previewLen = portalConfigReader.getLockPreviewLength();
+            if (previewLen > 0) {
+                ChapterContentVo full = articlePortalMapper.getChapterContent(articleId, chapterId);
+                locked.setPreviewContent(truncatePreview(full == null ? null : full.getContent(), previewLen));
+                // 回填章节名/排序供前端展示预览头（即使越级，章节标题可见不算泄密，与文章大纲达权才下发不同——
+                // 此处是章节正文接口，调用方已知章节 id，标题可见无妨）
+                if (full != null) {
+                    locked.setChapterName(full.getChapterName());
+                    locked.setSortOrder(full.getSortOrder());
+                }
+            } else {
+                locked.setPreviewContent(null);
+            }
             locked.setContent(null);
             return locked;
         }
@@ -214,6 +238,7 @@ public class ArticlePortalServiceImpl implements ArticlePortalService {
         }
         vo.setLocked(false);
         vo.setLockReason(null);
+        vo.setPreviewContent(null);
         UserInfo user = currentUserOrNull();
         if (user != null) {
             viewHistoryService.recordView(user.getUserId(), ViewBizType.CHAPTER.getCode(), chapterId);
@@ -299,20 +324,32 @@ public class ArticlePortalServiceImpl implements ArticlePortalService {
         }
         fillTagsForList(ordered);
         fillChapterCountForList(ordered);
+        fillLockedForList(ordered, userViewLevel);
         return new PageInfo<>(ordered);
     }
 
     // ============================ 私有辅助 ============================
 
     /**
-     * 解析前台 userViewLevel：分级开关关→恒 1（二元闸）；开→max(1, ArticlePermissionResolver.view())。
+     * 解析前台 userViewLevel：分级开关关→恒 1（二元闸）；开→max(1, ArticlePermissionResolver.level())。
+     * 2026-08-18 单键化：resolver 改单键 knowhub:article:lN，resolve().level() 直接取最高等级（admin 自然 3，未授权 0→1 看 L1）。
+     * <p>
+     * admin 短路兜底：admin 默认拥有所有权限、能看任何级别作品，**在分级开关判定之前**直接返回 3。
+     * 不受 hierarchical 开关（关时普通用户恒 1）与 sys_role_menu 绑定（admin 角色未绑 l3 菜单也能得 3）影响。
+     * UserInfo.isAdmin() 由 rookie 框架 UserDetailServiceImpl 依 roleKey="admin" 装载，
+     * ProjectPortalServiceImpl canDownload/canViewProject 已用同口径。
      */
     private Integer resolveUserViewLevel() {
+        // admin 短路：admin 看任何级别，不受分级开关与角色菜单绑定影响
+        UserInfo user = currentUserOrNull();
+        if (user != null && user.isAdmin()) {
+            return 3;
+        }
         if (!portalConfigReader.isHierarchicalEnabled()) {
             return 1;
         }
-        int view = ArticlePermissionResolver.resolve().view();
-        return Math.max(1, view);
+        int level = ArticlePermissionResolver.resolve().level();
+        return Math.max(1, level);
     }
 
     /**
@@ -456,6 +493,18 @@ public class ArticlePortalServiceImpl implements ArticlePortalService {
         vo.setChapterCount(cnt);
     }
 
+    /**
+     * 批量回填越级锁标记：vo.level > userViewLevel → locked=true（2026-08-18 搜索范围 +1 落地）。
+     * 越级作品进列表带锁标记、摘要可见，前端据此渲染锁图标；达权 locked=false。O(n) n=页大小，开销可忽略。
+     */
+    private void fillLockedForList(List<ArticlePortalVo> list, Integer userViewLevel) {
+        if (list == null || list.isEmpty()) return;
+        for (ArticlePortalVo vo : list) {
+            Integer level = vo.getLevel();
+            vo.setLocked(level != null && level > userViewLevel);
+        }
+    }
+
     /** 批量回填命中章节（搜索结果标出 keyword 命中的章节，按 articleId 分组拼 matchedChapters） */
     private void fillMatchedChapters(List<ArticlePortalVo> list, String keyword) {
         if (list == null || list.isEmpty()) return;
@@ -505,5 +554,19 @@ public class ArticlePortalServiceImpl implements ArticlePortalService {
 
     private UserInfo currentUser() {
         return (UserInfo) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+    }
+
+    /**
+     * 越级预览截断：取正文前 max 字符作预览（超长追加 "…"，null/空返 null）。
+     * 预览式阅读锁用——越级用户能看到开篇几行，其后内容锁遮罩。
+     */
+    private static String truncatePreview(String s, int max) {
+        if (s == null || s.isEmpty() || max <= 0) {
+            return null;
+        }
+        if (s.length() <= max) {
+            return s;
+        }
+        return s.substring(0, max) + "…";
     }
 }

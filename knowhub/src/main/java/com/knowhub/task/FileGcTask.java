@@ -4,16 +4,17 @@ import com.knowhub.service.storage.impl.FileService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 /**
  * 文件对象 GC 定时任务。
  * 扫描超时未确认的 PENDING 行与已软删行，DeleteObject 清 RustFS 对象 + 物理删元数据。
  * DeleteObject 失败保留行下次再扫（容错，见设计稿 §3.4）。
- *
- * 频率由 application.yml 的 storage.gc-interval-minutes 控制（默认 10 分钟），
- * 通过 @Scheduled 的 fixedDelayString 占位读取；改 yml 需重启。
+ * <p>
+ * 触发由 rookie sys_job 调度器（CronTrigger + 独立线程池）驱动，cron 见 sys_job 表对应行
+ * （初始 cron 0 * /10 * * * ?，对应原 10 分钟间隔）。后台「系统监控→定时任务」可改 cron / 启停 /
+ * 立即执行，改 cron 即时生效无需重启。原 @Scheduled fixedDelay + storage.gc-interval-minutes yml 项
+ * 已不再驱动调度（yml 项保留未删，仅作历史）。
  */
 @Component
 public class FileGcTask {
@@ -24,10 +25,8 @@ public class FileGcTask {
     private FileService fileService;
 
     /**
-     * GC 扫描。fixedDelay 用 SpEL 把 storage.gc-interval-minutes（分钟）转毫秒。
-     * initialDelay 60s 避开应用启动高峰。
+     * GC 扫描。由 sys_job 调度器按 cron 触发（无参方法，符合 rookie findTaskMethod 要求）。
      */
-    @Scheduled(fixedDelayString = "#{${storage.gc-interval-minutes:10} * 60 * 1000}", initialDelay = 60000)
     public void gc() {
         try {
             fileService.gc();

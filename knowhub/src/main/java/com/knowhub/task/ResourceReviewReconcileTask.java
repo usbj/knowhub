@@ -7,7 +7,6 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.StringRedisTemplate;
-import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 /**
@@ -25,10 +24,11 @@ import org.springframework.stereotype.Component;
  *       本任务消费后 DEL。假阳（资源已被审核员手动批但标记未清）仅导致多扫一次空表，可接受。</li>
  * </ol>
  * <p>
- * 频率由 application.yml 的 knowhub.resource.reconcile-interval-minutes 控制（默认 5 分钟），
- * 通过 @Scheduled 的 fixedDelayString 占位读取；改 yml 需重启。
- * 对账间隔走 yml（@Scheduled 注解在 Bean 创建时解析，只能读 yml/环境变量，读不了 sys_config
- * Redis 缓存）；审核开关走 sys_config（运行时业务侧读取，可后台改即时生效）。
+ * 触发由 rookie sys_job 调度器（CronTrigger + 独立线程池）驱动，cron 见 sys_job 表对应行
+ * （初始 cron 0 * / 5 * * * ?，对应原 5 分钟间隔）。后台「系统监控→定时任务」可改 cron / 启停 /
+ * 立即执行，改 cron 即时生效无需重启。原 @Scheduled fixedDelay + knowhub.resource.reconcile-interval-minutes
+ * yml 项已不再驱动调度（yml 项保留未删，仅作历史）；审核开关仍走 sys_config[knowhub.resource.review_enabled]
+ * （运行时业务侧读取，可后台改即时生效）。
  */
 @Component
 public class ResourceReviewReconcileTask {
@@ -51,10 +51,8 @@ public class ResourceReviewReconcileTask {
     private static final String CACHE_PENDING_FLAG = "resource:review:pending-flag";
 
     /**
-     * 对账扫描。fixedDelay 用 SpEL 把 knowhub.resource.reconcile-interval-minutes（分钟）转毫秒。
-     * initialDelay 60s 避开应用启动高峰。
+     * 对账扫描。由 sys_job 调度器按 cron 触发（无参方法，符合 rookie findTaskMethod 要求）。
      */
-    @Scheduled(fixedDelayString = "#{${knowhub.resource.reconcile-interval-minutes:5} * 60 * 1000}", initialDelay = 60000)
     public void reconcile() {
         try {
             // 1. 审核开关开启 → 队列有人工审核意义，不收口

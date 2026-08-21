@@ -34,6 +34,7 @@ import SharedTablePanel from '@/components/SharedTablePanel.vue'
 import ChapterEditDialog from '../components/ChapterEditDialog.vue'
 import ChapterReviewDialog from '../components/ChapterReviewDialog.vue'
 import { SYSTEM_PERMISSION_KEYS } from '@/constants/systemPermissions'
+import { useUserStore } from '@/stores/user'
 import type { NormalizedPageResult } from '@/types/api/system/common'
 import type {
   ChapterListQuery,
@@ -54,6 +55,11 @@ const route = useRoute()
 const router = useRouter()
 
 type ChapterDialogMode = 'create' | 'edit'
+
+// 章节作者审核回避前端对齐：章节提交者不能审自己提交的章节（后端 reviewChapter 强判
+// chapter.authorId==userId 拒，前端按钮显隐先挡避免点了报错；admin 亦回避）
+const userStore = useUserStore()
+const currentUserId = computed(() => userStore.userInfo?.userId ?? -1)
 
 // 从路由 query 取文章 ID（章节按文章维度列表）
 const articleId = computed(() => Number(route.query.articleId) || 0)
@@ -135,8 +141,9 @@ const tableActions = computed<SharedActionConfig<Record<string, unknown>>[]>(() 
     label: '审核',
     permKey: SYSTEM_PERMISSION_KEYS.chapter.review,
     buttonType: 'primary',
-    // 仅 PENDING_AUTHOR_REVIEW 态可审（半公开文章非作者提交后待文章作者审）
-    visible: (row) => String(row.status) === 'PENDING_AUTHOR_REVIEW',
+    // 仅 PENDING_AUTHOR_REVIEW 态可审（半公开文章非作者提交后待文章作者审）；
+    // 且不能审自己提交的（authorId==当前用户则隐藏，admin 亦回避）
+    visible: (row) => String(row.status) === 'PENDING_AUTHOR_REVIEW' && Number(row.authorId) !== currentUserId.value,
     onClick: async (row) => {
       await openReviewDialog(Number(row.chapterId))
     },

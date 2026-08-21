@@ -35,6 +35,7 @@
         <id property="commentId" column="comment_id"/>
         <result property="authorId" column="author_id"/>
         <result property="authorNickname" column="author_nickname"/>
+        <result property="authorAvatar" column="author_avatar"/>
         <result property="content" column="content"/>
         <result property="createTime" column="create_time"/>
         <result property="likeCount" column="like_count"/>
@@ -47,6 +48,7 @@
         <id property="commentId" column="comment_id"/>
         <result property="authorId" column="author_id"/>
         <result property="authorNickname" column="author_nickname"/>
+        <result property="authorAvatar" column="author_avatar"/>
         <result property="content" column="content"/>
         <result property="createTime" column="create_time"/>
         <result property="likeCount" column="like_count"/>
@@ -115,7 +117,7 @@
       排序：like=按点赞数倒序, new/缺省=按创建时间倒序（楼层顺序）。分页由 PageHelper 接管。
     -->
     <select id="listTopComments" parameterType="com.knowhub.pojo.comment.quarry.CommentListQuarry" resultMap="CommentPortalVoMap">
-        select c.comment_id, c.author_id, u.nick_name as author_nickname,
+        select c.comment_id, c.author_id, u.nick_name as author_nickname, u.avatar as author_avatar,
                c.content, c.create_time, c.like_count,
                c.review_status, c.review_advice
         from comment c
@@ -139,7 +141,7 @@
       权限谓词同 commentVisiblePredicate；按创建时间倒序（楼层顺序）。
     -->
     <select id="listReplies" parameterType="com.knowhub.pojo.comment.quarry.ReplyListQuarry" resultMap="CommentReplyVoMap">
-        select c.comment_id, c.author_id, u.nick_name as author_nickname,
+        select c.comment_id, c.author_id, u.nick_name as author_nickname, u.avatar as author_avatar,
                c.content, c.create_time, c.like_count,
                c.reply_to_user_id, c.reply_to_nickname,
                c.review_status, c.review_advice

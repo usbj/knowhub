@@ -6,7 +6,7 @@
 -->
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
-import { Search } from '@element-plus/icons-vue'
+import { Search, ArrowDown, ArrowUp } from '@element-plus/icons-vue'
 import KhCard from '@/components/common/KhCard.vue'
 import KhTag from '@/components/common/KhTag.vue'
 import KhSectionTitle from '@/components/common/KhSectionTitle.vue'
@@ -36,11 +36,39 @@ const keyword = ref('')
 const hotTags = ref<HotTagRecord[]>([])
 const tagRanking = computed(() => hotTags.value.slice(0, 10))
 
-/** 切换标签选中（按 tagId） */
+/** 标签云最大展示数：超出折叠进"更多"（按标签排行 contentCount 降序，与侧栏排行同序） */
+const TAG_LIMIT = 12
+const tagExpanded = ref(false)
+/** 标签云展示项：折叠时只取前 TAG_LIMIT 个，展开时全部（展开内容进固定高度滚动区，不撑高 hero） */
+const visibleTags = computed(() =>
+  tagExpanded.value ? hotTags.value : hotTags.value.slice(0, TAG_LIMIT),
+)
+const hasMoreTags = computed(() => hotTags.value.length > TAG_LIMIT)
+
+/**
+ * 标签名是否「过长」需循环滚动播放（照首页 isTagNameLong 范式）。
+ * rank-name 容器固定宽 72px（13px 字号约容 5 个中文字 / 11 个英文字符），
+ * 按字符数粗判：中文等宽字符计 1、半角字符计 0.5，加权和 > 5 即视为过长，开横向 marquee。
+ */
+const isTagNameLong = (name: string): boolean => {
+  if (!name) return false
+  let weight = 0
+  for (const ch of name) {
+    weight += /[　-鿿＀-￯]/.test(ch) ? 1 : 0.5
+  }
+  return weight > 5
+}
+
+/**
+ * 切换标签选中（按 tagId）。
+ * 重新赋值新数组而非 splice/push 原地改——ref<number[]> 的 watch 默认不 deep，原地改不触发；
+ * 赋新数组让引用变化，watch([selectedTagIds,...]) 才能捕获，点击标签即触发筛选。
+ */
 const toggleTag = (tagId: number) => {
   const idx = selectedTagIds.value.indexOf(tagId)
-  if (idx >= 0) selectedTagIds.value.splice(idx, 1)
-  else selectedTagIds.value.push(tagId)
+  selectedTagIds.value = idx >= 0
+    ? selectedTagIds.value.filter((id) => id !== tagId)
+    : [...selectedTagIds.value, tagId]
 }
 
 /** 博客列表（真实接口分页） */
@@ -104,8 +132,14 @@ const fetchTagsHotAndStats = async () => {
   if (statsRes.data) stats.value = statsRes.data
 }
 
-/** 搜索/标签/排序变化时回到第一页重新拉取 */
-watch([keyword, selectedTagIds, sortKey], () => {
+/** 搜索（按钮/回车触发，非实时输入触发）：回第一页重新拉取 */
+const onSearch = () => {
+  pageNum.value = 1
+  void fetchBlogs()
+}
+
+/** 标签/排序变化时回到第一页重新拉取（搜索走显式按钮/回车触发，不实时监听 keyword） */
+watch([selectedTagIds, sortKey], () => {
   pageNum.value = 1
   void fetchBlogs()
 })
@@ -128,17 +162,22 @@ onMounted(() => {
 
           <div class="notes__search">
             <el-icon class="notes__search-icon"><Search /></el-icon>
-            <input v-model="keyword" class="notes__search-input" placeholder="模糊搜索博客标题或摘要…" />
-            <button class="notes__search-btn" type="button">搜索</button>
+            <input
+              v-model="keyword"
+              class="notes__search-input"
+              placeholder="模糊搜索博客标题或摘要…"
+              @keyup.enter="onSearch"
+            />
+            <button class="notes__search-btn" type="button" @click="onSearch">搜索</button>
           </div>
 
-          <!-- 标签云（最全，公开 /portal/tag/hot） -->
+          <!-- 标签云（最全，公开 /portal/tag/hot；超出 TAG_LIMIT 折叠进"更多"固定高度滚动区） -->
           <div class="notes__tagcloud">
             <span class="notes__tagcloud-label">
               <KhIcon name="tag" :size="14" /> 全部标签
             </span>
             <button
-              v-for="t in hotTags"
+              v-for="t in visibleTags"
               :key="t.tagId"
               class="notes__tagchip"
               :class="{ 'is-active': selectedTagIds.includes(t.tagId) }"
@@ -149,6 +188,29 @@ onMounted(() => {
               <span class="notes__tagchip-count">{{ t.contentCount ?? 0 }}</span>
             </button>
             <span v-if="!hotTags.length" class="notes__tagcloud-empty">暂无标签，待博客发文后收录</span>
+            <button
+              v-if="hasMoreTags"
+              class="notes__tag-more"
+              type="button"
+              @click="tagExpanded = !tagExpanded"
+            >
+              {{ tagExpanded ? '收起' : `更多 (${hotTags.length - TAG_LIMIT})` }}
+              <el-icon><ArrowDown v-if="!tagExpanded" /><ArrowUp v-else /></el-icon>
+            </button>
+          </div>
+          <!-- 展开态：剩余标签进固定高度可滚动区，不再内联撑高 hero -->
+          <div v-if="tagExpanded" class="notes__tagcloud-more">
+            <button
+              v-for="t in hotTags.slice(TAG_LIMIT)"
+              :key="t.tagId"
+              class="notes__tagchip"
+              :class="{ 'is-active': selectedTagIds.includes(t.tagId) }"
+              type="button"
+              @click="toggleTag(t.tagId)"
+            >
+              {{ t.tagName }}
+              <span class="notes__tagchip-count">{{ t.contentCount ?? 0 }}</span>
+            </button>
           </div>
         </div>
 
@@ -219,7 +281,15 @@ onMounted(() => {
           <ol v-if="tagRanking.length" class="notes__rank">
             <li v-for="(t, i) in tagRanking" :key="t.tagId" class="notes__rank-item" @click="toggleTag(t.tagId)">
               <span class="notes__rank-no">{{ i + 1 }}</span>
-              <span class="notes__rank-name">{{ t.tagName }}</span>
+              <span class="notes__rank-name">
+                <span class="notes__rank-name-inner" :class="{ 'is-marquee': isTagNameLong(t.tagName) }">
+                  <template v-if="isTagNameLong(t.tagName)">
+                    <span class="notes__rank-name-unit">{{ t.tagName }}</span>
+                    <span class="notes__rank-name-unit">{{ t.tagName }}</span>
+                  </template>
+                  <template v-else>{{ t.tagName }}</template>
+                </span>
+              </span>
               <span class="notes__rank-bar">
                 <span class="notes__rank-bar-fill" :style="{ width: `${((t.contentCount ?? 0) / (tagRanking[0]?.contentCount ?? 1)) * 100}%` }" />
               </span>
@@ -438,6 +508,33 @@ onMounted(() => {
   color: var(--kh-text-tertiary);
   padding: 4px 0;
 }
+/* 展开态：剩余标签进固定高度可滚动区，不再内联撑高 hero */
+.notes__tagcloud-more {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--kh-space-2);
+  margin-top: var(--kh-space-3);
+  max-width: 1000px;
+  max-height: 200px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+.notes__tag-more {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 5px 12px;
+  border: 1px dashed var(--kh-border);
+  border-radius: var(--kh-radius-pill);
+  background: transparent;
+  color: var(--kh-text-secondary);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all var(--kh-transition-fast);
+}
+.notes__tag-more:hover { border-color: var(--kh-primary-border); color: var(--kh-primary); }
 
 .notes__body {
   display: grid;
@@ -547,9 +644,35 @@ onMounted(() => {
 }
 .notes__rank-name {
   width: 72px;
+  flex: none;
+  overflow: hidden;
   font-size: 13px;
   font-weight: 500;
   color: var(--kh-text);
+}
+.notes__rank-name-inner {
+  display: inline-block;
+  white-space: nowrap;
+}
+/* 长标签名循环滚动（照首页范式）：两个 unit 各带 4em 间隔横向平移 -50% 无缝循环。
+   mask 仅挂滚动态——短名不滚，左右清晰不虚化。hover 暂停便于看清。 */
+.notes__rank-name-inner.is-marquee {
+  animation: kh-notes-rank-marquee 14s linear infinite;
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent);
+  mask-image: linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent);
+}
+.notes__rank-name-inner.is-marquee:hover {
+  animation-play-state: paused;
+}
+.notes__rank-name-unit {
+  margin-right: 4em;
+}
+@keyframes kh-notes-rank-marquee {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .notes__rank-name-inner.is-marquee { animation: none; }
 }
 .notes__rank-bar {
   flex: 1;

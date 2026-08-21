@@ -139,7 +139,9 @@ const tableActions = computed<SharedActionConfig<Record<string, unknown>>[]>(() 
     label: '审核',
     permKey: SYSTEM_PERMISSION_KEYS.blog.review,
     buttonType: 'primary',
-    visible: (row) => String(row.status) === 'PENDING_REVIEW',
+    // 仅 PENDING_REVIEW 可审；且不能审自己提交的（authorId==当前用户则隐藏，admin 亦回避——
+    // 后端 reviewBlog 强判 authorId==userId 拒，前端按钮显隐先挡避免点了报错）
+    visible: (row) => String(row.status) === 'PENDING_REVIEW' && Number(row.authorId) !== currentUserId.value,
     onClick: async (row) => {
       await openReviewDialog(Number(row.blogId))
     },

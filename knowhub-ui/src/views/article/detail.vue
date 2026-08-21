@@ -22,6 +22,7 @@ import KhSectionTitle from '@/components/common/KhSectionTitle.vue'
 import KhLoading from '@/components/common/KhLoading.vue'
 import KhCommentList from '@/components/common/KhCommentList.vue'
 import { useMarkdownImageZoom } from '@/composables/useMarkdownImageZoom'
+import { useMarkdownCodeBlock } from '@/composables/useMarkdownCodeBlock'
 import { getArticleDetailApi, likeArticleApi, collectArticleApi } from '@/api/knowhub/article'
 import { applyContributorApi } from '@/api/knowhub/article-authoring'
 import { myContributorStatusApi } from '@/api/knowhub/collaboration'
@@ -42,6 +43,8 @@ const doc = ref<ArticlePortalDetailRecord | null>(null)
 const contentRef = ref<HTMLElement | null>(null)
 /** 文章简介配图点击放大（与博客/项目/资源同款 el-image-viewer 全屏画廊） */
 const { viewerVisible, viewerUrls, viewerIndex, onContentClick, closeViewer } = useMarkdownImageZoom(contentRef)
+// 代码块增强（语言标签 + 复制按钮）：与配图放大共用同一 contentRef，正交不冲突
+useMarkdownCodeBlock(contentRef)
 /** 首屏取数加载态：loading 期间显 KhLoading 占位，替代 v-if="doc" 的纯空白帧 */
 const loading = ref(true)
 /** 点赞/收藏交互态：interacting 期间禁用按钮防重复点击 */
@@ -196,8 +199,8 @@ watch(docId, () => void fetchDetail())
             <p class="di__head-summary">{{ (doc.summary ?? '').replace(/[#>*|`]/g, '').replace(/\n+/g, ' ').trim().slice(0, 80) }}…</p>
             <div class="di__head-meta">
               <div class="di__head-author">
-                <KhAvatar :item="{ label: doc.authorNickname ?? '' }" :size="28" />
-                <span>{{ doc.authorNickname ?? '匿名' }}</span>
+                <KhAvatar :item="{ label: doc.authorNickname ?? '', src: doc.authorAvatar ?? undefined }" :size="28" />
+                <span @click="doc.authorId && router.push(`/user/${doc.authorId}`)">{{ doc.authorNickname ?? '匿名' }}</span>
               </div>
               <KhTag v-if="doc.level" :type="viewLevelTagType[doc.level as 1 | 2 | 3] ?? 'neutral'" size="sm">{{ getViewLevelLabel(doc.level) }}</KhTag>
               <KhStatPill icon="file" :value="doc.chapterCount ?? 0" label="章" />
@@ -282,7 +285,8 @@ watch(docId, () => void fetchDetail())
       </aside>
     </div>
 
-    <!-- 评论区：全宽独立区块，KhCommentList 内置发表条/列表/回复/作者 inline 精选 -->
+    <!-- 评论区：全宽独立区块，KhCommentList 内置发表条/列表/回复/作者 inline 精选。
+         越级锁态时传 locked 禁发评论（列表照常可看，只锁发不锁看）。 -->
     <div v-if="doc" class="kh-container kh-container--wide di__comments">
       <KhCard padding="lg">
         <KhCommentList
@@ -291,6 +295,7 @@ watch(docId, () => void fetchDetail())
           :comment-enabled="doc.commentEnabled"
           :comment-curated="doc.commentCurated"
           :is-author="isMyArticle"
+          :locked="doc.locked"
         />
       </KhCard>
     </div>
@@ -361,6 +366,8 @@ watch(docId, () => void fetchDetail())
 .di__head-summary { color: var(--kh-text-secondary); font-size: var(--kh-font-size-md); line-height: 1.7; }
 .di__head-meta { display: flex; align-items: center; gap: var(--kh-space-4); flex-wrap: wrap; font-size: 12px; color: var(--kh-text-tertiary); }
 .di__head-author { display: flex; align-items: center; gap: 6px; color: var(--kh-text-secondary); font-weight: 500; }
+.di__head-author span { cursor: pointer; transition: color var(--kh-transition-fast); }
+.di__head-author span:hover { color: var(--kh-primary); text-decoration: underline; }
 .di__head-time { display: inline-flex; align-items: center; gap: 4px; }
 .di__head-tags { display: flex; flex-wrap: wrap; gap: 6px; }
 
@@ -463,7 +470,6 @@ watch(docId, () => void fetchDetail())
 }
 .di__intro :deep(.github-markdown-body h1),
 .di__intro :deep(.github-markdown-body h2) {
-  border-bottom: none;
   margin-top: var(--kh-space-6);
 }
 /* 文章简介配图可点放大：cursor zoom-in 视觉提示，点击由 .di__intro @click 委托 onContentClick 开 el-image-viewer */

@@ -35,19 +35,21 @@ ALTER TABLE `project`
 --    速度：顶部"按钮"型权限（menu_type=3），perm_key=knowhub:authoring:user-search。
 --    登录态即可创作项目（/authoring/project/** 走 isAuthenticated 兜底，无按钮权限键），
 --      但"选人添加"接口需此权限——默认分配给"实验室成员"角色（该角色待创建，见 sys_role_menu 补段）+ admin。
---    续编从 136 起（原 knowhub-project.sql 占到 135）。
+--    续编从 226 起（2026-08-18 权限大修修撞车：原 136 与 knowhub-article.sql:183 文章管理菜单撞车，
+--      article.sql 先跑占 136 → 本菜单 INSERT IGNORE 静默跳过 → AuthoringUserController:38 非 admin 403。
+--      现 knowhub-permission-overhaul.sql 用 226 重插修复，本源文件同步改 226 防未来重跑再撞）。
 -- ----------------------------------------------------------------------------
-INSERT IGNORE INTO `sys_menu` VALUES (136,'前台选人','knowhub:authoring:user-search',63,3,NULL,0,NULL,NULL,1,'admin',NOW(),'admin',NOW(),0);
+INSERT IGNORE INTO `sys_menu` VALUES (226,'前台选人','knowhub:authoring:user-search',63,3,NULL,0,NULL,NULL,1,'admin',NOW(),'admin',NOW(),0);
 
 -- ----------------------------------------------------------------------------
 -- 3. 角色-菜单绑定：admin 已自动全权限（无需显式绑）
 --    「实验室成员」角色当前尚未在 sys_role 建立（见把范围局限于"接口已具备权限点+待角色到位"，
 --    角色创建 + 绑定权限由后续团队类型权限细化任务统一做），故本脚本不写 sys_role_menu 绑定行。
 --    待实验室成员角色(role_id 待定)创建后，追加：
---      INSERT IGNORE INTO sys_role_menu VALUES (<lab_member_role_id>, 136);
+--      INSERT IGNORE INTO sys_role_menu VALUES (<lab_member_role_id>, 226);
 --
 -- 验证提示（不自动执行，供人工核对）：
 --   SHOW COLUMNS FROM project LIKE '%_count';  -- 应 4 行 view/like/collect/download_count
---   SELECT menu_id,menu_name,perm_key FROM sys_menu WHERE perm_key='knowhub:authoring:user-search';  -- 应 1 行 136
+--   SELECT menu_id,menu_name,perm_key FROM sys_menu WHERE perm_key='knowhub:authoring:user-search';  -- 应 1 行 226
 -- ----------------------------------------------------------------------------
 SET FOREIGN_KEY_CHECKS = 1;

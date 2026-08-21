@@ -22,6 +22,7 @@ import KhSectionTitle from '@/components/common/KhSectionTitle.vue'
 import KhLoading from '@/components/common/KhLoading.vue'
 import KhCommentList from '@/components/common/KhCommentList.vue'
 import { useMarkdownImageZoom } from '@/composables/useMarkdownImageZoom'
+import { useMarkdownCodeBlock } from '@/composables/useMarkdownCodeBlock'
 import { getResourceDetailApi, relatedResourcesApi } from '@/api/knowhub/resource-portal'
 import {
   downloadResourceApi,
@@ -44,6 +45,8 @@ const resource = ref<ResourcePortalDetailRecord | null>(null)
 const contentRef = ref<HTMLElement | null>(null)
 /** 资源简介配图点击放大（与博客/文章/项目同款 el-image-viewer 全屏画廊） */
 const { viewerVisible, viewerUrls, viewerIndex, onContentClick, closeViewer } = useMarkdownImageZoom(contentRef)
+// 代码块增强（语言标签 + 复制按钮）：与配图放大共用同一 contentRef，正交不冲突
+useMarkdownCodeBlock(contentRef)
 const related = ref<ResourcePortalRecord[]>([])
 const loading = ref(true)
 const ratingValue = ref(0)
@@ -74,6 +77,10 @@ const fetchDetail = async () => {
       return
     }
     ratingValue.value = resource.value.myScore ?? 0
+    // 越级锁态提示：资源越级 description 仍可见，只锁下载/跳转（FILE 锁下载、LINK 锁跳转 linkUrl 置空）
+    if (resource.value.locked) {
+      ElMessage.warning(resource.value.lockReason ?? '当前资源需更高权限下载/访问')
+    }
     void fetchRelated()
   } catch {
     resource.value = null
@@ -156,8 +163,12 @@ const handleRate = async (score: number) => {
   }
 }
 
-/** 访问：新窗口打开 linkUrl */
+/** 访问：新窗口打开 linkUrl（越级锁态 LINK 后端已置空 linkUrl，此处兜底拦） */
 const handleVisit = () => {
+  if (resource.value?.locked) {
+    toast(resource.value?.lockReason ?? '等级不足，无法访问该资源')
+    return
+  }
   if (resource.value?.linkUrl) {
     window.open(resource.value.linkUrl, '_blank', 'noopener')
   } else {
@@ -165,9 +176,13 @@ const handleVisit = () => {
   }
 }
 
-/** 下载：登录态调 downloadResourceApi 拿链接后 window.open */
+/** 下载：登录态调 downloadResourceApi 拿链接后 window.open（越级锁态后端 downloadResource 抛"等级不足"兜底拦） */
 const handleDownload = async () => {
   if (!resource.value || !requireAuth()) return
+  if (resource.value.locked) {
+    toast(resource.value?.lockReason ?? '等级不足，无法下载该资源')
+    return
+  }
   downloading.value = true
   try {
     const res = await downloadResourceApi(resourceId.value)
@@ -229,8 +244,8 @@ onMounted(fetchDetail)
             <p class="rd__summary">{{ resource.summary }}</p>
             <div class="rd__head-meta">
               <div class="rd__head-author">
-                <KhAvatar :item="{ label: resource.authorNickname || '匿名' }" :size="28" />
-                <span>{{ resource.authorNickname || '匿名' }}</span>
+                <KhAvatar :item="{ label: resource.authorNickname || '匿名', src: resource.authorAvatar ?? undefined }" :size="28" />
+                <span @click="resource.authorId && router.push(`/user/${resource.authorId}`)">{{ resource.authorNickname || '匿名' }}</span>
               </div>
               <KhStatPill v-if="!isLinkType && resource.contentLength" icon="file" :value="formatSize(resource.contentLength)" label="大小" />
               <KhStatPill v-else-if="isLinkType" icon="link" :value="resource.linkUrl ? '外部链接' : '无链接'" />
@@ -240,13 +255,13 @@ onMounted(fetchDetail)
             </div>
           </div>
 
-          <!-- 右：行动按钮区（链接类访问 / 文件类下载） -->
+          <!-- 右：行动按钮区（链接类访问 / 文件类下载）；越级锁态置灰禁用并提示需更高权限 -->
           <div class="rd__head-action">
-            <button v-if="isLinkType" class="rd__read-btn" type="button" @click="handleVisit">
+            <button v-if="isLinkType" class="rd__read-btn" type="button" :disabled="resource.locked" @click="handleVisit">
               <el-icon><Link /></el-icon> 访问资源
             </button>
-            <button v-else class="rd__read-btn" type="button" :disabled="downloading" @click="handleDownload">
-              <el-icon><Download /></el-icon> {{ downloading ? '准备中…' : '下载资源' }}
+            <button v-else class="rd__read-btn" type="button" :disabled="downloading || resource.locked" @click="handleDownload">
+              <el-icon><Download /></el-icon> {{ resource.locked ? '需更高权限' : (downloading ? '准备中…' : '下载资源') }}
             </button>
             <div class="rd__interact">
               <button class="rd__interact-btn" :class="{ 'is-on': resource.hasLiked }" type="button" :disabled="interacting" @click="handleLike">
@@ -275,7 +290,13 @@ onMounted(fetchDetail)
             <v-md-preview :text="resource.description" />
           </div>
           <p v-else class="rd__intro rd__intro--empty">该资源暂无简介</p>
-          <div v-if="resource.linkUrl" class="rd__linkrow">
+          <!-- 越级锁态提示条：资源越级 description 可见，但下载/跳转已锁（FILE 锁下载、LINK 锁跳转） -->
+          <div v-if="resource.locked" class="rd__lock-tip">
+            <KhIcon name="lock" :size="14" :stroke="1.5" />
+            <span>{{ resource.lockReason ?? '需更高权限下载/访问该资源' }}</span>
+          </div>
+          <!-- LINK 外链行：越级锁态时后端已置空 linkUrl，此处也隐藏外链行防泄真链接 -->
+          <div v-if="resource.linkUrl && !resource.locked" class="rd__linkrow">
             <span class="rd__linklabel">链接</span>
             <a class="rd__link" :href="resource.linkUrl" target="_blank" rel="noopener">{{ resource.linkUrl }}</a>
           </div>
@@ -287,7 +308,7 @@ onMounted(fetchDetail)
           <h3 class="rd__info-title">资源信息</h3>
           <div class="rd__info-row"><span>分类</span><b>{{ categoryLabel }}</b></div>
           <div class="rd__info-row"><span>类型</span><b>{{ isLinkType ? '链接' : '文件' }}</b></div>
-          <div class="rd__info-row"><span>作者</span><b>{{ resource.authorNickname || '匿名' }}</b></div>
+          <div class="rd__info-row"><span>作者</span><b class="rd__info-author" @click="resource?.authorId && router.push(`/user/${resource.authorId}`)">{{ resource.authorNickname || '匿名' }}</b></div>
           <div v-if="!isLinkType" class="rd__info-row"><span>大小</span><b>{{ formatSize(resource.contentLength) }}</b></div>
           <div v-if="!isLinkType" class="rd__info-row"><span>下载量</span><b>{{ resource.downloadCount ?? 0 }}</b></div>
           <div class="rd__info-row"><span>浏览量</span><b>{{ resource.viewCount ?? 0 }}</b></div>
@@ -312,7 +333,8 @@ onMounted(fetchDetail)
       </aside>
     </div>
 
-    <!-- 评论区：全宽独立区块（右栏相关推荐之后），KhCommentList 内置发表条/列表/回复/作者 inline 精选 -->
+    <!-- 评论区：全宽独立区块（右栏相关推荐之后），KhCommentList 内置发表条/列表/回复/作者 inline 精选。
+         越级锁态时传 locked 禁发评论（资源越级 description 可见只锁下载/跳转，评论列表照常可看，只锁发不锁看）。 -->
     <div v-if="resource" class="kh-container kh-container--wide rd__comments">
       <KhCard padding="lg">
         <KhCommentList
@@ -321,6 +343,7 @@ onMounted(fetchDetail)
           :comment-enabled="resource.commentEnabled"
           :comment-curated="resource.commentCurated"
           :is-author="isMyResource"
+          :locked="resource.locked"
         />
       </KhCard>
     </div>
@@ -437,6 +460,14 @@ onMounted(fetchDetail)
   gap: 6px;
   color: var(--kh-text-secondary);
   font-weight: 500;
+}
+.rd__head-author span {
+  cursor: pointer;
+  transition: color var(--kh-transition-fast);
+}
+.rd__head-author span:hover {
+  color: var(--kh-primary);
+  text-decoration: underline;
 }
 .rd__head-time {
   display: inline-flex;
@@ -556,10 +587,6 @@ onMounted(fetchDetail)
   line-height: 1.9;
   color: var(--kh-text);
 }
-.rd__intro :deep(.github-markdown-body h1),
-.rd__intro :deep(.github-markdown-body h2) {
-  border-bottom: none;
-}
 /* 资源简介配图可点放大：cursor zoom-in 视觉提示，点击由 .rd__intro @click 委托 onContentClick 开 el-image-viewer */
 .rd__intro :deep(.github-markdown-body img) {
   cursor: zoom-in;
@@ -567,6 +594,19 @@ onMounted(fetchDetail)
 .rd__intro--empty {
   color: var(--kh-text-tertiary);
   white-space: pre-wrap;
+}
+/* 越级锁态提示条：资源越级 description 可见，下载/跳转已锁，弱化次要色提示需更高权限 */
+.rd__lock-tip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: var(--kh-space-3) var(--kh-space-4);
+  margin-top: var(--kh-space-3);
+  background: var(--kh-bg-soft);
+  border: 1px solid var(--kh-border-soft);
+  border-radius: var(--kh-radius-sm);
+  color: var(--kh-text-muted);
+  font-size: 13px;
 }
 .rd__linkrow {
   display: flex;
@@ -624,6 +664,14 @@ onMounted(fetchDetail)
   font-weight: 500;
   max-width: 180px;
   text-align: right;
+}
+.rd__info-author {
+  cursor: pointer;
+  transition: color var(--kh-transition-fast);
+}
+.rd__info-author:hover {
+  color: var(--kh-primary);
+  text-decoration: underline;
 }
 
 /* 相关推荐 */

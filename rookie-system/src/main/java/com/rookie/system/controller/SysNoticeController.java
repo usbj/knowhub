@@ -15,6 +15,10 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.Map;
+
+import java.util.Map;
+
 @Tag(name = "消息通知", description = "消息通知管理相关接口")
 @RestController
 @RequestMapping("/sys/notice")
@@ -85,10 +89,10 @@ public class SysNoticeController {
     }
 
     @GetMapping("/my")
-    @Operation(summary = "分页获取当前用户的消息列表（pageNum/pageSize 可选，默认 1/10）")
-    public Result<PageInfo<SysNoticeVo>> getMyNotices() {
+    @Operation(summary = "分页获取当前用户的消息列表（pageNum/pageSize 可选，默认 1/10；noticeType 可选过滤）")
+    public Result<PageInfo<SysNoticeVo>> getMyNotices(@RequestParam(required = false) String noticeType) {
         UserInfo userInfo = (UserInfo) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
-        PageInfo<SysNoticeVo> pageInfo = sysNoticeService.getMyNotices(userInfo.getUserId());
+        PageInfo<SysNoticeVo> pageInfo = sysNoticeService.getMyNotices(userInfo.getUserId(), noticeType);
         return Result.success(pageInfo);
     }
 
@@ -108,11 +112,27 @@ public class SysNoticeController {
         return Result.success(b);
     }
 
+    @PostMapping("/read-all")
+    @Operation(summary = "全部已读：批量标记当前用户所有未读消息为已读")
+    public Result<Boolean> markAllAsRead() {
+        UserInfo userInfo = (UserInfo) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+        Boolean b = sysNoticeService.markAllAsRead(userInfo.getUserId());
+        return Result.success(b);
+    }
+
     @PostMapping("/confirm/{noticeId}")
     @Operation(summary = "确认消息通知")
     public Result<Boolean> confirmNotice(@PathVariable Long noticeId) {
         UserInfo userInfo = (UserInfo) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
         Boolean b = sysNoticeService.confirmNotice(noticeId, userInfo.getUserId());
         return Result.success(b);
+    }
+
+    @GetMapping("/my-counts")
+    @Operation(summary = "按通知类型聚合统计当前用户可见通知数（分类 tab 角标专用）")
+    public Result<Map<String, Long>> countMyNoticesByType() {
+        UserInfo userInfo = (UserInfo) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+        Map<String, Long> counts = sysNoticeService.countMyNoticesByType(userInfo.getUserId());
+        return Result.success(counts);
     }
 }

@@ -39,7 +39,8 @@ import com.knowhub.support.ProjectPermissionResolver;
 import com.knowhub.support.ProjectPermissionResolver.ProjectPermissionLevel;
 import com.knowhub.service.storage.impl.FileService;
 import com.knowhub.service.project.impl.ProjectService;
-import com.knowhub.service.review.ReviewNotifyService;
+import com.knowhub.pojo.event.WorkReviewResultEvent;
+import com.knowhub.pojo.event.WorkSubmittedForReviewEvent;
 import com.knowhub.support.NotifySupport;
 import com.rookie.common.exception.ServiceException;
 import com.rookie.common.pojo.entity.SysUser;
@@ -47,6 +48,7 @@ import com.rookie.common.util.PageUtil;
 import com.rookie.framework.security.pojo.UserInfo;
 import com.rookie.system.mapper.SysUserMapper;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
@@ -62,12 +64,16 @@ import java.util.stream.Collectors;
 /**
  * 项目管理 Service 实现。
  *
- * 权限模型（系统权限 + 项目内权限 + LEADER 全权）：
- * - 系统权限（全局、分等级、所有项目）：view/download/edit:lN，ProjectPermissionResolver
- *   一次扫描 List<Permission> 取最高等级（admin 零特判，登录时全 perm_key 已塞入）
+ * 权限模型（系统权限单键 + 项目内权限 + LEADER/作者/admin 全权，2026-08-18 权限大修）：
+ * - 系统权限（全局、分等级、所有项目）：单键 knowhub:project:l1/l2/l3，ProjectPermissionResolver
+ *   一次扫描 List<Permission> 取最高等级（admin 零特判，登录时全 perm_key 已塞入）。仅管 view/download +
+ *   创作闸；**edit 去系统等级分支**（非成员不能靠系统等级编辑，必须被邀请成成员）。
  * - 项目内权限（单项目、不分等级）：project_member.can_view/can_download/can_edit
- * - LEADER 判定时强制全权不看标志位
- * 判定公式 canOp(U,P,op)：userLvl(op) >= P.level OR member.can_op=1 OR role=LEADER
+ * - LEADER/作者(=创建者)/admin 全权不看标志位
+ * 判定公式 canOp(U,P,op)：
+ *   view/download = 作者 OR admin OR LEADER OR 系统等级够 OR 成员can_op=1
+ *   edit = 作者 OR admin OR LEADER OR 成员can_edit=1（**无系统等级分支**）
+ * 创作闸 addProjectInfo：assertCanCreateLevel(userLevel, targetLevel)——userLevel < targetLevel 抛错。
  *
  * 审核流程复用博客/资源范式（状态机+回避+流水表+对账任务），代码模式与 ResourceServiceImpl 同构：
  * - 主表只存 status/review_status/publish_time，审核员/审核时间/审核意见全在 project_review_log
@@ -116,10 +122,10 @@ public class ProjectServiceImpl implements ProjectService {
     private ProjectConfigReader projectConfigReader;
 
     @Autowired
-    private NotifySupport notifySupport;
+    private NotifySupport notifySupport; // 项目邀请（inviteMember）仍内联用，审核通知已改走事件
 
     @Autowired
-    private ReviewNotifyService reviewNotifyService;
+    private ApplicationEventPublisher applicationEventPublisher;
 
     @Autowired
     private StringRedisTemplate redisTemplate;
@@ -132,10 +138,10 @@ public class ProjectServiceImpl implements ProjectService {
 
     @Override
     public PageInfo<ProjectVo> quarryProject(ProjectQuarry quarry) {
-        // 一次扫描 perms 取查看等级（admin 自然 3，无权限者 0）
+        // 一次扫描 perms 取最高等级（单键 knowhub:project:lN，admin 自然 3，无权限者 0）
         ProjectPermissionLevel lvl = ProjectPermissionResolver.resolve();
         UserInfo user = currentUser();
-        quarry.setUserViewLevel(lvl.view());
+        quarry.setUserViewLevel(lvl.level());
         quarry.setUserId(user.getUserId());
         PageUtil.startPage();
         List<Project> list = projectMapper.quarryProject(quarry);
@@ -181,6 +187,9 @@ public class ProjectServiceImpl implements ProjectService {
     @Transactional
     public Boolean addProjectInfo(ProjectVo vo) {
         validateProjectPayload(vo);
+        // 2026-08-18 权限大修创作闸：拥有等级 N 即可创作等级 ≤ N 的项目（L2 可建 L1/L2，L3 全开）。
+        // admin 自然 level=3 全过；未授权 level=0 只能建 L1（targetLevel<=1 恒放行）。
+        assertCanCreateLevel(ProjectPermissionResolver.resolve().level(), vo.getLevel());
         Project project = BeanUtil.toBean(vo, Project.class);
         UserInfo userInfo = currentUser();
         project.setAuthorId(userInfo.getUserId());
@@ -234,13 +243,9 @@ public class ProjectServiceImpl implements ProjectService {
         Project project = BeanUtil.toBean(vo, Project.class);
         UserInfo userInfo = currentUser();
         project.setUpdateBy(userInfo.getUsername());
-        // 改 level 要校验：操作者自己的 edit 等级 >= 新 level（否则能把自己够不着的项目降级再让别人改）
-        if (project.getLevel() != null && project.getLevel() > exist.getLevel()) {
-            ProjectPermissionLevel lvl = ProjectPermissionResolver.resolve();
-            if (lvl.edit() < project.getLevel()) {
-                throw new ServiceException(500, "无权提升项目到更高等级（自身编辑等级不足）");
-            }
-        }
+        // 2026-08-18 权限大修：edit 去系统等级分支后，level 升级不再单独校验系统 edit 等级。
+        // 能走到这里说明 canOp(edit) 已通过（LEADER/作者/成员can_edit/admin），这些角色全权改 level 不论改高改低。
+        // 非成员已被 canOp(edit) 拒在前面，不会到达此处——故旧 lvl.edit() < project.getLevel() 校验块删除。
         try {
             projectMapper.editProjectInfo(project);
         } catch (Exception e) {
@@ -315,8 +320,9 @@ public class ProjectServiceImpl implements ProjectService {
             action = ReviewAction.SUBMIT;
             redisTemplate.opsForValue().set(baseKey + CACHE_PENDING_FLAG, "1");
             // 提审通知：按系统设置 knowhub.review.notify_role_key 通知持该角色的有效用户（总开关缺省关）
-            reviewNotifyService.notifyReviewers("project", projectId, exist.getTitle(),
-                    userInfo.getUsername(), userInfo.getUsername());
+            // 经事件 AFTER_COMMIT 由 WorkReviewNotifyListener 调 ReviewNotifyService 落通知，与审核状态变更解耦
+            applicationEventPublisher.publishEvent(new WorkSubmittedForReviewEvent("project", projectId, exist.getTitle(),
+                    userInfo.getUsername(), userInfo.getUsername()));
         } else {
             update.setStatus(ProjectStatus.PUBLISHED.getCode());
             update.setPublishTime(now);
@@ -325,8 +331,9 @@ public class ProjectServiceImpl implements ProjectService {
         }
         projectMapper.editProjectInfo(update);
         writeReviewLog(projectId, action, userInfo, null);
-        // 审核结果通知作者（PUBLISH 直通发"已发布"；SUBMIT 不通知：作者是提交人）
-        notifyReviewResult(exist, action, null);
+        // 审核结果通知作者（经事件 AFTER_COMMIT 落通知：SUBMIT 不发、PUBLISH 直通发"已发布"）
+        applicationEventPublisher.publishEvent(new WorkReviewResultEvent("project", projectId, exist.getAuthorId(),
+                exist.getTitle(), null, null, action, null, false, null, "system"));
         return true;
     }
 
@@ -395,8 +402,9 @@ public class ProjectServiceImpl implements ProjectService {
         }
         projectMapper.editProjectInfo(update);
         writeReviewLog(vo.getProjectId(), action, userInfo, advice);
-        // 审核结果通知作者（avoid 已保障 author_id==userId 走不到这里）
-        notifyReviewResult(exist, action, advice);
+        // 审核结果通知作者（经事件 AFTER_COMMIT 落通知：APPROVE 发通过、REJECT 发驳回+advice）
+        applicationEventPublisher.publishEvent(new WorkReviewResultEvent("project", vo.getProjectId(), exist.getAuthorId(),
+                exist.getTitle(), null, null, action, null, false, advice, "system"));
         return true;
     }
 
@@ -830,31 +838,48 @@ public class ProjectServiceImpl implements ProjectService {
     // ============================ 私有辅助 ============================
 
     /**
-     * 权限判定核心：用户对项目 P 是否有操作 op 权限。
-     * 公式：userLvl(op) >= P.level OR member.can_op=1 OR role=LEADER。
-     * admin 因 perms 含全 l3 自然 userLvl=3，对所有项目全权（系统权限分支）。
+     * 权限判定核心：用户对项目 P 是否有操作 op 权限（2026-08-18 权限大修单键化 + 编辑去系统等级）。
+     * <p>
+     * 单键 knowhub:project:lN 后 resolver 只提供 level()（最高等级），按 op 分派：
+     * - view：resolve().level() >= P.level OR 成员can_view=1 OR LEADER OR 作者 OR admin（搜索/阅读锁/列表可见性用，系统等级仍管 view）
+     * - download：resolve().level() >= P.level OR 成员can_download=1 OR LEADER OR 作者 OR admin（下载闸，系统等级管 download）
+     * - edit：**去掉系统等级分支** = LEADER OR 作者 OR 成员can_edit=1 OR admin（非成员不能靠系统等级编辑，必须被邀请成成员）
+     * admin 因 perms 含 l3 自然 level=3，view/download 全过；edit 走 admin 短路（currentUser().isAdmin()）。
      */
     private boolean canOp(Project project, String op) {
-        ProjectPermissionLevel lvl = ProjectPermissionResolver.resolve();
-        // 系统权限等级够 → 直接通过
-        if (project.getLevel() != null && lvl.levelOf(op) >= project.getLevel()) {
+        UserInfo user = currentUser();
+        // 作者全权（创建者=LEADER，能 view/download/edit 自己项目不论等级）
+        if (project.getAuthorId() != null && project.getAuthorId().equals(user.getUserId())) {
+            return true;
+        }
+        // admin 全权（rookie 框架短路，对所有项目 view/download/edit 全放行）
+        if (user.isAdmin()) {
             return true;
         }
         // 项目内权限：查当前用户在该项目的成员记录
-        Long userId = currentUser().getUserId();
-        ProjectMember member = projectMemberMapper.getMember(project.getProjectId(), userId);
-        if (member == null) {
-            return false;
+        ProjectMember member = projectMemberMapper.getMember(project.getProjectId(), user.getUserId());
+        if (member != null && ProjectMemberRole.LEADER.getCode().equals(member.getMemberRole())) {
+            return true; // LEADER 全权
         }
-        // LEADER 全权
-        if (ProjectMemberRole.LEADER.getCode().equals(member.getMemberRole())) {
-            return true;
-        }
-        // 按操作查标志位
         return switch (op) {
-            case "view" -> member.getCanView() != null && member.getCanView() == 1;
-            case "download" -> member.getCanDownload() != null && member.getCanDownload() == 1;
-            case "edit" -> member.getCanEdit() != null && member.getCanEdit() == 1;
+            case "view" -> {
+                // 系统等级够 OR 成员can_view
+                if (project.getLevel() != null && ProjectPermissionResolver.resolve().level() >= project.getLevel()) {
+                    yield true;
+                }
+                yield member != null && member.getCanView() != null && member.getCanView() == 1;
+            }
+            case "download" -> {
+                // 系统等级够 OR 成员can_download
+                if (project.getLevel() != null && ProjectPermissionResolver.resolve().level() >= project.getLevel()) {
+                    yield true;
+                }
+                yield member != null && member.getCanDownload() != null && member.getCanDownload() == 1;
+            }
+            case "edit" -> {
+                // 去系统等级分支：仅成员can_edit（非成员不能靠系统等级编辑，必须被邀请成成员）
+                yield member != null && member.getCanEdit() != null && member.getCanEdit() == 1;
+            }
             default -> false;
         };
     }
@@ -912,34 +937,65 @@ public class ProjectServiceImpl implements ProjectService {
         return false;
     }
 
-    /** 详情接口回填当前用户对该项目的权限态（供前端控制按钮显隐） */
+    /**
+     * 创作闸：拥有等级 userViewLevel 才能创作等级 targetLevel 的项目（2026-08-18 权限大修）。
+     * targetLevel<=1 恒放行（L1 公开任何登录用户可建）；userViewLevel < targetLevel 抛"无权创建 L{N} 级内容"。
+     * admin 自然 level=3 全过；未授权 level=0 只能建 L1。与博客/文章/资源四模块同构。
+     */
+    private void assertCanCreateLevel(int userViewLevel, Integer targetLevel) {
+        if (targetLevel == null || targetLevel <= 1) {
+            return;
+        }
+        if (userViewLevel < targetLevel) {
+            throw new ServiceException(500, "无权创建 L" + targetLevel + " 级内容（自身查看等级不足）");
+        }
+    }
+
+    /** 详情接口回填当前用户对该项目的权限态（供前端控制按钮显隐）。
+     *  2026-08-18 单键化 + 编辑去系统等级：canEdit 不再取 lvl.level()，仅 LEADER/作者/成员can_edit/admin。 */
     private void fillPermissionState(ProjectVo vo, Project project) {
         ProjectPermissionLevel lvl = ProjectPermissionResolver.resolve();
         Long userId = currentUser().getUserId();
         ProjectMember member = projectMemberMapper.getMember(project.getProjectId(), userId);
-        // 系统权限够即 true，否则看成员标志位
         vo.setCanView(canOpWithLevelAndMember(project, "view", lvl, member));
         vo.setCanDownload(canOpWithLevelAndMember(project, "download", lvl, member));
         vo.setCanEdit(canOpWithLevelAndMember(project, "edit", lvl, member));
         vo.setMyMemberRole(member != null ? member.getMemberRole() : null);
     }
 
-    /** fillPermissionState 用的内部判定（复用已取的 lvl/member，避免重复查库） */
+    /** fillPermissionState 用的内部判定（复用已取的 lvl/member，避免重复查库）。
+     *  edit 分支去系统等级：仅 LEADER/成员can_edit（作者/admin 在外层 canOp 已挡，此方法被 fillPermissionState
+     *  调用时作者/admin 已通过 canOp 返回 true，不会走到这里；此处仅处理"非作者非 admin"的成员判定）。 */
     private boolean canOpWithLevelAndMember(Project project, String op,
                                             ProjectPermissionLevel lvl, ProjectMember member) {
-        if (project.getLevel() != null && lvl.levelOf(op) >= project.getLevel()) {
+        // 作者全权（fillPermissionState 调用方未先挡作者，此处补挡）
+        Long userId = currentUser().getUserId();
+        if (project.getAuthorId() != null && project.getAuthorId().equals(userId)) {
             return true;
         }
-        if (member == null) {
-            return false;
+        if (currentUser().isAdmin()) {
+            return true;
         }
-        if (ProjectMemberRole.LEADER.getCode().equals(member.getMemberRole())) {
+        if (member != null && ProjectMemberRole.LEADER.getCode().equals(member.getMemberRole())) {
             return true;
         }
         return switch (op) {
-            case "view" -> member.getCanView() != null && member.getCanView() == 1;
-            case "download" -> member.getCanDownload() != null && member.getCanDownload() == 1;
-            case "edit" -> member.getCanEdit() != null && member.getCanEdit() == 1;
+            case "view" -> {
+                if (project.getLevel() != null && lvl.level() >= project.getLevel()) {
+                    yield true;
+                }
+                yield member != null && member.getCanView() != null && member.getCanView() == 1;
+            }
+            case "download" -> {
+                if (project.getLevel() != null && lvl.level() >= project.getLevel()) {
+                    yield true;
+                }
+                yield member != null && member.getCanDownload() != null && member.getCanDownload() == 1;
+            }
+            case "edit" -> {
+                // 去系统等级分支：仅成员can_edit
+                yield member != null && member.getCanEdit() != null && member.getCanEdit() == 1;
+            }
             default -> false;
         };
     }
@@ -1122,34 +1178,11 @@ public class ProjectServiceImpl implements ProjectService {
     }
 
     /**
-     * 审核结果通知负责人（2026-08-15 落地，复用 NotifySupport 个人通道）。口径同博客/文章/资源：
-     * APPROVE/REJECT 发审核结果通知，PUBLISH（审核关直通）发"已发布"，SUBMIT/REVOKE 不通知。
-     * reviewProject 前负责人自审已抛错，不会自通知。失败由 NotifySupport 内部吞掉，不阻断已落库状态。
+     * 审核结果通知：已迁移至 ReviewNotifyService.notifyReviewResult，由 WorkReviewNotifyListener
+     * 在审核事务 AFTER_COMMIT 后消费 WorkReviewResultEvent 落通知。本类不再直接发审核通知，与审核状态机解耦。
+     * 文案（APPROVE/REJECT/PUBLISH）与 routePath（/project/{id}）集中在 ReviewNotifyService，消除 4x 重复。
+     * 注意：项目邀请（inviteMember）的通知仍内联用 notifySupport，属协作通知非审核通知，不在本次解耦范围。
      */
-    private void notifyReviewResult(Project project, ReviewAction action, String advice) {
-        if (project == null || project.getAuthorId() == null) {
-            return;
-        }
-        String title;
-        String content;
-        switch (action) {
-            case APPROVE:
-                title = "你的项目审核通过";
-                content = "《" + project.getTitle() + "》审核通过，已发布。" + (advice != null && !advice.isEmpty() ? "审核意见：" + advice : "");
-                break;
-            case REJECT:
-                title = "你的项目被驳回";
-                content = "《" + project.getTitle() + "》被驳回，请修改后重新发布。" + (advice != null && !advice.isEmpty() ? "驳回原因：" + advice : "");
-                break;
-            case PUBLISH:
-                title = "你的项目已发布";
-                content = "《" + project.getTitle() + "》已直接发布（审核未开启）。";
-                break;
-            default:
-                return;
-        }
-        notifySupport.notifyUser(project.getAuthorId(), title, content, "/project/" + project.getProjectId(), "system");
-    }
 
     /** 构造一个 system 操作者 UserInfo，用于对账放行时写流水（operator_id=0, operator=system） */
     private UserInfo systemOperator() {

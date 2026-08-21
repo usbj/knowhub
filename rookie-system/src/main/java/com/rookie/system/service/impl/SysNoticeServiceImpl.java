@@ -15,6 +15,7 @@ import com.rookie.system.pojo.SysNoticeRead;
 import com.rookie.system.pojo.SysNoticeUserRel;
 import com.rookie.system.pojo.quarry.NoticeQuarry;
 import com.rookie.system.pojo.vo.NoticeTargetUserVo;
+import com.rookie.system.pojo.vo.NoticeTypeCount;
 import com.rookie.system.pojo.vo.SysNoticeVo;
 import com.rookie.system.service.SysNoticeService;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -24,7 +25,9 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
 import java.util.Date;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -159,9 +162,9 @@ public class SysNoticeServiceImpl implements SysNoticeService {
      * 分页参数 pageNum / pageSize 由 PageUtil 从请求参数读取（默认 1 / 10）。
      */
     @Override
-    public PageInfo<SysNoticeVo> getMyNotices(Long userId) {
+    public PageInfo<SysNoticeVo> getMyNotices(Long userId, String noticeType) {
         PageUtil.startPage();
-        List<SysNotice> list = sysNoticeMapper.getNoticesForUser(userId);
+        List<SysNotice> list = sysNoticeMapper.getNoticesForUser(userId, noticeType);
         if (list == null || list.isEmpty()) {
             return new PageInfo<>(new ArrayList<>());
         }
@@ -206,6 +209,14 @@ public class SysNoticeServiceImpl implements SysNoticeService {
     }
 
     @Override
+    public Boolean markAllAsRead(Long userId) {
+        // INSERT...SELECT 批量插入所有可见且未读通知的已读记录，覆盖懒加载下拉未加载页的未读。
+        // 已读通知 not exists 过滤不会重复插入；无未读时插入 0 行仍返回 true。
+        sysNoticeMapper.markAllReadForUser(userId);
+        return true;
+    }
+
+    @Override
     public Boolean confirmNotice(Long noticeId, Long userId) {
         SysNoticeRead existing = sysNoticeReadMapper.getByNoticeAndUser(noticeId, userId);
         if (existing == null) {
@@ -222,6 +233,28 @@ public class SysNoticeServiceImpl implements SysNoticeService {
             sysNoticeReadMapper.editSysNoticeReadInfo(existing);
         }
         return true;
+    }
+
+    /**
+     * 按通知类型聚合统计当前用户可见通知数。
+     * mapper GROUP BY notice_type 返回各类型计数行，这里转成 {@code Map<noticeType, count>}，
+     * 并补一行 ALL（各类型求和）——前端分类 tab / 消息子 tab 角标直接按 key 取真实总数，
+     * 不必为四个角标发四次分页请求读 total。无可见通知时返 {ALL:0}。
+     */
+    @Override
+    public Map<String, Long> countMyNoticesByType(Long userId) {
+        List<NoticeTypeCount> rows = sysNoticeMapper.countMyNoticesByType(userId);
+        Map<String, Long> result = new HashMap<>();
+        long all = 0L;
+        if (rows != null) {
+            for (NoticeTypeCount row : rows) {
+                long c = row.getCount() == null ? 0L : row.getCount();
+                result.put(row.getNoticeType(), c);
+                all += c;
+            }
+        }
+        result.put("ALL", all);
+        return result;
     }
 
     private void addGroupRelIfNeeded(SysNoticeVo vo) {

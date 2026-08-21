@@ -11,7 +11,9 @@ import java.util.List;
  * 不接受 status/reviewStatus/createBy 入参覆写）；不带时间区间入参（前台无管理台的时间筛选场景）；
  * 排序维度更聚焦（RELEVANCE/HOT/LATEST 三档，缺省 HOT——资源推荐是主用例）。
  * <p>
- * 资源无 level 等级概念（与博客 BlogPortalSearchQuarry 的差异点：无 userViewLevel 透传字段）。
+ * 2026-08-18 权限大修：资源引入 level 分级，搜索范围放宽到 level &lt;= userViewLevel + 1
+ * （L1 搜 L1+L2 带 lock、L2 搜全部 L3 带 lock），新增 userViewLevel 透传字段（service 层 resolveUserViewLevel
+ * 填入，mapper where 片段 level &lt;= #{userViewLevel} + 1 用），与博客 BlogPortalSearchQuarry 同构。
  * <p>
  * 分类过滤多选：resourceCategoryIds（List&lt;Long&gt;）。资源主表 resource 单资源只属于一个分类，
  * 多选筛选用 IN(...) 自然 OR 语义（在所选任一分类内即可），-1=其他 也作为合法元素参与 IN。
@@ -34,6 +36,15 @@ public class ResourcePortalSearchQuarry {
 
     /** 排序：RELEVANCE 相关度 / HOT 热度 / LATEST 最新；缺省 HOT（资源推荐是主用例） */
     private String sort;
+
+    /** 作者 id 过滤（用户主页按作者筛作品，不传不过滤） */
+    private Long authorId;
+
+    /**
+     * 用户查看等级（1/2/3，service 层 resolveUserViewLevel 填入，mapper where 片段 level &lt;= #{userViewLevel} + 1 用）。
+     * 分级开关关→1（搜 L1+L2）；开→max(1, ResourcePermissionResolver.resolve().level())。admin 自然 3。
+     */
+    private Integer userViewLevel;
 
     /** 分页页码（PageUtil 从请求读取，此处声明便于约束/调试） */
     private Integer pageNum;
@@ -81,6 +92,22 @@ public class ResourcePortalSearchQuarry {
         this.sort = sort;
     }
 
+    public Long getAuthorId() {
+        return authorId;
+    }
+
+    public void setAuthorId(Long authorId) {
+        this.authorId = authorId;
+    }
+
+    public Integer getUserViewLevel() {
+        return userViewLevel;
+    }
+
+    public void setUserViewLevel(Integer userViewLevel) {
+        this.userViewLevel = userViewLevel;
+    }
+
     public Integer getPageNum() {
         return pageNum;
     }
@@ -105,6 +132,8 @@ public class ResourcePortalSearchQuarry {
                 ", resourceCategoryId=" + resourceCategoryId +
                 ", resourceCategoryIds=" + resourceCategoryIds +
                 ", sort='" + sort + '\'' +
+                ", authorId=" + authorId +
+                ", userViewLevel=" + userViewLevel +
                 ", pageNum=" + pageNum +
                 ", pageSize=" + pageSize +
                 '}';

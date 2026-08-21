@@ -23,6 +23,7 @@ import KhIcon from '@/components/common/KhIcon.vue'
 import KhLoading from '@/components/common/KhLoading.vue'
 import KhCommentList from '@/components/common/KhCommentList.vue'
 import { useMarkdownImageZoom } from '@/composables/useMarkdownImageZoom'
+import { useMarkdownCodeBlock } from '@/composables/useMarkdownCodeBlock'
 import ProjectMemberPanel from '@/components/project/ProjectMemberPanel.vue'
 import {
   getProjectDetailApi,
@@ -85,6 +86,8 @@ const project = ref<DetailModel | null>(null)
 const contentRef = ref<HTMLElement | null>(null)
 /** 项目介绍配图点击放大（与博客/文章正文同款 el-image-viewer 全屏画廊），复用 contentRef 委托 <img> */
 const { viewerVisible, viewerUrls, viewerIndex, onContentClick, closeViewer } = useMarkdownImageZoom(contentRef)
+// 代码块增强（语言标签 + 复制按钮）：与配图放大共用同一 contentRef，正交不冲突
+useMarkdownCodeBlock(contentRef)
 const files = ref<ProjectFileRecord[]>([])
 const members = ref<ProjectMemberRecord[]>([])
 const loading = ref(false)
@@ -296,8 +299,8 @@ const fetchDetail = async () => {
       canManageMembers.value = autoIsAuthor
       authorized = autoIsAuthor
       if (d.locked) {
-        // 越级锁态：后端返回 locked=true + lockReason，description 已置 null
-        ElMessage.warning(d.lockReason ?? '当前项目需更高权限查看完整内容')
+        // 越级锁态：后端返回 locked=true + lockReason，description 仍下发（决策#5，项目越级只锁下载不锁 description）
+        ElMessage.warning(d.lockReason ?? '当前项目需更高权限下载完整内容')
       }
     }
 
@@ -353,9 +356,7 @@ const fetchDetail = async () => {
         createTime: f.createTime ? (formatDateTime(f.createTime) as string) : f.createTime,
       }))
       members.value = memRes.data ?? []
-      if (activeTab.value === 'files' && !files.value.length && project.value?.canDownload === false) {
-        ElMessage.info('当前项目文件需更高权限查看')
-      }
+      // 越级锁态文件树占位由模板 v-if="project.locked" 持久渲染（锁图标+lockReason），不再靠切 tab toast 提示。
     }
   } finally {
     loading.value = false
@@ -727,9 +728,9 @@ watch(projectId, () => {
 
         <div v-if="project" class="pd__head-meta">
           <div class="pd__head-leader">
-            <KhAvatar :item="{ label: leader }" :size="40" />
+            <KhAvatar :item="{ label: leader, src: project?.authorAvatar ?? undefined }" :size="40" />
             <div>
-              <div class="pd__head-leader-name">{{ leader }}</div>
+              <div class="pd__head-leader-name" @click="project?.authorId && router.push(`/user/${project.authorId}`)">{{ leader }}</div>
               <div class="pd__head-leader-role">负责人 · {{ members.length }} 人团队</div>
             </div>
           </div>
@@ -786,81 +787,93 @@ watch(projectId, () => {
           </div>
         </div>
 
-        <!-- 子页面：项目介绍 -->
+        <!-- 子页面：项目介绍（越级锁态 description 仍下发可见——决策#5，项目越级只锁下载不锁 description；
+             故介绍正文始终渲染，锁态提示移到文件 tab 的下载按钮处） -->
         <KhCard v-show="activeTab === 'intro'" padding="lg" class="pd__section">
-          <div v-if="project.locked" class="pd__locked">
-            <KhIcon name="lock" :size="40" :stroke="1.4" />
-            <p class="pd__locked-title">{{ project.lockReason ?? '需更高权限查看完整内容' }}</p>
-            <p class="pd__locked-hint">登录并拥有对应等级权限后可查看完整项目介绍</p>
-          </div>
-          <div v-else ref="contentRef" class="pd__content" @click="onContentClick">
+          <div ref="contentRef" class="pd__content" @click="onContentClick">
             <v-md-preview :text="project.description ?? ''" />
+          </div>
+          <!-- 越级锁态提示条：项目越级 description 可见，但文件下载已锁（canDownload=false） -->
+          <div v-if="project.locked" class="pd__lock-tip">
+            <KhIcon name="lock" :size="14" :stroke="1.5" />
+            <span>{{ project.lockReason ?? '需更高权限下载项目文件' }}</span>
           </div>
         </KhCard>
 
-        <!-- 子页面：项目文件（GitHub 式文件树只读渲染；授权态每行追加重命名/删除按钮，无授权仅下载） -->
+        <!-- 子页面：项目文件（GitHub 式文件树只读渲染；授权态每行追加重命名/删除按钮，无授权仅下载）。
+             越级锁态(project.locked)时不渲染文件树，改显锁态占位——项目越级应锁文件查看（不只是锁下载按钮），
+             与资源/项目介绍越级锁口径一致；后端 listFiles 的 canViewProject 已挡内容返空列表，前端门控是双重保险+明确提示。 -->
         <section v-show="activeTab === 'files'" class="pd__files">
-          <!-- 表头（仅桌面端；有权限加"操作"列） -->
-          <div class="pd__files-head">
-            <span class="pd__files-col pd__files-col--name">名称</span>
-            <span class="pd__files-col pd__files-col--time">上传时间</span>
-            <span class="pd__files-col pd__files-col--size">大小</span>
-            <span class="pd__files-col pd__files-col--action" />
+          <!-- 越级锁态占位：锁图标 + lockReason，替代文件树（避免"暂无文件"误导用户以为项目真没文件） -->
+          <div v-if="project.locked" class="pd__files-locked">
+            <KhIcon name="lock" :size="32" :stroke="1.4" />
+            <p class="pd__files-locked-title">{{ project.lockReason ?? '需更高权限查看项目文件' }}</p>
+            <p class="pd__files-locked-hint">登录并拥有对应等级权限后可查看与下载项目文件</p>
           </div>
-          <div class="pd__files-body">
-            <div
-              v-for="item in visibleNodes"
-              :key="item.node.fileId"
-              class="pd__tree-node"
-              :class="{ 'is-dir': item.node.isDir === 1, 'is-file': item.node.isDir !== 1 }"
-              :style="{ paddingLeft: `${item.depth * 18 + 12}px` }"
-              @click="toggleNode(item.node)"
-            >
-              <span class="pd__tree-caret" :class="{ 'is-leaf': item.node.isDir !== 1 }">
-                {{ item.node.isDir === 1 ? (isNodeOpen(item.node, item.depth) ? '▾' : '▸') : '' }}
-              </span>
-              <el-icon v-if="item.node.isDir === 1" class="pd__tree-icon"><Folder /></el-icon>
-              <el-icon v-else class="pd__tree-icon"><Document /></el-icon>
-              <span class="pd__tree-name">{{ item.node.name }}</span>
-              <span class="pd__tree-time">{{ item.node.isDir === 1 ? '' : (item.node.createTime ? formatDateTime(item.node.createTime) : '--') }}</span>
-              <span class="pd__tree-size">{{ item.node.isDir === 1 ? '' : formatSize(item.node.contentLength) }}</span>
-              <span class="pd__tree-action">
-                <!-- 文件叶子：下载（无论是否有权限，有 canDownload 才可下载） -->
-                <button
-                  v-if="item.node.isDir !== 1"
-                  class="pd__tree-download"
-                  type="button"
-                  title="下载"
-                  @click.stop="handleDownloadFile(item.node)"
-                >
-                  <el-icon><Download /></el-icon>
-                </button>
-                <!-- 有权限：追加重命名、删除按钮 -->
-                <template v-if="canManage">
-                  <button
-                    class="pd__tree-btn"
-                    type="button"
-                    title="重命名"
-                    @click.stop="openRenameDialog(item.node)"
-                  >
-                    <el-icon><Edit /></el-icon>
-                  </button>
-                  <button
-                    class="pd__tree-btn pd__tree-btn--danger"
-                    type="button"
-                    title="删除"
-                    @click.stop="handleDeleteFile(item.node)"
-                  >
-                    ✕
-                  </button>
-                </template>
-              </span>
+          <template v-else>
+            <!-- 表头（仅桌面端；有权限加"操作"列） -->
+            <div class="pd__files-head">
+              <span class="pd__files-col pd__files-col--name">名称</span>
+              <span class="pd__files-col pd__files-col--time">上传时间</span>
+              <span class="pd__files-col pd__files-col--size">大小</span>
+              <span class="pd__files-col pd__files-col--action" />
             </div>
-            <div v-if="!visibleNodes.length" class="pd__tree-empty">暂无文件</div>
-          </div>
+            <div class="pd__files-body">
+              <div
+                v-for="item in visibleNodes"
+                :key="item.node.fileId"
+                class="pd__tree-node"
+                :class="{ 'is-dir': item.node.isDir === 1, 'is-file': item.node.isDir !== 1 }"
+                :style="{ paddingLeft: `${item.depth * 18 + 12}px` }"
+                @click="toggleNode(item.node)"
+              >
+                <span class="pd__tree-caret" :class="{ 'is-leaf': item.node.isDir !== 1 }">
+                  {{ item.node.isDir === 1 ? (isNodeOpen(item.node, item.depth) ? '▾' : '▸') : '' }}
+                </span>
+                <el-icon v-if="item.node.isDir === 1" class="pd__tree-icon"><Folder /></el-icon>
+                <el-icon v-else class="pd__tree-icon"><Document /></el-icon>
+                <span class="pd__tree-name">{{ item.node.name }}</span>
+                <span class="pd__tree-time">{{ item.node.isDir === 1 ? '' : (item.node.createTime ? formatDateTime(item.node.createTime) : '--') }}</span>
+                <span class="pd__tree-size">{{ item.node.isDir === 1 ? '' : formatSize(item.node.contentLength) }}</span>
+                <span class="pd__tree-action">
+                  <!-- 文件叶子：下载（无论是否有权限，有 canDownload 才可下载） -->
+                  <button
+                    v-if="item.node.isDir !== 1"
+                    class="pd__tree-download"
+                    type="button"
+                    title="下载"
+                    @click.stop="handleDownloadFile(item.node)"
+                  >
+                    <el-icon><Download /></el-icon>
+                  </button>
+                  <!-- 有权限：追加重命名、删除按钮 -->
+                  <template v-if="canManage">
+                    <button
+                      class="pd__tree-btn"
+                      type="button"
+                      title="重命名"
+                      @click.stop="openRenameDialog(item.node)"
+                    >
+                      <el-icon><Edit /></el-icon>
+                    </button>
+                    <button
+                      class="pd__tree-btn pd__tree-btn--danger"
+                      type="button"
+                      title="删除"
+                      @click.stop="handleDeleteFile(item.node)"
+                    >
+                      ✕
+                    </button>
+                  </template>
+                </span>
+              </div>
+              <div v-if="!visibleNodes.length" class="pd__tree-empty">暂无文件</div>
+            </div>
+          </template>
         </section>
 
-        <!-- 子页面：评论（项目正文重，用 tab 承载更干净；KhCommentList 内置发表条/列表/回复/作者 inline 精选） -->
+        <!-- 子页面：评论（项目正文重，用 tab 承载更干净；KhCommentList 内置发表条/列表/回复/作者 inline 精选）。
+             越级锁态时传 locked 禁发评论（项目越级 description 可见只锁下载，评论列表照常可看，只锁发不锁看）。 -->
         <KhCard v-show="activeTab === 'comments'" padding="lg" class="pd__section">
           <KhCommentList
             biz-type="PROJECT"
@@ -868,6 +881,7 @@ watch(projectId, () => {
             :comment-enabled="project.commentEnabled"
             :comment-curated="project.commentCurated"
             :is-author="isProjectAuthor"
+            :locked="project.locked"
           />
         </KhCard>
       </div>
@@ -1120,6 +1134,12 @@ watch(projectId, () => {
 .pd__head-leader-name {
   font-size: var(--kh-font-size-sm);
   font-weight: 600;
+  cursor: pointer;
+  transition: color var(--kh-transition-fast);
+}
+.pd__head-leader-name:hover {
+  color: var(--kh-primary);
+  text-decoration: underline;
 }
 .pd__head-leader-role {
   font-size: 11px;
@@ -1232,31 +1252,22 @@ watch(projectId, () => {
   line-height: 1.9;
   color: var(--kh-text);
 }
-.pd__content :deep(.github-markdown-body h1),
-.pd__content :deep(.github-markdown-body h2) {
-  border-bottom: none;
-}
 /* 项目介绍配图可点放大：cursor zoom-in 视觉提示，点击由 .pd__content @click 委托 onContentClick 开 el-image-viewer */
 .pd__content :deep(.github-markdown-body img) {
   cursor: zoom-in;
 }
-/* 越级锁态占位 */
-.pd__locked {
+/* 越级锁态提示条：项目越级 description 可见，文件下载已锁（canDownload=false），弱化次要色提示需更高权限 */
+.pd__lock-tip {
   display: flex;
-  flex-direction: column;
   align-items: center;
-  gap: var(--kh-space-3);
-  padding: var(--kh-space-10) 0;
-  color: var(--kh-text-tertiary);
-  text-align: center;
-}
-.pd__locked-title {
-  font-size: var(--kh-font-size-md);
-  color: var(--kh-warm);
-  font-weight: 600;
-}
-.pd__locked-hint {
-  font-size: var(--kh-font-size-sm);
+  gap: 6px;
+  padding: var(--kh-space-3) var(--kh-space-4);
+  margin-top: var(--kh-space-4);
+  background: var(--kh-bg-soft);
+  border: 1px solid var(--kh-border-soft);
+  border-radius: var(--kh-radius-sm);
+  color: var(--kh-text-muted);
+  font-size: 13px;
 }
 
 /* —— 项目文件：GitHub 式文件树独立区块（参考后台 ProjectFileTree） —— */
@@ -1301,6 +1312,26 @@ watch(projectId, () => {
   padding: 8px 0;
   overflow: auto;
   flex: 1;
+}
+/* 越级锁态文件树占位：锁图标 + lockReason + 提示，替代文件树（项目越级锁文件查看，不只是锁下载） */
+.pd__files-locked {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--kh-space-2);
+  padding: var(--kh-space-12) var(--kh-space-6);
+  color: var(--kh-text-tertiary);
+  text-align: center;
+}
+.pd__files-locked-title {
+  font-size: var(--kh-font-size-md);
+  font-weight: 600;
+  color: var(--kh-text-secondary);
+  margin: var(--kh-space-2) 0 0;
+}
+.pd__files-locked-hint {
+  font-size: var(--kh-font-size-sm);
+  margin: 0;
 }
 .pd__tree-node {
   display: flex;

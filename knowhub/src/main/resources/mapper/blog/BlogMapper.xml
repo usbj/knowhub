@@ -56,7 +56,7 @@
             and bt.tag_id in
             <foreach collection="tagIds" item="tid" open="(" separator="," close=")">#{tid}</foreach>
             group by b.blog_id
-            having count(distinct bt.tag_id) = #{tagIds.size()}
+            having count(distinct bt.tag_id) = #{tagCount}
         </if>
         <!-- 前台"我的博客"强制收紧：前台 BlogAuthoringController.myList 注入 authorId=当前用户 userId，
              叠加此 AND 后"level<=userViewLevel OR author_id=userId"OR 分支被压回本人创建，

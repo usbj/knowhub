@@ -42,11 +42,12 @@ import java.util.stream.Collectors;
  * <p>
  * 照博客 {@code BlogPortalServiceImpl} 同构：前台无 @PreAuthorize、走 /portal/** permitAll，
  * 登录态防御性获取（principal 非 UserInfo 视为未登录 null）。
- * 分级开关 {@code knowhub.portal.hierarchical.enabled} 关→userViewLevel 恒 1（二元闸，L2/L3 永不下发）；
- * 开→max(1, ProjectPermissionResolver.view())（未登录/无 perm view=0→1 看 L1；有等级者看 L1~LN）。
- * 越级详情返回锁态 VO（description 置 null + locked=true + lockReason），不抛 403、不泄正文；
- * 但 summary 永远下发（卡片/列表用，非机密）。
- * canDownload：作者全权 OR 系统 download:lN 等级够 OR 成员 can_download=1 OR LEADER（照 admin canOp 范式）。
+ * 分级开关 {@code knowhub.portal.hierarchical.enabled} 关→userViewLevel 恒 1（二元闸，L1+L2 带 locked）；
+ * 开→max(1, ProjectPermissionResolver.level())（单键 knowhub:project:lN，未登录/无 perm level=0→1 看 L1；有等级者看 L1~LN）。
+ * 2026-08-18 权限大修搜索范围 +1：列表 where 片段 level<=userViewLevel+1，越级作品进列表带 locked=true、summary 可见；
+ * 详情 meta 不带 level 过滤由 service 判越级 → 锁态 VO（**description 仍下发**决策#5，只锁下载 canDownload=false +
+ * locked + lockReason），不抛 403。
+ * canDownload：作者 OR admin OR LEADER OR 系统等级够(level>=P.level) OR 成员 can_download=1（单键后用 level 比较）。
  *
  * @author knowhub
  */
@@ -79,6 +80,7 @@ public class ProjectPortalServiceImpl implements ProjectPortalService {
         quarry.setUserViewLevel(resolveUserViewLevel());
         PageUtil.startPage();
         List<ProjectPortalVo> list = projectPortalMapper.searchProjects(quarry);
+        fillLockedForList(list, quarry.getUserViewLevel());
         return new PageInfo<>(list);
     }
 
@@ -91,8 +93,10 @@ public class ProjectPortalServiceImpl implements ProjectPortalService {
             // 登录用户：排除已浏览过的项目，防看点重复
             viewedProjectIds = projectPortalMapper.viewedProjectIdsByUser(user.getUserId());
         }
-        return projectPortalMapper.recommendHot(
+        List<ProjectPortalVo> list = projectPortalMapper.recommendHot(
                 userViewLevel, excludeProjectId, viewedProjectIds, size);
+        fillLockedForList(list, userViewLevel);
+        return list;
     }
 
     @Override
@@ -123,6 +127,7 @@ public class ProjectPortalServiceImpl implements ProjectPortalService {
                 ordered.add(vo);
             }
         }
+        fillLockedForList(ordered, userViewLevel);
         // 项目无标签体系，无需 fillTagsForList
         return new PageInfo<>(ordered);
     }
@@ -136,15 +141,15 @@ public class ProjectPortalServiceImpl implements ProjectPortalService {
             return null;
         }
         Integer level = meta.getLevel();
-        // canDownload 权限态回填（前端据此控制文件树下载按钮显隐）
-        meta.setCanDownload(canDownload(projectId, level));
+        // canDownload 权限态回填（前端据此控制文件树下载按钮显隐，传 meta 避免重复查库）
+        meta.setCanDownload(canDownload(projectId, level, meta));
         fillCurrentUserCollect(meta, projectId);
-        // 越级锁态：level > userViewLevel → 不下发正文，只给元数据 + lockReason
+        // 越级锁态：level > userViewLevel → 仍下发 description（决策#5，项目越级只锁下载、description 可见），
+        // 只置 locked + lockReason + canDownload 已回填为 false（锁下载按钮）。越级不计浏览量。
         if (level != null && level > userViewLevel) {
             meta.setLocked(true);
-            meta.setDescription(null);
-            meta.setLockReason("需 L" + level + " 权限查看完整内容");
-            // 越级不计浏览量（未达权限不算统计量，对应博客同口径）
+            meta.setLockReason("需 L" + level + " 权限查看/下载完整内容");
+            meta.setDescription(projectPortalMapper.getProjectDescription(projectId));
             return meta;
         }
         // 达权：取 description 正文 + 计浏览量（仅登录态计，未登录不计，对应决策#3）
@@ -161,7 +166,9 @@ public class ProjectPortalServiceImpl implements ProjectPortalService {
     @Override
     public List<ProjectPortalVo> related(Long projectId, int size) {
         Integer userViewLevel = resolveUserViewLevel();
-        return projectPortalMapper.relatedProjects(projectId, userViewLevel, size);
+        List<ProjectPortalVo> list = projectPortalMapper.relatedProjects(projectId, userViewLevel, size);
+        fillLockedForList(list, userViewLevel);
+        return list;
     }
 
     @Override
@@ -305,32 +312,60 @@ public class ProjectPortalServiceImpl implements ProjectPortalService {
 
     /**
      * 解析前台 userViewLevel：
-     * 分级开关关 → 恒 1（二元闸，所有人只看 L1）；
-     * 开 → max(1, ProjectPermissionResolver.view())（未登录/无 perm view=0→1 看 L1；有等级者看 L1~LN）。
+     * 分级开关关 → 恒 1（二元闸，所有人只看 L1+L2 带 locked）；
+     * 开 → max(1, ProjectPermissionResolver.level())（单键 knowhub:project:lN，未登录/无 perm level=0→1 看 L1；有等级者看 L1~LN）。
+     * 2026-08-18 权限大修单键化 + 搜索范围 +1：where 片段 level<=userViewLevel+1，越级作品进列表带 locked。
      * 与博客 {@code BlogPortalServiceImpl.resolveUserViewLevel} 同构。
+     * <p>
+     * admin 短路兜底：admin 默认拥有所有权限、能看任何级别作品，**在分级开关判定之前**直接返回 3。
+     * 不受 hierarchical 开关（关时普通用户恒 1）与 sys_role_menu 绑定（admin 角色未绑 l3 菜单也能得 3）影响。
+     * UserInfo.isAdmin() 由 rookie 框架 UserDetailServiceImpl 依 roleKey="admin" 装载（本类 canDownload/canViewProject 已用同口径）。
      */
     private Integer resolveUserViewLevel() {
+        // admin 短路：admin 看任何级别，不受分级开关与角色菜单绑定影响
+        UserInfo user = currentUserOrNull();
+        if (user != null && user.isAdmin()) {
+            return 3;
+        }
         if (!portalConfigReader.isHierarchicalEnabled()) {
             return 1;
         }
-        int view = ProjectPermissionResolver.resolve().view();
-        return Math.max(1, view);
+        int level = ProjectPermissionResolver.resolve().level();
+        return Math.max(1, level);
     }
 
     /**
-     * 当前用户对项目 P 的下载权限判定（照 admin {@code ProjectServiceImpl.canOp(download)} 范式）：
-     * 系统 download:lN 等级够 OR 成员 can_download=1 OR LEADER（项目内权限标志位 + 角色全权）。
-     * 作者全权＝下载场景下实际走 admin service 的 canOp，但 admin canOp 不显式判"作者"，
-     * 而 admin addProjectInfo 已把创建者设为 LEADER，故作者=LEADER 自然全权，等价。
-     * 未登录/匿名返回 false（未登录看不到非 L1 项目，且 L1 项目下载仍需下载权限）。
+     * 当前用户对项目 P 的下载权限判定（照 admin {@code ProjectServiceImpl.canOp(download)} 范式，2026-08-18 单键化）：
+     * 作者 OR admin OR LEADER OR 系统等级够(level>=P.level) OR 成员 can_download=1。
+     * 单键 knowhub:project:lN 后 resolver 只提供 level()，下载闸用 level 与项目 level 比较（不再有独立 download:lN）。
+     * 未登录/匿名返回 false（未登录看不到非 L1 项目，且 L1 项目下载仍需下载权限——L1 level=1，未登录 level=0 不够，返 false）。
+     * 复用调用方已查的 meta（避免 getDetail 重复查库）；调用方未查时走重载 canDownload(projectId, level)。
      */
     private boolean canDownload(Long projectId, Integer projectLevel) {
-        ProjectPermissionResolver.ProjectPermissionLevel lvl = ProjectPermissionResolver.resolve();
-        // 系统权限等级够 → 直接通过
-        if (projectLevel != null && lvl.download() >= projectLevel) {
+        return canDownload(projectId, projectLevel, null);
+    }
+
+    private boolean canDownload(Long projectId, Integer projectLevel, ProjectPortalDetailVo meta) {
+        UserInfo user = currentUserOrNull();
+        // 作者全权（创建者=LEADER，能下载自己项目不论等级）
+        Long authorId = meta != null ? meta.getAuthorId() : null;
+        if (authorId == null) {
+            // 调用方未传 meta，反查一次（仅 getFileDownloadUrl/listProjectPackageEntries 走此分支）
+            ProjectPortalDetailVo m = projectPortalMapper.getPortalProjectMeta(projectId);
+            authorId = m != null ? m.getAuthorId() : null;
+        }
+        if (authorId != null && user != null && authorId.equals(user.getUserId())) {
             return true;
         }
-        UserInfo user = currentUserOrNull();
+        // admin 全权
+        if (user != null && user.isAdmin()) {
+            return true;
+        }
+        // 系统权限等级够 → 通过
+        ProjectPermissionResolver.ProjectPermissionLevel lvl = ProjectPermissionResolver.resolve();
+        if (projectLevel != null && lvl.level() >= projectLevel) {
+            return true;
+        }
         if (user == null) {
             return false;
         }
@@ -347,15 +382,19 @@ public class ProjectPortalServiceImpl implements ProjectPortalService {
     }
 
     /**
-     * 当前用户对项目 P 的可见性判定（listFiles 用，照博客 listFiles 范式）：
-     * 系统权限等级够(projectLevel<=view) OR 成员 can_view=1 OR LEADER。未登录仅能看 L1（由 userViewLevel 兜底）。
+     * 当前用户对项目 P 的可见性判定（listFiles 用，照博客 listFiles 范式，2026-08-18 单键化）：
+     * 作者 OR admin OR LEADER OR 系统等级够(level>=P.level) OR 成员 can_view=1。未登录仅能看 L1（由 userViewLevel 兜底）。
      */
     private boolean canViewProject(Long projectId, Integer projectLevel) {
-        ProjectPermissionResolver.ProjectPermissionLevel lvl = ProjectPermissionResolver.resolve();
-        if (projectLevel != null && lvl.view() >= projectLevel) {
+        UserInfo user = currentUserOrNull();
+        // 作者/admin 全权
+        if (user != null && user.isAdmin()) {
             return true;
         }
-        UserInfo user = currentUserOrNull();
+        ProjectPermissionResolver.ProjectPermissionLevel lvl = ProjectPermissionResolver.resolve();
+        if (projectLevel != null && lvl.level() >= projectLevel) {
+            return true;
+        }
         if (user == null) {
             return false;
         }
@@ -394,5 +433,18 @@ public class ProjectPortalServiceImpl implements ProjectPortalService {
         }
         vo.setHasCollected(projectCollectMapper.getProjectCollect(
                 new ProjectCollect(projectId, user.getUserId())) != null);
+    }
+
+    /**
+     * 批量回填越级锁标记：vo.level > userViewLevel → locked=true（2026-08-18 搜索范围 +1 落地）。
+     * 越级作品进列表带锁标记、summary 可见，前端据此渲染锁图标；达权 locked=false。O(n) n=页大小，开销可忽略。
+     * 项目越级只锁下载（description 在详情仍下发），列表层仅标 locked 不置空字段。
+     */
+    private void fillLockedForList(List<ProjectPortalVo> list, Integer userViewLevel) {
+        if (list == null || list.isEmpty()) return;
+        for (ProjectPortalVo vo : list) {
+            Integer level = vo.getLevel();
+            vo.setLocked(level != null && level > userViewLevel);
+        }
     }
 }

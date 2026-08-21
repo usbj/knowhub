@@ -18,6 +18,7 @@ import KhIcon from '@/components/common/KhIcon.vue'
 import BlogRow from '@/components/blog/BlogRow.vue'
 import ProjectCard from '@/components/project/ProjectCard.vue'
 import ResourceCard from '@/components/resource/ResourceCard.vue'
+import ArticleCard from '@/components/article/ArticleCard.vue'
 
 import { useRouter } from 'vue-router'
 import { onMounted, ref } from 'vue'
@@ -27,10 +28,12 @@ import {
 } from '@/api/knowhub/resource-portal'
 import { recommendBlogsApi, hotTagsApi } from '@/api/knowhub/blog'
 import { recommendProjectsApi } from '@/api/knowhub/project-portal'
+import { recommendArticlesApi } from '@/api/knowhub/article'
 import { getPublicNoticesApi } from '@/api/system/notice-portal'
 import type { NoticePortalRecord } from '@/types/api/notice-portal'
 import type { BlogPortalRecord } from '@/types/api/knowhub/blog'
 import type { ProjectPortalRecord } from '@/types/api/knowhub/project-portal'
+import type { ArticlePortalRecord } from '@/types/api/knowhub/article'
 import type { HotTagRecord } from '@/types/api/knowhub/tag'
 import type { ResourcePortalRecord } from '@/types/api/knowhub/resource'
 import { useNoticeStore } from '@/stores/notice'
@@ -42,6 +45,8 @@ const noticeStore = useNoticeStore()
 const latestBlogs = ref<BlogPortalRecord[]>([])
 /** 活跃项目：项目推荐 feed recommendProjectsApi（全局热门兜底，无用户偏好源） */
 const hotProjects = ref<ProjectPortalRecord[]>([])
+/** 最新文档：文章推荐 feed recommendArticlesApi（全局热门兜底，6 条 2×3 网格） */
+const latestArticles = ref<ArticlePortalRecord[]>([])
 
 /** 公告滚动条：公开公告接口（群发+已发布，置顶优先+时间倒序），未登录访客也可读 */
 const pinnedNotices = ref<NoticePortalRecord[]>([])
@@ -67,15 +72,18 @@ const fetchHomeNotices = async () => {
 
 const fetchHomeBlogsAndProjects = async () => {
   try {
-    const [blogs, projects] = await Promise.all([
+    const [blogs, projects, articles] = await Promise.all([
       recommendBlogsApi(5, undefined, { silentError: true }),
       recommendProjectsApi(4, undefined, { silentError: true }),
+      recommendArticlesApi(6),
     ])
     latestBlogs.value = blogs.data ?? []
     hotProjects.value = projects.data ?? []
+    latestArticles.value = articles.data ?? []
   } catch {
     latestBlogs.value = []
     hotProjects.value = []
+    latestArticles.value = []
   }
 }
 
@@ -83,7 +91,7 @@ const fetchHomeBlogsAndProjects = async () => {
 const hotTags = ref<HotTagRecord[]>([])
 const fetchHomeHotTags = async () => {
   try {
-    const res = await hotTagsApi(10, { silentError: true })
+    const res = await hotTagsApi(8, { silentError: true })
     hotTags.value = res.data ?? []
   } catch {
     hotTags.value = []
@@ -104,7 +112,7 @@ const fetchHomeResources = async () => {
   }
 }
 
-/** 资源榜图标按类型派生（资源主表无 cover/linkIcon 列，前端按 resourceType 占位） */
+/** 资源榜无封面时的占位图标按类型派生（有封面 linkIcon 时由卡片渲图，榜单此处仍用占位 icon） */
 const rankCoverGradient = (r: ResourcePortalRecord) =>
   r.resourceType === 'LINK'
     ? 'linear-gradient(135deg,#2563eb,#0ea5e9)'
@@ -120,6 +128,23 @@ onMounted(() => {
 
 /** 热门标签榜首热度分，做热度条占比分母（hotScore 后端加权聚合分） */
 const topTagScore = () => hotTags.value[0]?.hotScore ?? 1
+
+/**
+ * 标签名是否「过长」需循环滚动播放。
+ * home__tag-name 容器固定宽 72px（13px 字号约容 5 个中文字 / 11 个英文字符），
+ * 超过该宽度的标签名会撑成两行破坏榜单布局。此处按字符数粗判：
+ * 中文等宽字符计 1、半角字符计 0.5，加权和 > 5 即视为过长，开横向 marquee 滚动
+ * （仅滚名称，名后的热度条与名前的序号不动）。
+ */
+const isTagNameLong = (name: string): boolean => {
+  if (!name) return false
+  let weight = 0
+  for (const ch of name) {
+    // CJK 区与全角符号等按 1 计，半角 ASCII 按约 0.5 计
+    weight += /[　-鿿＀-￯]/.test(ch) ? 1 : 0.5
+  }
+  return weight > 5
+}
 
 /** AI 日报：功能未实施，静态"即将上线"占位（不接接口） */
 const aiDaily = {
@@ -142,7 +167,8 @@ const formatSize = (len?: number | null) => {
 const sections = [
   { key: 'notes', no: '01', icon: 'blog', title: '最新笔记', tone: 'var(--kh-primary)' },
   { key: 'projects', no: '02', icon: 'project', title: '活跃项目', tone: 'var(--kh-accent)' },
-  { key: 'resources', no: '03', icon: 'resource', title: '资源推荐', tone: 'var(--kh-warm)' },
+  { key: 'articles', no: '03', icon: 'doc', title: '最新文档', tone: 'var(--kh-success)' },
+  { key: 'resources', no: '04', icon: 'resource', title: '资源推荐', tone: 'var(--kh-warm)' },
 ] as const
 
 /** Hero 内容类别徽章：标明系统里有什么资源 */
@@ -276,13 +302,30 @@ const goSearch = () => {
           </div>
         </section>
 
-        <!-- 资源推荐（网格） -->
+        <!-- 最新文档（网格，3 列 2 行） -->
         <section class="feed-section">
           <header class="feed-section__head">
             <div class="feed-section__title">
               <span class="feed-section__no" :style="{ color: sections[2]!.tone }">{{ sections[2]!.no }}</span>
               <KhIcon :name="sections[2]!.icon" :size="20" :style="{ color: sections[2]!.tone }" />
               <h2>{{ sections[2]!.title }}</h2>
+            </div>
+            <RouterLink to="/articles" class="feed-section__more">
+              查看更多 <el-icon><ArrowRight /></el-icon>
+            </RouterLink>
+          </header>
+          <div class="home__article-grid">
+            <ArticleCard v-for="a in latestArticles" :key="a.articleId" :doc="a" />
+          </div>
+        </section>
+
+        <!-- 资源推荐（网格） -->
+        <section class="feed-section">
+          <header class="feed-section__head">
+            <div class="feed-section__title">
+              <span class="feed-section__no" :style="{ color: sections[3]!.tone }">{{ sections[3]!.no }}</span>
+              <KhIcon :name="sections[3]!.icon" :size="20" :style="{ color: sections[3]!.tone }" />
+              <h2>{{ sections[3]!.title }}</h2>
             </div>
             <RouterLink to="/resources" class="feed-section__more">
               查看更多 <el-icon><ArrowRight /></el-icon>
@@ -313,6 +356,8 @@ const goSearch = () => {
           </button>
         </KhCard>
 
+        <!-- 热门资源榜 + 热门标签：随滚动固定（sticky），AI 日报不固定、自然滚走 -->
+        <div class="home__aside-sticky">
         <!-- 热门资源榜 -->
         <KhCard padding="md" class="home__rank">
           <div class="home__rank-head">
@@ -332,7 +377,11 @@ const goSearch = () => {
               </div>
               <div class="home__rank-text">
                 <div class="home__rank-title kh-line-clamp-1">{{ r.title }}</div>
-                <div class="home__rank-meta">{{ r.downloadCount }} 下载 · {{ formatSize(r.contentLength) }}</div>
+                <div class="home__rank-meta">
+                  <!-- 链接型无下载语义（不计下载量/无大小），显浏览；文件型显下载 + 大小 -->
+                  <template v-if="r.resourceType === 'LINK'">{{ r.viewCount ?? 0 }} 浏览</template>
+                  <template v-else>{{ r.downloadCount ?? 0 }} 下载 · {{ formatSize(r.contentLength) }}</template>
+                </div>
               </div>
             </li>
           </ol>
@@ -352,7 +401,15 @@ const goSearch = () => {
               @click="router.push('/blogs')"
             >
               <span class="home__tag-no" :class="{ 'is-top': i < 3 }">{{ i + 1 }}</span>
-              <span class="home__tag-name">{{ t.tagName }}</span>
+              <span class="home__tag-name">
+                <span class="home__tag-name-inner" :class="{ 'is-marquee': isTagNameLong(t.tagName) }">
+                  <template v-if="isTagNameLong(t.tagName)">
+                    <span class="home__tag-name-unit">{{ t.tagName }}</span>
+                    <span class="home__tag-name-unit">{{ t.tagName }}</span>
+                  </template>
+                  <template v-else>{{ t.tagName }}</template>
+                </span>
+              </span>
               <span class="home__tag-bar">
                 <span class="home__tag-bar-fill" :style="{ width: `${((t.hotScore ?? 0) / topTagScore()) * 100}%` }" />
               </span>
@@ -360,6 +417,7 @@ const goSearch = () => {
             </li>
           </ol>
         </KhCard>
+        </div>
       </aside>
     </section>
   </div>
@@ -748,6 +806,11 @@ const goSearch = () => {
   grid-template-columns: repeat(2, 1fr);
   gap: var(--kh-space-5);
 }
+.home__article-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--kh-space-5);
+}
 .home__res-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
@@ -756,6 +819,14 @@ const goSearch = () => {
 
 /* —— 右侧栏 —— */
 .home__aside {
+  display: flex;
+  flex-direction: column;
+  gap: var(--kh-space-5);
+  /* 拉满 grid 行高，让内部 sticky 子块相对 aside 可滚动固定（aside 与左主列等高） */
+  align-self: stretch;
+}
+/* 热门资源榜 + 热门标签：相对 aside 固定（随滚动），AI 日报在它之前自然滚走 */
+.home__aside-sticky {
   display: flex;
   flex-direction: column;
   gap: var(--kh-space-5);
@@ -910,7 +981,7 @@ const goSearch = () => {
   font-family: var(--kh-font-mono);
 }
 
-/* 热门标签榜 */
+/* 热门标签榜（竖排紧凑榜，非大标签云） */
 .home__tag-list {
   list-style: none;
   margin: 0;
@@ -944,11 +1015,36 @@ const goSearch = () => {
   color: var(--kh-warm);
 }
 .home__tag-name {
-  width: 64px;
+  /* 名称容器固定宽，超出该宽的标签名在内部横滚，序号与热度条不动 */
+  width: 72px;
+  flex: none;
+  overflow: hidden;
   font-size: 13px;
   font-weight: 500;
   color: var(--kh-text);
-  flex: none;
+}
+.home__tag-name-inner {
+  display: inline-block;
+  white-space: nowrap;
+}
+/* 长标签名循环滚动：两个相同 unit（各带 margin-right 间隔）横向平移 -50% 实现无缝循环
+   （hover 暂停便于看清）。unit 间留 4em 间隔，避免副本首尾粘连。
+   mask 仅挂在滚动态 inner 上——短名不滚，左右清晰不虚化。 */
+.home__tag-name-inner.is-marquee {
+  animation: kh-tag-name-marquee 14s linear infinite;
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent);
+  mask-image: linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent);
+}
+.home__tag-name-inner.is-marquee:hover {
+  animation-play-state: paused;
+}
+.home__tag-name-unit {
+  /* 每个 unit 后留 4em 间隔，-50% 平移正好滚一个 unit+间隔，两份副本首尾衔接处也有间隔 */
+  margin-right: 4em;
+}
+@keyframes kh-tag-name-marquee {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
 }
 .home__tag-bar {
   flex: 1;
@@ -971,16 +1067,21 @@ const goSearch = () => {
   text-align: right;
   flex: none;
 }
+@media (prefers-reduced-motion: reduce) {
+  .home__tag-name-inner.is-marquee {
+    animation: none;
+  }
+}
 
 /* —— 响应式 —— */
 @media (max-width: 1024px) {
   .home__body {
     grid-template-columns: 1fr;
   }
-  .home__aside {
-    position: static;
-  }
   .home__project-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .home__article-grid {
     grid-template-columns: repeat(2, 1fr);
   }
 }
@@ -1004,6 +1105,9 @@ const goSearch = () => {
     grid-template-columns: repeat(2, 1fr);
   }
   .home__project-grid {
+    grid-template-columns: 1fr;
+  }
+  .home__article-grid {
     grid-template-columns: 1fr;
   }
   .notice-bar__more {

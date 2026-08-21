@@ -58,8 +58,12 @@ public interface BlogPortalMapper {
     /** 批量回填列表标签（防 N+1，照 blog_tag getBlogTagsByBlogIds 范式） */
     List<Map<String, Object>> getTagIdsByBlogIds(@Param("blogIds") List<Long> blogIds);
 
-    /** 标签热度榜：统计 blog_tag + article_tag 关联的 PUBLISHED+公开内容数 + 总热度 */
-    List<HotTagVo> hotTags(@Param("size") int size);
+    /**
+     * 标签热度榜：统计 blog_tag + article_tag 关联的 PUBLISHED+公开内容数 + 总热度。
+     * 两类分支均按门户口径 level<=userViewLevel+1 过滤（与列表/统计同源，越级内容也计入）。
+     * 注意：文章用 level 而非 visibility——visibility 是章节创作状态机字段，非门户可见性。
+     */
+    List<HotTagVo> hotTags(@Param("size") int size, @Param("userViewLevel") int userViewLevel);
 
     /**
      * 用户偏好 tag：blog_like ∪ blog_collect 反推 tag 频次（collect*3 + like*1 聚合）

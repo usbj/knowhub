@@ -1303,3 +1303,28 @@ knowhub 项目管理模块开发，详见 `doc/knowhub-project-design.md`。项�
 - `knowhub-ui/src/components/common/KhComment.vue`：去内联 viewer refs/onContentClick/closeViewer，改 `useMarkdownImageZoom(contentRef)`（保留 `contentRef` 供折叠量高复用），行为不变。
 - `knowhub-ui/src/views/blog/detail.vue` / `article/detail.vue` / `article/chapter/read.vue` / `project/detail.vue` / `resource/detail.vue` / `components/layout/KhNoticeDetailDialog.vue`：各加 `ElImageViewer` import + composable + `ref="contentRef" @click="onContentClick"` + 尾贴 `<el-image-viewer>` + scoped `cursor:zoom-in`。
 - `knowhub-ui/src/views/dev/MarkdownImageZoomProbe.vue`（临时验证探针）：验毕已删。
+
+## 2026-08-21 — 修复笔记导航 / 文档学习标签筛选失效（axios 数组参序列化与 Spring List 绑定不兼容）
+
+用户反馈前台「笔记导航」(`/blogs`，博客列表) 与「文档学习」(`/articles`，文章列表) 的标签云点击后列表不按标签过滤、仍返回全量。根因在前端，后端/SQL/mapper 无需改动。
+
+**根因（已实证）**
+- 前台 axios 实例 `knowhub-ui/src/utils/http.ts` 原先未配 `paramsSerializer`，axios 1.18.1 默认把数组查询参序列化成 `tagIds[]=1&tagIds[]=2&tagIds[]=3`（带 `[]` 方括号后缀）。
+- 后端 `BlogPortalSearchQuarry.tagIds` / `ArticlePortalSearchQuarry.tagIds` 为 `List<Long>`，Spring MVC 默认绑定只认「逗号分隔单值」(`tagIds=1,2,3`) 或「重复同名参」(`tagIds=1&tagIds=2`)，不认 `tagIds[]=` 这种带 `[]` 后缀的 key → 后端拿到 `tagIds=null` → MyBatis `<if test="tagIds != null and tagIds.size() > 0">` 整块跳过 → 过滤不生效返回全量。
+- 已实证默认序列化：`{params:{tagIds:[1,2,3]}}` 实际发出 `?tagIds%5B%5D=1&tagIds%5B%5D=2&tagIds%5B%5D=3`（即 `tagIds[]=...`），后端无法绑定。
+
+**旁证**
+- 资源门户 `resource-portal.ts` 早已踩过同坑并就地加 `portalSearchParamsSerializer`（数组转逗号分隔单值）修好，其注释 + 后端 `ResourcePortalSearchQuarry` 注释均明确此根因。但博客门户 `blog.ts` 的 `searchBlogsApi`、文章门户 `article.ts` 的 `searchArticlesApi` 未挂 serializer，遗漏了。
+- 项目门户无标签体系（`ProjectPortalSearchQuarry` 注释「项目无标签」）故不受影响——与用户只报笔记导航/文档学习一致。创作端列表查询 `MyBlogListQuery` 无数组参、`tagIds` 仅出现在 POST/PUT body（JSON，不经 paramsSerializer），不受影响。
+
+**方案（集中式，一处改动）**
+- 在 axios 实例 `create({...})` 加默认 `paramsSerializer`：遍历 params，跳过 `null/undefined/''`，数组用 `.join(',')` 拼成逗号分隔单值 append，单值 `String(v)` append。实现照搬资源端已验证的 `portalSearchParamsSerializer` 口径。
+- 实例级默认 serializer 生效后，博客/文章门户的 `searchBlogsApi`/`searchArticlesApi` 无需各自加 serializer 即自动修好，且未来任何走 GET 带数组入参的接口免疫。资源端请求级 `portalSearchParamsSerializer` 保留不动（优先级高于实例默认、行为一致不冲突，作历史先例留档）。
+
+**校验**
+- `knowhub-ui` `npm run type-check` 通过（仅加一个 serializer 函数 + 一行配置，无类型变动；develop HEAD 另有 7 个 pre-existing 类型错系上游合并带入的 `Record<ViewLevel,...>` number 索引与 `'accent'` tag 漂移，与本任务无关不在本批处理）。
+- 序列化实测：多标签 `tagIds=1,2,3`、单标签 `tagIds=5`、无标签 `tagIds` 省略，均符合 Spring `List<Long>` 默认绑定。
+- 实机验证交用户本地起 `knowhub-ui` dev + 后端 + MySQL/Redis 在浏览器确认（不自行启 preview）：`/blogs`、`/articles` 标签云与侧栏标签排行点击后列表应按标签 AND 收窄、`total` 同步变小、取消恢复全量；`/resources` 多分类筛选回归仍正常。
+
+**涉及文件**
+- `knowhub-ui/src/utils/http.ts`：新增模块内 `defaultParamsSerializer`（数组→逗号分隔单值，跳过空值）+ 在 `axios.create({...})` 挂 `paramsSerializer: defaultParamsSerializer` + 文件头注释补根因说明。这是唯一代码改动，不动后端/SQL/mapper/blog.ts/article.ts/resource-portal.ts。

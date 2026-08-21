@@ -11,6 +11,8 @@ export interface BlogPortalRecord {
   blogId: number
   authorId?: number
   authorNickname?: string
+  /** 作者头像 URL（join sys_user.avatar 带出，/file/resolve/{objectId} 形态，无头像为 null，前端 <img> 直引失败回退首字） */
+  authorAvatar?: string
   title: string
   summary?: string
   coverUrl?: string
@@ -26,9 +28,14 @@ export interface BlogPortalRecord {
 
 /** 前台博客详情（继承列表字段 + 正文 + 锁态） */
 export interface BlogPortalDetailRecord extends BlogPortalRecord {
-  /** 正文（越级锁态时为 null，不下发只字正文） */
+  /** 正文（越级锁态时为 null，不下发完整正文；达权时下发全文） */
   content?: string | null
-  /** 是否越级锁态：true=无权看完整正文，只给元数据 */
+  /**
+   * 越级预览正文（越级锁态时下发前 N 字符，N 由后端 PortalConfigReader.getLockPreviewLength 控制，默认 200；0=不预览回退纯遮罩）。
+   * 达权时为 null。前端 locked=true 时渲染 previewContent + 渐隐遮罩 + lockReason（看几行后面锁），无 previewContent 则回退纯遮罩。
+   */
+  previewContent?: string | null
+  /** 是否越级锁态：true=无权看完整正文，只给元数据 + 预览 */
   locked?: boolean
   /** 锁态原因提示（如"需 L2 权限查看完整正文"，正常态为 null） */
   lockReason?: string | null

@@ -10,9 +10,13 @@ import com.knowhub.pojo.comment.entity.CommentLike;
 import com.knowhub.pojo.comment.vo.CommentCreateVo;
 import com.knowhub.pojo.comment.vo.CommentReviewVo;
 import com.knowhub.service.comment.impl.CommentService;
+import com.knowhub.support.ArticlePermissionResolver;
+import com.knowhub.support.BlogPermissionResolver;
 import com.knowhub.support.CommentWorkResolver;
 import com.knowhub.support.CommentWorkResolver.WorkMeta;
 import com.knowhub.support.NotifySupport;
+import com.knowhub.support.ProjectPermissionResolver;
+import com.knowhub.support.ResourcePermissionResolver;
 import com.rookie.common.exception.ServiceException;
 import com.rookie.framework.security.pojo.UserInfo;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -73,6 +77,16 @@ public class CommentServiceImpl implements CommentService {
 
         UserInfo user = currentUser();
         Long userId = user.getUserId();
+
+        // 越级锁评论（2026-08-18）：越级用户能看作品（列表带 locked 标记、详情预览式锁）但不能发评论——
+        // 看不了完整内容却发评论不合常理。作者本人放行（作者天然有全权，即便自己等级<作品 level 也能评论自己作品）。
+        // admin 走各 resolver 自然得 level 3 全过；未授权者得 0 只能评论 L1 作品。
+        if (work.level() != null && !userId.equals(work.authorId())) {
+            int userLevel = resolveWorkLevel(type);
+            if (userLevel < work.level()) {
+                throw new ServiceException(500, "等级不足，无法评论该作品（需 L" + work.level() + " 权限）");
+            }
+        }
 
         Comment parent = null;
         if (vo.getParentId() != null) {
@@ -247,6 +261,19 @@ public class CommentServiceImpl implements CommentService {
 
     private UserInfo currentUser() {
         return (UserInfo) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+    }
+
+    /**
+     * 按 bizType 分派取当前用户对该类作品的查看等级（单键 knowhub:xxx:lN，resolver 扫 perms 取最高）。
+     * 评论越级闸用——越级用户（userLevel < work.level）不能发评论。admin 自然得 3 全过。
+     */
+    private int resolveWorkLevel(CommentBizType type) {
+        return switch (type) {
+            case BLOG -> BlogPermissionResolver.resolve().level();
+            case ARTICLE -> ArticlePermissionResolver.resolve().level();
+            case PROJECT -> ProjectPermissionResolver.resolve().level();
+            case RESOURCE -> ResourcePermissionResolver.resolve().level();
+        };
     }
 
     /** 通知正文截断：超长切前 max 字符追加 "…"，避免长评论撑爆通知流；null/空返空串。 */

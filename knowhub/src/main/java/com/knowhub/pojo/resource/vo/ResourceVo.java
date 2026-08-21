@@ -57,6 +57,13 @@ public class ResourceVo {
 
     private String reviewStatus;
 
+    /**
+     * 等级 1公开/2内部/3机密（见 ResourceLevel 枚举，2026-08-18 权限大修引入，缺省 L1）。
+     * 创作提交时由前端等级选择器带入（addResourceInfo 走 assertCanCreateLevel 创作闸兜底）；
+     * 编辑回填时回填供前端选中已有等级（editResourceInfo 不再校验创作闸，仅作者OR admin 可改）。
+     */
+    private Integer level;
+
     private Date publishTime;
 
     /** 下载次数（仅 FILE 下载 +1，主表冗余） */
@@ -224,6 +231,14 @@ public class ResourceVo {
 
     public void setStatus(String status) {
         this.status = status;
+    }
+
+    public Integer getLevel() {
+        return level;
+    }
+
+    public void setLevel(Integer level) {
+        this.level = level;
     }
 
     public String getReviewStatus() {

@@ -42,13 +42,13 @@ const hasImageCover = computed(() => {
     <div class="doc-card__cover" :class="{ 'doc-card__cover--img': hasImageCover }">
       <img v-if="hasImageCover" :src="props.doc.coverUrl" alt="封面" class="doc-card__cover-img" />
       <KhIcon v-else name="book" :size="28" class="doc-card__cover-icon" />
-      <div v-if="props.doc.level" class="doc-card__level">
-        <KhTag size="sm" :type="viewLevelTagType[props.doc.level as 1 | 2 | 3] ?? 'neutral'">{{ getViewLevelLabel(props.doc.level) }}</KhTag>
-      </div>
     </div>
 
     <div class="doc-card__body">
-      <h3 class="doc-card__title kh-line-clamp-2">{{ props.doc.title }}</h3>
+      <div class="doc-card__title-row">
+        <h3 class="doc-card__title kh-line-clamp-2">{{ props.doc.title }}</h3>
+        <KhTag v-if="props.doc.level" size="sm" class="doc-card__level" :type="viewLevelTagType[props.doc.level as 1 | 2 | 3] ?? 'neutral'">{{ getViewLevelLabel(props.doc.level) }}</KhTag>
+      </div>
       <p class="doc-card__summary kh-line-clamp-2">{{ props.doc.summary }}</p>
 
       <div v-if="props.doc.tagNames?.length" class="doc-card__tags">
@@ -75,7 +75,7 @@ const hasImageCover = computed(() => {
 
       <div class="doc-card__meta">
         <div class="doc-card__author">
-          <KhAvatar :item="{ label: props.doc.authorNickname ?? '' }" :size="22" />
+          <KhAvatar :item="{ label: props.doc.authorNickname ?? '', src: props.doc.authorAvatar ?? undefined }" :size="22" />
           <span>{{ props.doc.authorNickname ?? '匿名' }}</span>
         </div>
         <span v-if="props.doc.publishTime" class="doc-card__time">
@@ -102,6 +102,8 @@ const hasImageCover = computed(() => {
   height: 96px;
   display: grid;
   place-items: center;
+  /* 放大溢出由 overflow:hidden 裁掉，与资源卡封面悬浮放大同口径 */
+  overflow: hidden;
   /* 无封面时的渐变兜底（hasImageCover=false 走图标占位，背景渐变打底） */
   background: linear-gradient(135deg, #2563eb, #0ea5e9);
 }
@@ -114,14 +116,15 @@ const hasImageCover = computed(() => {
   width: 100%;
   height: 100%;
   object-fit: cover;
+  object-position: center;
+  transition: transform 280ms ease;
+}
+/* 悬浮卡片时封面图放大 1.08（cover 填满裁切，溢出由 .doc-card__cover overflow:hidden 裁掉） */
+.doc-card:hover .doc-card__cover-img {
+  transform: scale(1.08);
 }
 .doc-card__cover-icon {
   color: rgba(255, 255, 255, 0.92);
-}
-.doc-card__level {
-  position: absolute;
-  top: var(--kh-space-3);
-  right: var(--kh-space-3);
 }
 .doc-card__body {
   display: flex;
@@ -130,10 +133,23 @@ const hasImageCover = computed(() => {
   padding: var(--kh-space-4) var(--kh-space-5);
   flex: 1;
 }
+/* 标题行：标题与等级标签持平——标题占满剩余宽、标签靠右不缩 */
+.doc-card__title-row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--kh-space-2);
+}
 .doc-card__title {
+  flex: 1 1 auto;
+  min-width: 0;
   font-size: var(--kh-font-size-md);
   font-weight: 600;
   line-height: 1.45;
+}
+/* 等级标签贴标题右侧顶部对齐（align-items:flex-start 时与标题首行持平），不缩不折行 */
+.doc-card__level {
+  flex: none;
+  margin-top: 2px;
 }
 .doc-card__summary {
   font-size: var(--kh-font-size-sm);

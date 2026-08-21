@@ -15,8 +15,14 @@ package com.knowhub.enums.storage;
  *   该地址通常是 nginx 代理的公网域名（nginx 反代到内网 OSS），故外网用户可达且无需 OSS CORS
  *   （nginx 同域反代不跨域）。适用于：希望后端不经文件字节流、OSS 经 nginx 公网反代暴露。
  * <p>
- * 枚举值与字典 file_access_mode 的 dict_data_value 一致；直链模式 OSS 地址 base 走字典
- * file_direct_base_url（后续迁系统设置时仅改 StorageConfigReader 内部实现，调用方零改动）。
+ * LOCAL（本地存储模式）：后端不连 OSS，文件直接落本地磁盘（storage.local.base-path 根目录，
+ *   相对路径即 objectKey，与 S3 目录结构对齐）。上传走后端中转接口 /file/local-upload/{id}（@RequestBody
+ *   byte[] 收字节写盘）；访问走中转接口形态——PUBLIC 回显 /file/public/{id}、PRIVATE 下载 /file/proxy/{id}，
+ *   后端用本地后端读盘回写。无预签名概念。适用于：单机部署 / 不部署 OSS / 开发演示。
+ *   ⚠️ 切换到 LOCAL 只影响新上传，历史 OSS 数据不自动迁移——切前建议先用「文件管理→打包下载」
+ *   把历史 OSS 数据下载到本地目录再切换。
+ * <p>
+ * 枚举值与 sys_config 的 knowhub.file.access_mode 配置项值一致（transfer/direct/local）；
  */
 public enum FileAccessMode {
 
@@ -24,7 +30,10 @@ public enum FileAccessMode {
     TRANSFER("transfer", "中转模式"),
 
     /** 直链模式：链接指向 nginx 代理/直连 OSS 地址，前端直连 */
-    DIRECT("direct", "直链模式");
+    DIRECT("direct", "直链模式"),
+
+    /** 本地存储模式：文件落本地磁盘，访问走后端中转读盘（无预签名） */
+    LOCAL("local", "本地存储模式");
 
     private final String code;
 

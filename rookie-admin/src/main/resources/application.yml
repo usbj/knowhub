@@ -85,6 +85,9 @@ storage:
   gc-interval-minutes: 10
   # PUBLIC 对象是否直拼公开读 URL（false 则也走预签名 GET），取决于 RustFS 桶策略
   public-bucket-readable: true
+  # 本地存储模式根目录（access_mode=local 时文件落盘于此，objectKey 即相对路径，默认 ./knowhub-upload）
+  # 改需重启；切本地模式前需确保该目录已配且历史 OSS 数据已下载到本地（见系统设置 knowhub.file.access_mode 备注）
+  local-base-path: ./knowhub-upload
 
 # 博客模块配置
 knowhub:
@@ -112,6 +115,15 @@ knowhub:
     # 频率走 yml（@Scheduled 注解在 Bean 创建时解析，只能读 yml/环境变量），改需重启。
     # 借出审批/月度周记报表开关本身走 sys_config(knowhub.audit.*，默认关闭），可后台改即时生效
     overdue-scan-interval-minutes: 30
+
+# 定时任务调度白名单：允许被 sys_job 调度的 Spring Bean 包前缀（rookie SysJobScheduler 安全边界）
+# 默认 com.rookie.system.task；knowhub 扩展 com.knowhub.task，使 knowhub 的 8 个 @Component 任务可纳入后台管理
+# （后台「系统监控→定时任务」注册/启停/立即执行/查日志，cron 走 sys_job 表）
+# 注意：SysJobScheduler 用 @Value 注入 List<String>，@Value 走 SpEL 只认「逗号分隔字符串」拆 List，
+#   不认 YAML 列表语法（- ）；写列表语法会被当单字符串 fallback 到默认值，导致白名单只含 com.rookie.system.task。
+#   故此处必须用逗号分隔单行写法。后续若改用 @ConfigurationProperties 绑定可同时支持两种写法（见 knowhub-job-rookie-changes.md）。
+task:
+  bean-package-prefixes: com.rookie.system.task,com.knowhub.task
 
 # 文件上传配置
 # upload.path：上传根路径（本地路径，可配置；支持相对路径，相对应用工作目录解析；

@@ -26,6 +26,7 @@ import org.springframework.stereotype.Component;
  *   <li>{@link WorkMeta#authorId()}：作者 userId（gate「能看作品才能评论」作者分支 + 列表谓词 workAuthorId）。</li>
  *   <li>{@link WorkMeta#commentEnabled()}：1 开 / 0 关；关闭时 create 拒、列表返空。</li>
  *   <li>{@link WorkMeta#commentCurated()}：1 开精选 / 0 关；create 时定评论 review_status（0→NONE 直接可见，1→PENDING 待精）。</li>
+ *   <li>{@link WorkMeta#level()}：作品等级 1/2/3；create 时越级判定（越级用户能看作品但不能发评论，作者本人放行）。</li>
  * </ul>
  * 失败空时该方法返回 null（仅 NONE 字段 workAuthor 也 null 形式或空 WorkMeta）——这里给 exists=false 的 WorkMeta。
  */
@@ -59,28 +60,28 @@ public class CommentWorkResolver {
                 if (b == null || (b.getDeleted() != null && b.getDeleted() == 1)) {
                     return WorkMeta.absent();
                 }
-                return new WorkMeta(true, b.getAuthorId(), b.getCommentEnabled(), b.getCommentCurated());
+                return new WorkMeta(true, b.getAuthorId(), b.getCommentEnabled(), b.getCommentCurated(), b.getLevel());
             }
             case ARTICLE: {
                 Article a = articleMapper.getArticleInfoById(bizId);
                 if (a == null || (a.getDeleted() != null && a.getDeleted() == 1)) {
                     return WorkMeta.absent();
                 }
-                return new WorkMeta(true, a.getAuthorId(), a.getCommentEnabled(), a.getCommentCurated());
+                return new WorkMeta(true, a.getAuthorId(), a.getCommentEnabled(), a.getCommentCurated(), a.getLevel());
             }
             case PROJECT: {
                 Project p = projectMapper.getProjectInfoById(bizId);
                 if (p == null || (p.getDeleted() != null && p.getDeleted() == 1)) {
                     return WorkMeta.absent();
                 }
-                return new WorkMeta(true, p.getAuthorId(), p.getCommentEnabled(), p.getCommentCurated());
+                return new WorkMeta(true, p.getAuthorId(), p.getCommentEnabled(), p.getCommentCurated(), p.getLevel());
             }
             case RESOURCE: {
                 Resource r = resourceMapper.getResourceInfoById(bizId);
                 if (r == null || (r.getDeleted() != null && r.getDeleted() == 1)) {
                     return WorkMeta.absent();
                 }
-                return new WorkMeta(true, r.getAuthorId(), r.getCommentEnabled(), r.getCommentCurated());
+                return new WorkMeta(true, r.getAuthorId(), r.getCommentEnabled(), r.getCommentCurated(), r.getLevel());
             }
             default:
                 return WorkMeta.absent();
@@ -119,10 +120,11 @@ public class CommentWorkResolver {
 
     /**
      * 作品元数据快照。exists=false 表示作品不存在或已删（仅 gate Unsupported 时用，避免 NULL 回包）。
+     * level 为作品等级（1/2/3），供评论创作闸做越级判定（越级用户能看作品但不能发评论，作者本人放行）。
      */
-    public record WorkMeta(boolean exists, Long authorId, Integer commentEnabled, Integer commentCurated) {
+    public record WorkMeta(boolean exists, Long authorId, Integer commentEnabled, Integer commentCurated, Integer level) {
         public static WorkMeta absent() {
-            return new WorkMeta(false, null, null, null);
+            return new WorkMeta(false, null, null, null, null);
         }
     }
 }

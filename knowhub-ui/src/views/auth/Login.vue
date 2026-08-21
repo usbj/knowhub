@@ -40,10 +40,11 @@ const rules: FormRules = {
 
 const loading = ref(false)
 /**
- * 处理登录：校验通过后调后端 /login 拿 token、写入 store，
+ * 处理登录：校验通过后调后端 /portal/login（前台门户登录，不带后台访问权限闸）拿 token、写入 store，
  * 再拉一次 /person 把当前用户资料补进 store（供顶栏与个人中心展示），
  * 最后按 redirect 查询参数回到来源页。
  * 后端 LoginBody 仅认 username/password，account 直接作为 username 提交。
+ * 前后台登录分离：前台调 /portal/login（visitor 可登）；后台 rookie-ui 调 /login（带 system:access 闸）。
  */
 const submit = async () => {
   if (!formRef.value) return
@@ -119,7 +120,7 @@ const onSocial = (key: string) => ElMessage.info(`${key} 登录占位（demo）`
 
       <div class="auth-form__options">
         <el-checkbox v-model="form.remember">记住我</el-checkbox>
-        <button type="button" class="auth-form__forgot" @click="ElMessage.info('找回密码占位（demo）')">
+        <button type="button" class="auth-form__forgot" @click="ElMessage.info('找回密码功能暂未开放，请联系管理员重置密码')">
           忘记密码？
         </button>
       </div>

@@ -35,6 +35,14 @@ export const getMyResourcesApi = (query: MyResourceListQuery) =>
 export const getMyResourceForEditApi = (resourceId: number) =>
   get<ApiResult<ResourceAuthoringDetail>>(`/authoring/resource/${resourceId}`)
 
+/**
+ * 当前用户资源查看等级（0/1/2/3），创作页等级选择器权限感知用。
+ * 后端扫 perms 取最高等级（admin 自然 3，未授权 0），前端据此禁用不可选等级
+ * （L1 用户只能公开，L2 可选 L1/L2，L3 全开），后端 addResourceInfo 的 assertCanCreateLevel 兜底。
+ */
+export const getMyResourceLevelApi = () =>
+  get<ApiResult<number>>('/authoring/resource/level')
+
 /** 前台新建资源草稿（复用 addResourceInfo，作者=current user，DRAFT）。返回后端 boolean。 */
 export const addMyResourceApi = (data: ResourceAuthoringPayload) =>
   post<ApiResult<boolean>, ResourceAuthoringPayload>('/authoring/resource', data)

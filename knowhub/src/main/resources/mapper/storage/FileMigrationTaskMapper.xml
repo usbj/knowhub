@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.knowhub.mapper.storage.FileMigrationTaskMapper">
+
+    <resultMap id="MigrationTaskResultMap" type="com.knowhub.pojo.storage.entity.FileMigrationTask">
+        <id property="taskId" column="task_id"/>
+        <result property="sourceType" column="source_type"/>
+        <result property="sourceEndpoint" column="source_endpoint"/>
+        <result property="sourceRegion" column="source_region"/>
+        <result property="sourceBucket" column="source_bucket"/>
+        <result property="sourcePathStyleAccess" column="source_path_style_access"/>
+        <result property="targetEndpoint" column="target_endpoint"/>
+        <result property="targetRegion" column="target_region"/>
+        <result property="targetBucket" column="target_bucket"/>
+        <result property="targetPathStyleAccess" column="target_path_style_access"/>
+        <result property="status" column="status"/>
+        <result property="totalCount" column="total_count"/>
+        <result property="doneCount" column="done_count"/>
+        <result property="failedCount" column="failed_count"/>
+        <result property="errorMessage" column="error_message"/>
+        <result property="createBy" column="create_by"/>
+        <result property="createTime" column="create_time"/>
+        <result property="updateBy" column="update_by"/>
+        <result property="updateTime" column="update_time"/>
+    </resultMap>
+
+    <insert id="addTask" parameterType="com.knowhub.pojo.storage.entity.FileMigrationTask" useGeneratedKeys="true" keyProperty="taskId">
+        insert into file_migration_task
+        <trim prefix="(" suffix=")" suffixOverrides=",">
+            <if test="sourceType != null">source_type,</if>
+            <if test="sourceEndpoint != null">source_endpoint,</if>
+            <if test="sourceRegion != null">source_region,</if>
+            <if test="sourceBucket != null">source_bucket,</if>
+            <if test="sourcePathStyleAccess != null">source_path_style_access,</if>
+            <if test="targetEndpoint != null">target_endpoint,</if>
+            <if test="targetRegion != null">target_region,</if>
+            <if test="targetBucket != null">target_bucket,</if>
+            <if test="targetPathStyleAccess != null">target_path_style_access,</if>
+            <if test="status != null">status,</if>
+            <if test="totalCount != null">total_count,</if>
+            <if test="doneCount != null">done_count,</if>
+            <if test="failedCount != null">failed_count,</if>
+            <if test="errorMessage != null">error_message,</if>
+            create_by, create_time, update_by, update_time
+        </trim>
+        values
+        <trim prefix="(" suffix=")" suffixOverrides=",">
+            <if test="sourceType != null">#{sourceType},</if>
+            <if test="sourceEndpoint != null">#{sourceEndpoint},</if>
+            <if test="sourceRegion != null">#{sourceRegion},</if>
+            <if test="sourceBucket != null">#{sourceBucket},</if>
+            <if test="sourcePathStyleAccess != null">#{sourcePathStyleAccess},</if>
+            <if test="targetEndpoint != null">#{targetEndpoint},</if>
+            <if test="targetRegion != null">#{targetRegion},</if>
+            <if test="targetBucket != null">#{targetBucket},</if>
+            <if test="targetPathStyleAccess != null">#{targetPathStyleAccess},</if>
+            <if test="status != null">#{status},</if>
+            <if test="totalCount != null">#{totalCount},</if>
+            <if test="doneCount != null">#{doneCount},</if>
+            <if test="failedCount != null">#{failedCount},</if>
+            <if test="errorMessage != null">#{errorMessage},</if>
+            #{createBy}, now(), #{updateBy}, now()
+        </trim>
+    </insert>
+
+    <select id="getTaskById" parameterType="long" resultMap="MigrationTaskResultMap">
+        select * from file_migration_task where task_id = #{taskId}
+    </select>
+
+    <update id="updateProgress">
+        update file_migration_task
+        set done_count = #{doneCount}, failed_count = #{failedCount}, status = 'RUNNING',
+            update_by = 'migration', update_time = now()
+        where task_id = #{taskId}
+    </update>
+
+    <update id="updateStatus">
+        update file_migration_task
+        set status = #{status},
+            <if test="totalCount != null">total_count = #{totalCount},</if>
+            done_count = #{doneCount},
+            failed_count = #{failedCount},
+            <if test="errorMessage != null">error_message = #{errorMessage},</if>
+            update_by = 'migration', update_time = now()
+        where task_id = #{taskId}
+    </update>
+
+</mapper>

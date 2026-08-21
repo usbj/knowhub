@@ -37,8 +37,14 @@ public enum FileBusinessType {
     /** 文章封面图：access=PUBLIC，类型图片，上限 5MB（对齐 BLOG_COVER，biz_ref_id=article_id） */
     ARTICLE_COVER("ARTICLE_COVER", "文章封面图", FileAccess.PUBLIC),
 
+    /** 资源封面图：access=PUBLIC，类型图片，上限 5MB（对齐 BLOG_COVER/ARTICLE_COVER，biz_ref_id=resource_id；URL 落 resource.link_icon 列） */
+    RESOURCE_COVER("RESOURCE_COVER", "资源封面图", FileAccess.PUBLIC),
+
     /** 评论配图：access=PUBLIC，类型图片，上限 2MB（评论区短评配图，biz_ref_id 可空，评论删图随 file_object GC） */
-    COMMENT_IMAGE("COMMENT_IMAGE", "评论配图", FileAccess.PUBLIC);
+    COMMENT_IMAGE("COMMENT_IMAGE", "评论配图", FileAccess.PUBLIC),
+
+    /** 用户头像：access=PUBLIC，类型图片，上限 2MB（个人中心头像上传，biz_ref_id=userId，sys_user.avatar 列存 /file/resolve/{objectId}） */
+    USER_AVATAR("USER_AVATAR", "用户头像", FileAccess.PUBLIC);
 
     private final String code;
 

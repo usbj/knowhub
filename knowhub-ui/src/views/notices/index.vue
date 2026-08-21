@@ -2,9 +2,11 @@
   公告列表页 /notices
   ------------------------------------------------------------------
   顶栏公告下拉"查看全部"的落脚页。顶部分类筛选 + 公告卡片列表 + 分页器。
-  接 /portal/notice/list 公开公告接口（群发+已发布，未登录访客可读），点"查看详情"开固定大小弹窗，
-  正文用 v-md-preview 渲染 markdown（与博客详情同款 github 主题）。
-  noticeType 字典 code（NOTICE/NOTIFY/REMIND）内联映射，不引字典预加载（公开页可能未登录）。
+  数据源按登录态分流：
+  - 登录用户走 /sys/notice/my（含审核/评论/邀请/协作等私发通知 + 已读态 + routePath，
+    与顶栏铃铛同口径），点卡片开全局详情弹窗 + 标记已读，「前往查看」按钮跳对应作品。
+  - 未登录游客走 /portal/notice/list（仅群发已发布公告，无读写态）。
+  两者字段结构接近，统一映射成展示模型渲染；noticeType 字典 code（NOTICE/NOTIFY/REMIND）内联映射。
 -->
 <script setup lang="ts">
 import { computed, ref } from 'vue'
@@ -12,10 +14,14 @@ import KhCard from '@/components/common/KhCard.vue'
 import KhTag from '@/components/common/KhTag.vue'
 import KhIcon from '@/components/common/KhIcon.vue'
 import { getPublicNoticesApi } from '@/api/system/notice-portal'
+import { getMyNoticesPageApi } from '@/api/system/notice'
 import type { NoticePortalRecord } from '@/types/api/notice-portal'
-import { useNoticeStore } from '@/stores/notice'
+import type { SysNoticeRecord } from '@/types/api/notice'
+import { useUserStore } from '@/stores/user'
+import { useNoticeStore, type NoticeDetailRecord } from '@/stores/notice'
 import { formatDateTime } from '@/utils/format'
 
+const userStore = useUserStore()
 const noticeStore = useNoticeStore()
 
 type FilterKey = 'ALL' | 'NOTICE' | 'NOTIFY' | 'REMIND'
@@ -36,26 +42,90 @@ const noticeTagType: Record<string, 'warm' | 'success' | 'primary' | 'info'> = {
 const resolveNoticeType = (code: string) => noticeTypeMap[code] ?? code
 const resolveTagType = (code: string) => noticeTagType[code] ?? 'info'
 
-/** 公告列表 + 分页态 */
-const notices = ref<NoticePortalRecord[]>([])
+/**
+ * 统一展示模型：两种数据源（登录 SysNoticeRecord / 游客 NoticePortalRecord）映射到同一结构渲染。
+ * - raw：保留原始记录引用，点详情时透传给 noticeStore.openDetail（联合类型兼容）；
+ * - unread：仅登录源有意义（hasRead），游客源恒 false（无读写态）；
+ * - routePath：登录源的私发通知带作品详情路由（评论/审核/协作），游客源群发公告通常无。
+ */
+interface NoticeItem {
+  id: number
+  title: string
+  content: string
+  noticeType: string
+  isTop: number
+  publishTime?: string
+  createBy?: string
+  unread: boolean
+  raw: NoticeDetailRecord
+}
+
+/** 登录源原始记录（含 hasRead/routePath），游客源为 null */
+const myRaw = ref<SysNoticeRecord[]>([])
+/** 游客源原始记录，登录态为 null */
+const portalRaw = ref<NoticePortalRecord[]>([])
 const total = ref(0)
 const pageNum = ref(1)
 const pageSize = ref(10)
 const loading = ref(false)
 
-/** 按当前筛选 + 分页拉取公告列表（失败兜底空，公开页不弹错） */
+/** 统一展示列表：按登录态取对应原始记录映射成 NoticeItem */
+const noticeItems = computed<NoticeItem[]>(() => {
+  if (userStore.isAuthenticated) {
+    return myRaw.value.map((n) => ({
+      id: Number(n.noticeId),
+      title: n.title,
+      content: n.content,
+      noticeType: n.noticeType,
+      isTop: Number(n.isTop),
+      publishTime: n.publishTime,
+      createBy: n.createBy,
+      unread: !n.hasRead,
+      raw: n,
+    }))
+  }
+  return portalRaw.value.map((n) => ({
+    id: Number(n.noticeId),
+    title: n.title,
+    content: n.content,
+    noticeType: n.noticeType,
+    isTop: Number(n.isTop ?? 0),
+    publishTime: n.publishTime,
+    createBy: n.createBy,
+    unread: false,
+    raw: n,
+  }))
+})
+
+/**
+ * 按当前筛选 + 分页拉取列表（按登录态分流数据源）。失败兜底空，公开页不弹错。
+ * 登录源传 noticeType 过滤（后端 /sys/notice/my 已支持），游客源同样传 noticeType（/portal/notice/list 已支持）。
+ * 切 tab/翻页时**不归零 total**：只清数据，total 保留旧值直到新数据回来再替换，避免角标请求中闪 0。
+ */
 const fetchNotices = async () => {
   loading.value = true
   try {
-    const page = await getPublicNoticesApi({
-      pageNum: pageNum.value,
-      pageSize: pageSize.value,
-      noticeType: filterKey.value === 'ALL' ? undefined : filterKey.value,
-    })
-    notices.value = page.records ?? []
-    total.value = page.total ?? 0
+    const typeParam = filterKey.value === 'ALL' ? undefined : filterKey.value
+    if (userStore.isAuthenticated) {
+      const page = await getMyNoticesPageApi({
+        pageNum: pageNum.value,
+        pageSize: pageSize.value,
+        noticeType: typeParam,
+      })
+      myRaw.value = page.records ?? []
+      total.value = page.total ?? 0
+    } else {
+      const page = await getPublicNoticesApi({
+        pageNum: pageNum.value,
+        pageSize: pageSize.value,
+        noticeType: typeParam,
+      })
+      portalRaw.value = page.records ?? []
+      total.value = page.total ?? 0
+    }
   } catch {
-    notices.value = []
+    myRaw.value = []
+    portalRaw.value = []
     total.value = 0
   } finally {
     loading.value = false
@@ -75,18 +145,46 @@ const changePage = (p: number) => {
   void fetchNotices()
 }
 
-/** 各分类计数（仅当前已加载页的近似计数，用于 tab 角标；总数以分页 total 为准） */
-const countFor = (key: FilterKey) =>
-  key === 'ALL' ? total.value : notices.value.filter((n) => n.noticeType === key).length
-
-/** 点卡片"查看详情"：开全局详情弹窗（store.openDetail 注入 currentNotice，由 AppLayout 的 <KhNoticeDetailDialog> 渲染） */
-const openDetail = (n: NoticePortalRecord) => {
-  noticeStore.openDetail(n)
+/**
+ * 各分类计数（tab 角标）：
+ * - 登录用户：走 noticeStore.typeCounts（后端 /sys/notice/my-counts 聚合的真实总数），
+ *   ALL/NOTICE/NOTIFY/REMIND 四角标都真实，不随切 tab/翻页变（角标用全局聚合，与列表分页解耦）。
+ * - 未登录游客：/sys/notice/my-counts 需登录不可用，ALL 用分页 total（群发公告真实总数），
+ *   子类型无聚合接口只能用当前页内 filter 近似（游客态公告仅群发、类型少，可接受；登录态为主场景）。
+ */
+const countFor = (key: FilterKey) => {
+  if (userStore.isAuthenticated) {
+    return noticeStore.typeCounts[key] ?? 0
+  }
+  return key === 'ALL' ? total.value : noticeItems.value.filter((n) => n.noticeType === key).length
 }
 
-/** 公告列表已按置顶优先+时间倒序返回，前端不再二次排序 */
-const sortedNotices = computed(() => notices.value)
+/**
+ * 点卡片"查看详情"：开全局详情弹窗（store.openDetail 注入 currentNotice，由 AppLayout 的 <KhNoticeDetailDialog> 渲染）。
+ * 登录源顺手标记已读（乐观，未读才请求），与顶栏下拉点击口径一致；游客源无读写态，仅开弹窗。
+ */
+const openDetail = (item: NoticeItem) => {
+  if (userStore.isAuthenticated && item.unread && item.raw.noticeId) {
+    void noticeStore.markAsRead(item.raw.noticeId)
+    // 乐观同步本地列表项已读态，避免下次进页面仍显未读
+    const target = myRaw.value.find((n) => Number(n.noticeId) === item.id)
+    if (target) target.hasRead = true
+  }
+  noticeStore.openDetail(item.raw)
+}
 
+/** 列表已按置顶优先+时间倒序返回，前端不再二次排序 */
+const sortedNotices = computed(() => noticeItems.value)
+
+/**
+ * 进页拉取：登录态先刷各类型真实总数（四个分类角标）再拉首页列表；
+ * 游客态只拉群发公告列表（无聚合计数接口，角标走 countFor 内 total/页内近似）。
+ * 角标用全局聚合 typeCounts，切 tab/翻页不重拉（角标稳定不随分页变）；
+ * 新通知到达时顶栏轮询的 fetchMyNotices(true) 会顺带刷新 typeCounts，本页再次进入自然拿到最新。
+ */
+if (userStore.isAuthenticated) {
+  void noticeStore.fetchTypeCounts()
+}
 void fetchNotices()
 </script>
 
@@ -100,7 +198,9 @@ void fetchNotices()
             <span class="notices__title-icon"><KhIcon name="megaphone" :size="20" /></span>
             系统公告
           </h1>
-          <p class="notices__subtitle">knowhub 平台动态、功能更新与活动通知</p>
+          <p class="notices__subtitle">
+            {{ userStore.isAuthenticated ? '平台动态、功能更新与你的站内通知' : 'knowhub 平台动态、功能更新与活动通知' }}
+          </p>
         </div>
 
         <!-- 分类筛选 -->
@@ -124,26 +224,27 @@ void fetchNotices()
     <section class="kh-container kh-container--wide notices__body">
       <div v-if="sortedNotices.length" class="notices__list">
         <KhCard
-          v-for="n in sortedNotices"
-          :key="n.noticeId"
+          v-for="item in sortedNotices"
+          :key="item.id"
           padding="lg"
           class="notice-card"
-          :class="{ 'is-pinned': Number(n.isTop) === 1 }"
+          :class="{ 'is-pinned': Number(item.isTop) === 1 }"
         >
           <div class="notice-card__head">
-            <KhTag size="sm" :type="resolveTagType(n.noticeType)">{{ resolveNoticeType(n.noticeType) }}</KhTag>
-            <span v-if="Number(n.isTop) === 1" class="notice-card__pin"><KhIcon name="star" :size="12" /> 置顶</span>
+            <KhTag size="sm" :type="resolveTagType(item.noticeType)">{{ resolveNoticeType(item.noticeType) }}</KhTag>
+            <span v-if="Number(item.isTop) === 1" class="notice-card__pin"><KhIcon name="star" :size="12" /> 置顶</span>
+            <span v-if="item.unread" class="notice-card__unread-dot" title="未读"></span>
             <span class="notice-card__time">
-              <KhIcon name="clock" :size="12" /> {{ formatDateTime(n.publishTime) }}
+              <KhIcon name="clock" :size="12" /> {{ formatDateTime(item.publishTime) }}
             </span>
           </div>
-          <h2 class="notice-card__title">{{ n.title }}</h2>
-          <p class="notice-card__content">{{ n.content }}</p>
+          <h2 class="notice-card__title">{{ item.title }}</h2>
+          <p class="notice-card__content">{{ item.content }}</p>
           <div class="notice-card__foot">
             <span class="notice-card__publisher">
-              <KhIcon name="user" :size="12" /> {{ n.createBy ?? '系统' }}
+              <KhIcon name="user" :size="12" /> {{ item.createBy ?? '系统' }}
             </span>
-            <button class="notice-card__more" type="button" @click="openDetail(n)">
+            <button class="notice-card__more" type="button" @click="openDetail(item)">
               查看详情 <KhIcon name="arrow-right" :size="13" />
             </button>
           </div>
@@ -151,7 +252,7 @@ void fetchNotices()
       </div>
       <KhCard v-else-if="!loading" padding="lg" class="notices__empty">
         <KhIcon name="megaphone" :size="40" :stroke="1.4" />
-        <p>该分类下暂无公告</p>
+        <p>该分类下暂无{{ userStore.isAuthenticated ? '通知' : '公告' }}</p>
       </KhCard>
 
       <!-- 分页器 -->
@@ -289,6 +390,14 @@ void fetchNotices()
   padding: 2px 8px;
   border-radius: var(--kh-radius-pill);
   background: var(--kh-warm-soft);
+}
+/* 未读小圆点：登录源 hasRead=false 时露出，与顶栏下拉未读圆点同口径 */
+.notice-card__unread-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--kh-primary);
+  flex: none;
 }
 .notice-card__time {
   margin-left: auto;

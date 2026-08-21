@@ -22,12 +22,13 @@ import com.knowhub.pojo.article.vo.ChapterVo;
 import com.knowhub.service.article.impl.ChapterService;
 import com.knowhub.service.history.impl.ViewHistoryService;
 import com.knowhub.enums.history.ViewBizType;
-import com.knowhub.support.NotifySupport;
+import com.knowhub.pojo.event.WorkReviewResultEvent;
 import com.rookie.common.exception.ServiceException;
 import com.rookie.common.util.PageUtil;
 import com.rookie.framework.security.pojo.Permission;
 import com.rookie.framework.security.pojo.UserInfo;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -69,7 +70,7 @@ public class ChapterServiceImpl implements ChapterService {
     private ViewHistoryService viewHistoryService;
 
     @Autowired
-    private NotifySupport notifySupport;
+    private ApplicationEventPublisher applicationEventPublisher;
 
     @Override
     public PageInfo<ChapterVo> quarryChapter(ChapterQuarry quarry) {
@@ -83,7 +84,7 @@ public class ChapterServiceImpl implements ChapterService {
         }
         UserInfo user = currentUser();
         ArticlePermissionLevel lvl = ArticlePermissionResolver.resolve();
-        quarry.setUserViewLevel(lvl.view());
+        quarry.setUserViewLevel(lvl.level());
         quarry.setUserId(user.getUserId());
         quarry.setArticleAuthorId(article.getAuthorId());
         // 章节可见性=文章可见性：能看文章才进章节列表（canOp(view) 复用文章判定：系统级 OR 作者）
@@ -216,8 +217,10 @@ public class ChapterServiceImpl implements ChapterService {
         chapterMapper.addChapter(chapter);
         // 写章节审核流水 SUBMIT（role=AUTHOR 章节提交者）
         writeChapterReviewLog(chapter.getChapterId(), ReviewAction.SUBMIT, user, vo.getContent() != null ? "提交章节待文章作者审核" : null);
-        // 通知文章作者：有新章节贡献待审核（routePath 指向章节管理页，作者就地审核）
-        notifyChapterContribution(article, chapter, user, false);
+        // 通知文章作者：有新章节贡献待审核（经事件 AFTER_COMMIT 落通知，routePath=章节管理页，作者就地审核）
+        applicationEventPublisher.publishEvent(new WorkReviewResultEvent("chapter", chapter.getChapterId(),
+                article.getAuthorId(), article.getTitle(), chapter.getChapterName(), article.getArticleId(),
+                ReviewAction.SUBMIT, "CONTRIBUTION", false, null, user.getUsername()));
         return true;
     }
 
@@ -258,14 +261,11 @@ public class ChapterServiceImpl implements ChapterService {
                     throw new ServiceException(500, "章节修改失败", e.getMessage());
                 }
                 writeChapterReviewLog(exist.getChapterId(), ReviewAction.SUBMIT, user, "贡献者提交编辑申请待作者审核");
-                // 通知文章作者：有编辑申请待审（文案明确「编辑申请」而非「提交新章节」，区别于新章节贡献通知）
-                if (article.getAuthorId() != null) {
-                    String title = "有章节编辑申请待你审核";
-                    String content = user.getUsername() + " 申请修改你的文章《" + article.getTitle()
-                            + "》的章节《" + exist.getChapterName() + "》，请你前往章节管理页审核。";
-                    notifySupport.notifyUser(article.getAuthorId(), title, content,
-                            "/article/" + article.getArticleId() + "/chapters", "system");
-                }
+                // 通知文章作者：有编辑申请待审（经事件 AFTER_COMMIT 落通知，文案明确「编辑申请」区别于新章节贡献）
+                // 收件人=article.authorId 在 emit 时捕入载荷；authorId 为 null 时 ReviewNotifyService 自行跳过
+                applicationEventPublisher.publishEvent(new WorkReviewResultEvent("chapter", exist.getChapterId(),
+                        article.getAuthorId(), article.getTitle(), exist.getChapterName(), article.getArticleId(),
+                        ReviewAction.SUBMIT, "EDIT_APPLY", false, null, user.getUsername()));
                 return true;
             }
             throw new ServiceException(500, "无权编辑该章节（贡献者编辑作者章节需申请，作者审核后才生效）");
@@ -406,8 +406,10 @@ public class ChapterServiceImpl implements ChapterService {
         update.setReviewStatus(ReviewStatus.PENDING.getCode());
         chapterMapper.editChapterInfo(update);
         writeChapterReviewLog(chapterId, ReviewAction.SUBMIT, user, "提交章节待文章作者审核");
-        // 通知文章作者：有新章节贡献待审核（publishChapter 是再提交存稿分支，reSubmit=true）
-        notifyChapterContribution(article, exist, user, true);
+        // 通知文章作者：有新章节贡献待审核（经事件 AFTER_COMMIT 落通知；publishChapter 是再提交存稿分支，reSubmit=true）
+        applicationEventPublisher.publishEvent(new WorkReviewResultEvent("chapter", chapterId,
+                article.getAuthorId(), article.getTitle(), exist.getChapterName(), article.getArticleId(),
+                ReviewAction.SUBMIT, "CONTRIBUTION", true, null, user.getUsername()));
         return true;
     }
 
@@ -470,8 +472,11 @@ public class ChapterServiceImpl implements ChapterService {
         chapterMapper.editChapterInfo(update);
         // 写 REJECT 流水记下架原因（复用驳回流水语义；区分点：takedown 章节原状态可能 PUBLISHED，reviewChapter 只处理 PENDING_AUTHOR_REVIEW）。
         writeChapterReviewLog(chapterId, ReviewAction.REJECT, user, advice);
-        // 通知章节作者（贡献者）：你的章节被作者下架，原因 advice。命中 avoid（章节作者==下架者则无需通知：作者下架自己写的章节无意义但可能发生）
-        notifyChapterTakedown(exist, article, advice);
+        // 通知章节作者（贡献者）：你的章节被作者下架，原因 advice（经事件 AFTER_COMMIT 落通知）。
+        // 命中 avoid（章节作者==下架者则自通知：作者下架自己写的章节无意义但可能发生，原行为保留不过滤）
+        applicationEventPublisher.publishEvent(new WorkReviewResultEvent("chapter", chapterId,
+                exist.getAuthorId(), article.getTitle(), exist.getChapterName(), article.getArticleId(),
+                ReviewAction.REJECT, "TAKEDOWN", false, advice, user.getUsername()));
         return true;
     }
 
@@ -527,8 +532,11 @@ public class ChapterServiceImpl implements ChapterService {
         }
         chapterMapper.editChapterInfo(update);
         writeChapterReviewLog(vo.getChapterId(), action, user, advice);
-        // 通知章节提交者审核结果（routePath=章节阅读页）：avoid 已保障 chapter.author_id==userId 走不到这里
-        notifyChapterReviewResult(exist, article, action, advice);
+        // 通知章节提交者审核结果（经事件 AFTER_COMMIT 落通知，routePath=章节阅读页）：
+        // avoid 已保障 chapter.author_id==userId 走不到这里
+        applicationEventPublisher.publishEvent(new WorkReviewResultEvent("chapter", vo.getChapterId(),
+                exist.getAuthorId(), article.getTitle(), exist.getChapterName(), article.getArticleId(),
+                action, "REVIEW_RESULT", false, advice, user.getUsername()));
         return true;
     }
 
@@ -545,31 +553,35 @@ public class ChapterServiceImpl implements ChapterService {
 
     // ============================ 私有辅助 ============================
 
-    /** 当前用户能否查看文章（系统 view 等级够 OR 文章作者） */
+    /** 当前用户能否查看文章（系统 view 等级够 OR 文章作者）。
+     *  2026-08-18 权限大修单键化：lvl.view() → lvl.level()（单键 knowhub:article:lN，admin 自然 3）。 */
     private boolean canViewArticle(Article article, ArticlePermissionLevel lvl, UserInfo user) {
         if (article.getAuthorId() != null && article.getAuthorId().equals(user.getUserId())) {
             return true;
         }
-        return article.getLevel() != null && lvl.view() >= article.getLevel();
+        return article.getLevel() != null && lvl.level() >= article.getLevel();
     }
 
-    /** 当前用户能否编辑文章（系统 edit 等级够 OR 文章作者 OR 被作者批准的 CONTRIBUTOR），用于判定非作者能否提交章节。
-     *  第三分支新增：article_contributor 表里 status=APPROVED 且 deleted=0 的贡献者也放行——aisle 不要求系统编辑级权限，
-     *  由作者就地审批授权。与作者并列放行，不冲突既有系统编辑级分支。 */
+    /** 当前用户能否编辑文章（2026-08-18 权限大修去 edit 分级，对齐 ArticleServiceImpl.canEditArticle）：
+     *  文章作者 OR 超级管理员 OR 被作者批准的 CONTRIBUTOR，用于判定非作者能否提交章节。
+     *  去掉旧 edit:lN 系统等级分支——非作者写章节的唯一路径是贡献者机制（ArticleContributor APPROVED），
+     *  不再靠系统 edit 等级键放行（单键 knowhub:article:lN 只管 view/创作闸/贡献者申请校验）。
+     *  admin 走 currentUser().isAdmin() 短路；作者天然全权；贡献者由作者就地审批授权。 */
     private boolean canEditArticle(Article article) {
-        ArticlePermissionLevel lvl = ArticlePermissionResolver.resolve();
-        if (article.getLevel() != null && lvl.edit() >= article.getLevel()) {
+        UserInfo user = currentUser();
+        if (article.getAuthorId() != null && article.getAuthorId().equals(user.getUserId())) {
             return true;
         }
-        if (article.getAuthorId() != null && article.getAuthorId().equals(currentUser().getUserId())) {
+        if (user.isAdmin()) {
             return true;
         }
         // 被作者批准的贡献者：放行（不要求系统编辑级权限），供非作者读者经申请-审批后接力写章节
-        Boolean approved = articleContributorMapper.isApproved(article.getArticleId(), currentUser().getUserId());
+        Boolean approved = articleContributorMapper.isApproved(article.getArticleId(), user.getUserId());
         return Boolean.TRUE.equals(approved);
     }
 
-    /** 当前用户能否编辑章节（章节作者 OR 文章作者 OR 系统编辑权限够） */
+    /** 当前用户能否编辑章节（章节作者 OR 文章作者 OR 超级管理员）。
+     *  2026-08-18 权限大修：去掉旧 edit:lN 系统等级分支，改 admin 短路（对齐 canEditArticle 口径）。 */
     private boolean canEditChapter(Chapter chapter, Article article, UserInfo user) {
         // 章节作者能编辑自己提交的章节
         if (chapter.getAuthorId() != null && chapter.getAuthorId().equals(user.getUserId())) {
@@ -579,9 +591,8 @@ public class ChapterServiceImpl implements ChapterService {
         if (article.getAuthorId() != null && article.getAuthorId().equals(user.getUserId())) {
             return true;
         }
-        // 系统编辑权限够（edit:lN≥文章level）
-        ArticlePermissionLevel lvl = ArticlePermissionResolver.resolve();
-        return article.getLevel() != null && lvl.edit() >= article.getLevel();
+        // 超级管理员全权
+        return user.isAdmin();
     }
 
     /** 判断当前用户是否拥有某按钮权限（非等级，如 knowhub:chapter:delete/review）。
@@ -599,13 +610,13 @@ public class ChapterServiceImpl implements ChapterService {
         return false;
     }
 
-    /** 详情接口回填当前用户对该章节的权限态（供前端控制编辑/审核按钮显隐） */
+    /** 详情接口回填当前用户对该章节的权限态（供前端控制编辑/审核按钮显隐）。
+     *  2026-08-18 权限大修：canEdit 改为章节作者 OR 文章作者 OR 超级管理员（去 edit:lN 分级，对齐 canEditChapter）。 */
     private void fillChapterPermissionState(ChapterVo vo, Chapter chapter, Article article,
                                             UserInfo user, ArticlePermissionLevel lvl) {
         boolean isChapterAuthor = chapter.getAuthorId() != null && chapter.getAuthorId().equals(user.getUserId());
         boolean isArticleAuthor = article.getAuthorId() != null && article.getAuthorId().equals(user.getUserId());
-        boolean systemEdit = article.getLevel() != null && lvl.edit() >= article.getLevel();
-        vo.setCanEdit(isChapterAuthor || isArticleAuthor || systemEdit);
+        vo.setCanEdit(isChapterAuthor || isArticleAuthor || user.isAdmin());
         // canReview：仅 PENDING_AUTHOR_REVIEW 章节有意义；文章作者 OR 系统审权限，且不能审自己提交的
         boolean canReview = ChapterStatus.PENDING_AUTHOR_REVIEW.getCode().equals(chapter.getStatus())
                 && (isArticleAuthor || hasButtonPerm("knowhub:chapter:review"))
@@ -629,68 +640,12 @@ public class ChapterServiceImpl implements ChapterService {
     }
 
     /**
-     * 通知文章作者：有新章节贡献待审核（SEMIPUBLIC 非作者 submit/publish 进 PENDING_AUTHOR_REVIEW 时调用）。
-     * 收件人=article.author_id；routePath 指向章节管理页 /article/{articleId}/chapters，作者就地审核。
-     * 通知 best-effort，由 NotifySupport 内部吞失败，不阻断章节落库。
+     * 章节审核/协作通知（CONTRIBUTION/EDIT_APPLY/REVIEW_RESULT/TAKEDOWN）：已迁移至
+     * ReviewNotifyService.notifyChapterResult，由 WorkReviewNotifyListener 在审核事务 AFTER_COMMIT 后
+     * 消费 WorkReviewResultEvent（workType=chapter）落通知。本类不再直接发通知，与章节审核状态机解耦。
+     * 文案与 routePath（/article/{articleId}/chapters、/article/{articleId}/read/{chapterId}）集中在
+     * ReviewNotifyService，收件人（文章作者/章节提交者）在 emit 时显式捕入事件载荷。
      */
-    private void notifyChapterContribution(Article article, Chapter chapter, UserInfo submitter, boolean reSubmit) {
-        if (article == null || article.getAuthorId() == null) {
-            return;
-        }
-        String action = reSubmit ? "重新提交" : "提交";
-        String title = "有新章节贡献待你审核";
-        String content = submitter.getUsername() + " 向你的文章《" + article.getTitle()
-                + "》" + action + "了章节《" + chapter.getChapterName() + "》，请你审核。";
-        notifySupport.notifyUser(article.getAuthorId(), title, content,
-                "/article/" + article.getArticleId() + "/chapters", "system");
-    }
-
-    /**
-     * 通知章节提交者审核结果（reviewChapter APPROVE/REJECT 后调用）。
-     * 收件人=chapter.author_id（提交者）；routePath 指向章节阅读页 /article/{articleId}/read/{chapterId}。
-     * 回避保障：reviewChapter 已对 chapter.author_id==userId 抛"不能审核自己提交的章节"，不会自通知。
-     */
-    private void notifyChapterReviewResult(Chapter chapter, Article article, ReviewAction action, String advice) {
-        if (chapter == null || chapter.getAuthorId() == null) {
-            return;
-        }
-        String title;
-        String content;
-        switch (action) {
-            case APPROVE:
-                title = "你的章节贡献审核通过";
-                content = "你向《" + (article != null ? article.getTitle() : "") + "》贡献的章节《"
-                        + chapter.getChapterName() + "》审核通过，已发布。"
-                        + (advice != null && !advice.isEmpty() ? "审核意见：" + advice : "");
-                break;
-            case REJECT:
-                title = "你的章节贡献被驳回";
-                content = "你向《" + (article != null ? article.getTitle() : "") + "》贡献的章节《"
-                        + chapter.getChapterName() + "》被驳回。"
-                        + (advice != null && !advice.isEmpty() ? "驳回原因：" + advice : "");
-                break;
-            default:
-                return;
-        }
-        notifySupport.notifyUser(chapter.getAuthorId(), title, content,
-                "/article/" + chapter.getArticleId() + "/read/" + chapter.getChapterId(), "system");
-    }
-
-    /**
-     * 通知章节作者（贡献者）其章节被文章作者下架（takedownChapter 后调用）。
-     * 收件人=chapter.author_id；routePath 指向章节管理页 /article/{articleId}/chapters。
-     * 命中章节 author_id==null（作者写自己章节、无贡献者身态）不通知。
-     */
-    private void notifyChapterTakedown(Chapter chapter, Article article, String advice) {
-        if (chapter == null || chapter.getAuthorId() == null) {
-            return;
-        }
-        String title = "你的章节被文章作者下架";
-        String content = "你在文章《" + (article != null ? article.getTitle() : "") + "》中贡献的章节《"
-                + chapter.getChapterName() + "》被文章作者下架。下架原因：" + advice;
-        notifySupport.notifyUser(chapter.getAuthorId(), title, content,
-                "/article/" + chapter.getArticleId() + "/chapters", "system");
-    }
 
     private UserInfo currentUser() {
         return (UserInfo) SecurityContextHolder.getContext().getAuthentication().getPrincipal();

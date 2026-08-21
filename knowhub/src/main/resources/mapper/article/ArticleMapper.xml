@@ -70,7 +70,7 @@
             and art.tag_id in
             <foreach collection="tagIds" item="tid" open="(" separator="," close=")">#{tid}</foreach>
             group by a.article_id
-            having count(distinct art.tag_id) = #{tagIds.size()}
+            having count(distinct art.tag_id) = #{tagCount}
         </if>
         and (
             a.level &lt;= #{userViewLevel}

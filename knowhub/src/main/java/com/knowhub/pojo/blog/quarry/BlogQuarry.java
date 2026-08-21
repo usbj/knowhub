@@ -68,6 +68,13 @@ public class BlogQuarry {
     /** 当前用户 userId（作者能看自己的博客分支用） */
     private Long userId;
 
+    /**
+     * 标签命中门槛值 = tagIds.size()，service 层回填。HAVING count(distinct bt.tag_id) = #{tagCount}。
+     * 不能在 SQL 里写 #{tagIds.size()}：MyBatis createCacheKey 反射取 tagIds.size() 会走
+     * CollectionWrapper.get("size") 抛 UnsupportedOperationException，故拆成独立 Integer 参数。
+     */
+    private Integer tagCount;
+
     public BlogQuarry() {
     }
 
@@ -165,6 +172,14 @@ public class BlogQuarry {
 
     public void setAuthorId(Long authorId) {
         this.authorId = authorId;
+    }
+
+    public Integer getTagCount() {
+        return tagCount;
+    }
+
+    public void setTagCount(Integer tagCount) {
+        this.tagCount = tagCount;
     }
 
     @Override

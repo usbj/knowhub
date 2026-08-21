@@ -12,18 +12,21 @@
  */
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElButton, ElMessage, ElMessageBox } from 'element-plus'
 import {
   deleteFileObjectsApi,
   getFileDetailApi,
   getFilePageApi,
   getDownloadUrlApi,
+  packSizeApi,
+  packDownloadServerApi,
 } from '@/api/knowhub/file'
 import BaseCard from '@/components/BaseCard.vue'
 import FileUploadButton from '@/components/FileUploadButton.vue'
 import SearchFilterPanel from '@/components/SearchFilterPanel.vue'
 import SharedTablePanel from '@/components/SharedTablePanel.vue'
 import { SYSTEM_PERMISSION_KEYS } from '@/constants/systemPermissions'
+import { usePermission } from '@/composables/usePermission'
 import { USER_TOKEN_STORAGE_KEY } from '@/stores/user'
 import type { NormalizedPageResult } from '@/types/api/system/common'
 import type { FileListQuery, FileObjectRecord } from '@/types/api/knowhub/file'
@@ -35,6 +38,9 @@ import {
   type FileQueryFormState,
 } from './config'
 import FileDetailDialog from './components/FileDetailDialog.vue'
+import MigrationDialog from './components/MigrationDialog.vue'
+
+const { hasPermission } = usePermission()
 
 const queryForm = reactive<FileQueryFormState>(createDefaultFileQuery())
 const listLoading = ref(false)
@@ -290,6 +296,133 @@ const handleUploaded = async () => {
   await fetchPage()
 }
 
+// 50G 阈值（50 × 1024³ 字节），打包下载预估总大小超此值时弹警告确认。
+const PACK_SIZE_WARN_THRESHOLD = 50 * 1024 * 1024 * 1024
+// 打包下载按钮权限守卫（按 knowhub:file:pack-download 进页面门槛对齐 systemPermissions.ts）。
+const canPackDownload = computed(() => hasPermission(SYSTEM_PERMISSION_KEYS.file.packDownload))
+const packLoading = ref(false)
+
+// 数据迁移按钮权限守卫（按 knowhub:file:transfer 进页面门槛对齐 systemPermissions.ts）。
+const canTransfer = computed(() => hasPermission(SYSTEM_PERMISSION_KEYS.file.transfer))
+const migrationVisible = ref(false)
+
+const handleOpenMigration = () => {
+  migrationVisible.value = true
+}
+
+/**
+ * 方法效果：
+ * 一键打包下载 OSS 中所有文件成一个 zip（扩展点1）。流程：
+ * 1. 调 packSizeApi 取预估总字节数；超 50G 弹 ElMessageBox.confirm 警告，管理员确认后继续。
+ * 2. 弹「下载到客户端本地 / 服务器本地」二选一（中转模式强制服务器本地，跳过此选择）。
+ * 3. 客户端：fetch 带 Token 头取 /file/pack-download 的 zip blob 再 a.click() 触发下载（同中转下载口径）。
+ * 4. 服务器：调 packDownloadServerApi 返落盘绝对路径，ElMessage.success 提示。
+ * 参数：
+ * - 无。
+ * 返回值：
+ * - 无返回值；副作用是触发打包下载或提示落盘路径。
+ */
+const handlePackDownload = async () => {
+  packLoading.value = true
+  let totalSize = 0
+  try {
+    const sizeResult = await packSizeApi()
+    totalSize = Number(sizeResult.data ?? 0)
+  } catch {
+    packLoading.value = false
+    ElMessage.error('预估打包大小失败')
+    return
+  }
+
+  // 超 50G 弹警告确认（管理员确认后方可继续）
+  if (totalSize > PACK_SIZE_WARN_THRESHOLD) {
+    const sizeGb = (totalSize / 1024 / 1024 / 1024).toFixed(2)
+    try {
+      await ElMessageBox.confirm(
+        `当前 OSS 文件总大小约 ${sizeGb} GB，超过 50G 阈值，打包下载可能耗时较长且占用带宽/磁盘，确认继续吗？`,
+        '打包下载警告',
+        { type: 'warning' },
+      )
+    } catch {
+      packLoading.value = false
+      return
+    }
+  }
+
+  // 下载目标选择：直链模式可选客户端/服务器本地，中转模式强制服务器本地（用户浏览器不可达 OSS）
+  // 默认按直链模式弹选择；中转模式无客户端下载意义，直接走服务器本地。
+  // 注：前端不感知当前后端 access_mode，统一弹二选一让管理员决定，中转模式下选客户端会失败回退提示。
+  let toServer = false
+  try {
+    const action = await ElMessageBox.confirm(
+      '请选择打包下载目标：客户端本地（浏览器直接下载 zip）或服务器本地（落服务器磁盘后人工取）。',
+      '打包下载目标',
+      {
+        distinguishCancelAndClose: true,
+        confirmButtonText: '服务器本地',
+        cancelButtonText: '客户端本地',
+        type: 'info',
+      },
+    )
+    // confirmButtonText 命中 → 服务器本地
+    toServer = true
+    void action
+  } catch (action) {
+    // 取消键（cancelButtonText）→ 客户端本地；关闭弹窗 → 中止
+    if (action === 'close') {
+      packLoading.value = false
+      return
+    }
+    toServer = false
+  }
+
+  if (toServer) {
+    // 服务器本地：调 pack-download-server 返落盘绝对路径
+    try {
+      const result = await packDownloadServerApi()
+      const path = result.data
+      if (path) {
+        ElMessage.success(`已打包下载到服务器本地：${path}`)
+      } else {
+        ElMessage.warning('打包下载到服务器本地完成，但未返回路径')
+      }
+    } catch {
+      ElMessage.error('打包下载到服务器失败')
+    } finally {
+      packLoading.value = false
+    }
+    return
+  }
+
+  // 客户端本地：fetch 带 Token 头取 /file/pack-download 的 zip blob 再触发下载（同中转下载口径）
+  try {
+    const token = localStorage.getItem(USER_TOKEN_STORAGE_KEY)
+    const resp = await fetch('/file/pack-download', {
+      headers: token ? { Token: token } : {},
+    })
+    if (!resp.ok) {
+      ElMessage.error(`打包下载失败：HTTP ${resp.status}`)
+      return
+    }
+    const blob = await resp.blob()
+    const objUrl = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = objUrl
+    // zip 名取响应头 Content-Disposition 的 filename，取不到用时间戳兜底
+    const disposition = resp.headers.get('Content-Disposition') ?? ''
+    const nameMatch = disposition.match(/filename\*=UTF-8''([^;]+)/i) ?? disposition.match(/filename="?([^";]+)"?/)
+    a.download = nameMatch?.[1] ? decodeURIComponent(nameMatch[1]) : `knowhub-oss-backup-${Date.now()}.zip`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(objUrl)
+  } catch {
+    ElMessage.error('打包下载失败：网络异常')
+  } finally {
+    packLoading.value = false
+  }
+}
+
 onMounted(async () => {
   await fetchPage()
 })
@@ -311,9 +444,24 @@ onMounted(async () => {
     </BaseCard>
 
     <BaseCard title="文件列表">
-      <!-- 顶部工具栏：文件上传测试入口（临时，后期可整块移除） -->
+      <!-- 顶部工具栏：文件上传测试入口（临时，后期可整块移除）+ 扩展点1 打包下载 OSS + 扩展点2 数据迁移 -->
       <div class="file-view__toolbar">
         <FileUploadButton @uploaded="handleUploaded" />
+        <ElButton
+          v-if="canPackDownload"
+          type="warning"
+          :loading="packLoading"
+          @click="handlePackDownload"
+        >
+          打包下载 OSS
+        </ElButton>
+        <ElButton
+          v-if="canTransfer"
+          type="primary"
+          @click="handleOpenMigration"
+        >
+          数据迁移
+        </ElButton>
       </div>
 
       <SharedTablePanel
@@ -335,6 +483,12 @@ onMounted(async () => {
       :file-object="detailRecord"
       @update:visible="detailVisible = $event"
     />
+
+    <!-- 扩展点2：OSS 数据迁移弹窗 -->
+    <MigrationDialog
+      :visible="migrationVisible"
+      @update:visible="migrationVisible = $event"
+    />
   </section>
 </template>
 
@@ -347,6 +501,7 @@ onMounted(async () => {
 .file-view__toolbar {
   display: flex;
   justify-content: flex-end;
+  gap: 12px;
   margin-bottom: 14px;
 }
 </style>

@@ -6,7 +6,6 @@ import com.knowhub.service.audit.AuditLoanService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 import java.util.Date;
@@ -21,8 +20,10 @@ import java.util.stream.Collectors;
  * status=BORROWED 且 expected_return_date &lt; now 的借出批量置 OVERDUE，供管理台高亮与催还。
  * <p>
  * 不依赖 sys_config 开关（逾期是客观状态判定，非业务开关；loan_approval_enabled 只管新增态审批流，
- * 与是否逾期无关）。频率由 application.yml 的 knowhub.audit.overdue-scan-interval-minutes 控制
- * （默认 30 分钟），通过 @Scheduled 的 fixedDelayString 占位读取；改 yml 需重启。
+ * 与是否逾期无关）。触发由 rookie sys_job 调度器（CronTrigger + 独立线程池）驱动，cron 见 sys_job 表
+ * 对应行（初始 cron 0 * / 30 * * * ?，对应原 30 分钟间隔）。后台「系统监控→定时任务」可改 cron / 启停 /
+ * 立即执行，改 cron 即时生效无需重启。原 @Scheduled fixedDelay + knowhub.audit.overdue-scan-interval-minutes
+ * yml 项已不再驱动调度（yml 项保留未删，仅作历史）。
  * <p>
  * 对账走"扫表→过滤→批量置 OVERDUE"两段，Service.markOverdue 内部二次校验状态（仅 BORROWED 才置），
  * 防止扫描与置态之间借出被归还/已置 OVERDUE 造成的重复处理。无登录态，update_by 记 "system"。
@@ -40,10 +41,8 @@ public class AuditLoanOverdueTask {
     private AuditLoanService auditLoanService;
 
     /**
-     * 逾期对账扫描。fixedDelay 用 SpEL 把 knowhub.audit.overdue-scan-interval-minutes（分钟）转毫秒。
-     * initialDelay 60s 避开应用启动高峰。
+     * 逾期对账扫描。由 sys_job 调度器按 cron 触发（无参方法，符合 rookie findTaskMethod 要求）。
      */
-    @Scheduled(fixedDelayString = "#{${knowhub.audit.overdue-scan-interval-minutes:30} * 60 * 1000}", initialDelay = 60000)
     public void scanOverdue() {
         try {
             Date now = new Date();

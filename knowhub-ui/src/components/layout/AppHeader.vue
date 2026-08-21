@@ -15,6 +15,7 @@ import {
   CaretBottom,
 } from '@element-plus/icons-vue'
 import KhTag from '@/components/common/KhTag.vue'
+import KhAvatar from '@/components/common/KhAvatar.vue'
 import KhIcon from '@/components/common/KhIcon.vue'
 import { useUserStore } from '@/stores/user'
 import { useNoticeStore } from '@/stores/notice'
@@ -103,6 +104,16 @@ const goNotices = () => {
   router.push('/notices')
 }
 
+/**
+ * 全部已读：乐观标已加载列表全部已读 + 徽标清零（store 内），后端批量覆盖所有未读（含未加载页）。
+ * 收起下拉避免点击后列表原地全部变已读的视觉跳动；失败由 store 下次拉取纠正。
+ * 无未读时按钮不渲染（unreadCount===0 隐藏），不会误触发。
+ */
+const handleMarkAllRead = () => {
+  noticeDropdown.value?.handleClose?.()
+  void noticeStore.markAllAsRead()
+}
+
 /** 顶栏搜索框触发：跳全局搜索结果页 */
 const goSearch = () => router.push('/search')
 
@@ -126,15 +137,92 @@ const openNotice = async (noticeId: number) => {
 }
 
 /**
- * 轮播拉公告：登录态下每 60s 强制刷新一次（force=true 绕过 store 内 loaded 去重），
- * 防止长时间停留页面漏收新公告（路由守卫只在首次进入拉一次）。
+ * 通知下拉滚动容器选择器。
+ * knowhub 下拉用自定义 .kh-notice-menu__scroll div 做内部滚动（非 EP ElScrollbar），
+ * 滚动监听直接挂它，与后台 rookie NavBar 挂 .el-scrollbar__wrap 不同。
+ */
+const NOTICE_SCROLL_SELECTOR = '.kh-notice-menu__scroll'
+
+/**
+ * 通知下拉滚动到接近底部时触发下一页懒加载（距底 8px 内）。
+ */
+const handleNoticeScroll = (event: Event) => {
+  const el = event.currentTarget as HTMLElement
+  if (el.scrollTop + el.clientHeight >= el.scrollHeight - 8) {
+    void noticeStore.loadMoreNotices()
+  }
+}
+
+/**
+ * 下拉打开期间补页直到菜单可滚动：首屏 10 条在 480px 内往往放得下，
+ * 菜单没有滚动条时滚轮无处可滚、懒加载触发不了，这里自动加载下一页，
+ * 直到内容溢出可滚动或没有更多为止（之后交给用户滚动触发）。
+ */
+const ensureNoticeScrollable = async () => {
+  const el = document.querySelector<HTMLElement>(NOTICE_SCROLL_SELECTOR)
+  if (!el || !noticeStore.hasMore || noticeStore.loadingMore) {
+    return
+  }
+  if (el.scrollHeight - el.clientHeight <= 2) {
+    try {
+      await noticeStore.loadMoreNotices()
+    } catch {
+      // 补页失败时停止自动补页，滚动/重新打开时会重试
+      return
+    }
+    await ensureNoticeScrollable()
+  }
+}
+
+/** 通知下拉当前是否显示，控制列表变化后的自动补页只在打开期间生效 */
+const isNoticeVisible = ref(false)
+
+/**
+ * 下拉显示时拉取首屏列表 + 刷新未读数（已加载则 store 内 loaded 去重，只补未读数），
+ * 在滚动容器上挂懒加载监听并尝试自动补页；隐藏时卸载监听。
+ * el-dropdown @visible-change 在 popper 展开/收起时触发，比 v-model:visible 可靠。
+ */
+const handleNoticeVisible = (visible: boolean) => {
+  isNoticeVisible.value = visible
+  if (visible) {
+    // 打开下拉 force 重拉首页：保证每次展开都是最新通知（含审核/评论/协作等私发），
+    // 规避 loaded 守卫命中旧列表致徽标亮但下拉空（bug 1）；同时刷未读数保证徽标准确。
+    void noticeStore.fetchMyNotices(true)
+    void noticeStore.fetchUnreadCount()
+    // popper teleport 到 body 后再找滚动容器，避免取到未渲染节点
+    nextTick(() => {
+      document.querySelector<HTMLElement>(NOTICE_SCROLL_SELECTOR)?.addEventListener('scroll', handleNoticeScroll)
+      void ensureNoticeScrollable()
+    })
+  } else {
+    document.querySelector<HTMLElement>(NOTICE_SCROLL_SELECTOR)?.removeEventListener('scroll', handleNoticeScroll)
+  }
+}
+
+// 首屏数据返回 / 自动补页追加后重新检查：下拉仍打开且内容仍不满一屏则继续补页
+watch(
+  [() => noticeStore.myNotices.length, () => noticeStore.loadingMore],
+  () => {
+    if (isNoticeVisible.value) {
+      nextTick(() => void ensureNoticeScrollable())
+    }
+  },
+)
+
+/**
+ * 轮询未读数：登录态下每 60s 刷未读计数。检测到徽标增长（有新通知到达）且下拉未打开时，
+ * 主动 force 重拉 myNotices 首页——否则下拉用 store loaded 守卫命中的旧列表不含新通知，
+ * 徽标亮但下拉空（bug 1 根因）。下拉正打开时不重置分页（用户可能正滚到第 3 页），打开时本就会非 force 拉一次。
  * 未登录不启动轮询；用户 store 登录态变化时自动挂/卸。
  */
 let noticePollTimer: ReturnType<typeof setInterval> | undefined
 const startNoticePolling = () => {
   if (noticePollTimer) return
-  noticePollTimer = setInterval(() => {
-    void noticeStore.fetchMyNotices(true)
+  noticePollTimer = setInterval(async () => {
+    const increased = await noticeStore.fetchUnreadCount()
+    if (increased && !isNoticeVisible.value) {
+      void noticeStore.fetchMyNotices(true)
+    }
   }, 60_000)
 }
 const stopNoticePolling = () => {
@@ -200,7 +288,8 @@ const handleLogout = () => {
 
         <!-- 公告下拉：已登录显示铃铛+未读徽标+下拉列表（参考后台 NavBar 通知下拉形态）。
              el-dropdown 无 visible 双向，v-model:visible 是死绑定（不传 visible 给 el-tooltip）；
-             收起只能走 noticeDropdown 暴露的 handleClose()（见 openNotice/goNotices）。@command 收命令式事件。 -->
+             收起只能走 noticeDropdown 暴露的 handleClose()（见 openNotice/goNotices）。
+             @visible-change 在 popper 展开/收起时触发，挂滚动懒加载 + 首屏自动补页；@command 收命令式事件。 -->
         <el-dropdown
           v-if="userStore.isAuthenticated"
           ref="noticeDropdown"
@@ -209,6 +298,7 @@ const handleLogout = () => {
           popper-class="kh-notice-dropdown"
           :hide-on-click="false"
           @command="openNotice"
+          @visible-change="handleNoticeVisible"
         >
           <button class="kh-icon-btn kh-icon-btn--badge" type="button" aria-label="系统公告">
             <el-icon><Bell /></el-icon>
@@ -218,9 +308,17 @@ const handleLogout = () => {
             <el-dropdown-menu class="kh-notice-menu">
               <div class="kh-notice-menu__head">
                 <span>系统公告</span>
-                <button class="kh-notice-menu__all" type="button" @click="goNotices">
-                  查看全部 <el-icon><CaretBottom /></el-icon>
-                </button>
+                <div class="kh-notice-menu__head-actions">
+                  <button
+                    v-if="noticeStore.unreadCount > 0"
+                    class="kh-notice-menu__read-all"
+                    type="button"
+                    @click="handleMarkAllRead"
+                  >全部已读</button>
+                  <button class="kh-notice-menu__all" type="button" @click="goNotices">
+                    查看全部 <el-icon><CaretBottom /></el-icon>
+                  </button>
+                </div>
               </div>
               <!-- 下拉栏高度封顶 + 列表内滚动：通知条数多时不无限往下扩，避免视觉过长 -->
               <div class="kh-notice-menu__scroll">
@@ -243,6 +341,12 @@ const handleLogout = () => {
                   </div>
                 </el-dropdown-item>
               </div>
+              <!-- 底部状态行：hasMore 提示继续滚动加载更多、loadingMore 显加载中、!hasMore 显已加载全部 -->
+              <div class="kh-notice-menu__status">
+                <span v-if="noticeStore.loadingMore">加载中…</span>
+                <span v-else-if="noticeStore.hasMore">继续滚动加载更多</span>
+                <span v-else-if="noticeItems.length > 0">已加载全部</span>
+              </div>
             </el-dropdown-menu>
           </template>
         </el-dropdown>
@@ -253,7 +357,7 @@ const handleLogout = () => {
         <template v-if="userStore.isAuthenticated">
           <el-dropdown trigger="click" placement="bottom-end">
             <button class="kh-user" type="button">
-              <span class="kh-user__avatar">{{ userStore.avatarText }}</span>
+              <KhAvatar :item="{ label: userStore.displayName || '客', src: userStore.avatarUrl ?? undefined }" :size="28" />
               <span class="kh-user__name">{{ userStore.displayName }}</span>
               <el-icon class="kh-user__caret"><CaretBottom /></el-icon>
             </button>
@@ -577,6 +681,25 @@ const handleLogout = () => {
   color: var(--kh-text);
   background: var(--kh-surface);
 }
+/* 头部右侧操作组：全部已读 + 查看全部 */
+.kh-notice-menu__head-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 14px;
+}
+.kh-notice-menu__read-all {
+  border: none;
+  background: transparent;
+  color: var(--kh-text-secondary);
+  font-size: var(--kh-font-size-sm);
+  font-weight: 500;
+  cursor: pointer;
+  padding: 0;
+  transition: color var(--kh-transition-fast);
+}
+.kh-notice-menu__read-all:hover {
+  color: var(--kh-primary);
+}
 .kh-notice-menu__all {
   display: inline-flex;
   align-items: center;
@@ -596,6 +719,15 @@ const handleLogout = () => {
   text-align: center;
   color: var(--kh-text-tertiary);
   font-size: var(--kh-font-size-sm);
+}
+/* 底部状态行：懒加载提示/加载中/已全部，固定在列表下方，非 sticky（列表内滚时此行随滚走，符合"提示在尾部"语义） */
+.kh-notice-menu__status {
+  padding: 10px 16px;
+  text-align: center;
+  border-top: 1px solid var(--kh-border-soft);
+  color: var(--kh-text-tertiary);
+  font-size: 12px;
+  background: var(--kh-surface);
 }
 /* 列表区高度封顶 + 内部滚动：通知多时不无限往下扩，头部固定不滚走。
    480px ≈ 6~7 项可见，超出在区内 scroll，下拉整体长度收敛（与方案"需要最大长度而非无限阔"对齐） */

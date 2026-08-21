@@ -31,6 +31,7 @@ import SharedTablePanel from '@/components/SharedTablePanel.vue'
 import ProjectEditDialog from './components/ProjectEditDialog.vue'
 import ProjectDetailDialog from './components/ProjectDetailDialog.vue'
 import { SYSTEM_PERMISSION_KEYS } from '@/constants/systemPermissions'
+import { useUserStore } from '@/stores/user'
 import type { NormalizedPageResult } from '@/types/api/system/common'
 import type {
   ProjectListQuery,
@@ -47,6 +48,11 @@ import {
 } from './config'
 
 type ProjectDialogMode = 'create' | 'edit'
+
+// 审核员回避前端对齐：自己不能审自己提交的项目（后端 reviewProject 强判 authorId==userId 拒，
+// 前端按钮显隐先挡避免点了报错；admin 亦回避——admin 自审自同样隐藏审核按钮）
+const userStore = useUserStore()
+const currentUserId = computed(() => userStore.userInfo?.userId ?? -1)
 
 const queryForm = reactive<ProjectQueryFormState>(createDefaultProjectQuery())
 const listLoading = ref(false)
@@ -121,7 +127,8 @@ const tableActions = computed<SharedActionConfig<Record<string, unknown>>[]>(() 
     label: '审核',
     permKey: SYSTEM_PERMISSION_KEYS.project.review,
     buttonType: 'primary',
-    visible: (row) => String(row.status) === 'PENDING_REVIEW',
+    // 仅 PENDING_REVIEW 可审；且不能审自己提交的（authorId==当前用户则隐藏，admin 亦回避）
+    visible: (row) => String(row.status) === 'PENDING_REVIEW' && Number(row.authorId) !== currentUserId.value,
     onClick: async (row) => {
       await openReviewDialog(Number(row.projectId))
     },

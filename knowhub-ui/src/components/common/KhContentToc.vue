@@ -48,9 +48,20 @@ interface TocNode {
 const buildTree = (items: TocItem[]): TocNode[] => {
   const roots: TocNode[] = []
   const stack: Record<number, TocNode> = {}
+  // 层级归一化：文档起始标题非 h2（只有 h3/h4，或 h3/h4 混无 h2）时，原 buildTree 会把 h3 当根、
+  // h4 嵌其下或跳级进 roots，目录树层级语义错位（用户反馈"没有二级目录的三级目录也不会解析"的真因——
+  // h3 当根无缩进、视觉不像正常目录树）。把最小 level 归一到 2 当根：所有 item.level 减 (minLevel-2)，
+  // 最小标题变 level=2，其余按原级差平移。归一化只用于本函数嵌套判定，不写进 node（item/flatIndex 原样），
+  // 故跳转与 scroll-spy 仍按原始 DOM 顺序 idx（DOM 里 h3 还是 h3，scrollIntoView 不受影响）。
+  // 例：全 h3/h4 → 归一化成 h2/h3，h3 当根、h4 嵌其下；h2/h3/h4 → minLevel=2 不偏移，原行为不变；
+  // h2/h4 跳 h3 → 归一化不解决跨级，h4 仍进 roots 与 h2 平级（跳级标题本就无中间父，合理）。
+  let minLevel = 6
+  for (const it of items) if (it.level < minLevel) minLevel = it.level
+  const shift = items.length ? minLevel - 2 : 0
   items.forEach((item, i) => {
+    const level = item.level - shift
     const node: TocNode = { item, flatIndex: i, children: [], parent: null }
-    const parentLevel = item.level - 1
+    const parentLevel = level - 1
     const parent = stack[parentLevel]
     if (parent) {
       node.parent = parent
@@ -58,9 +69,9 @@ const buildTree = (items: TocItem[]): TocNode[] => {
     } else {
       roots.push(node)
     }
-    stack[item.level] = node
+    stack[level] = node
     for (const k of Object.keys(stack)) {
-      if (Number(k) > item.level) delete stack[Number(k)]
+      if (Number(k) > level) delete stack[Number(k)]
     }
   })
   return roots

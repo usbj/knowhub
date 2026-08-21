@@ -43,6 +43,9 @@ public class StorageProperties {
     /** PUBLIC 对象是否直拼公开读 URL（false 则也走预签名 GET） */
     private boolean publicBucketReadable = true;
 
+    /** 本地存储模式根目录（access_mode=local 时文件落盘于此，objectKey 即相对路径，默认 ./knowhub-upload） */
+    private String localBasePath = "./knowhub-upload";
+
     public String getEndpoint() {
         return endpoint;
     }
@@ -129,5 +132,13 @@ public class StorageProperties {
 
     public void setPublicBucketReadable(boolean publicBucketReadable) {
         this.publicBucketReadable = publicBucketReadable;
+    }
+
+    public String getLocalBasePath() {
+        return localBasePath;
+    }
+
+    public void setLocalBasePath(String localBasePath) {
+        this.localBasePath = localBasePath;
     }
 }

@@ -88,7 +88,6 @@ const blogTotal = ref(0)
 const fetchMyBlogs = async () => {
   myBlogsLoading.value = true
   myBlogs.value = []
-  blogTotal.value = 0
   try {
     const res = await getMyBlogsApi({ pageNum: blogPageNum.value, pageSize: blogPageSize.value })
     myBlogs.value = (res.records ?? []).map((b) => ({
@@ -137,7 +136,6 @@ const articleTotal = ref(0)
 const fetchMyArticles = async () => {
   myArticlesLoading.value = true
   myArticles.value = []
-  articleTotal.value = 0
   try {
     const res = await getMyArticlesApi({ pageNum: articlePageNum.value, pageSize: articlePageSize.value })
     myArticles.value = (res.records ?? []).map((a) => ({
@@ -186,7 +184,6 @@ const projectTotal = ref(0)
 const fetchMyProjects = async () => {
   myProjectsLoading.value = true
   myProjects.value = []
-  projectTotal.value = 0
   try {
     const res = await getMyProjectsApi({ pageNum: projectPageNum.value, pageSize: projectPageSize.value })
     myProjects.value = (res.records ?? []).map((p) => ({
@@ -232,7 +229,6 @@ const resourceTotal = ref(0)
 const fetchMyResources = async () => {
   myResourcesLoading.value = true
   myResources.value = []
-  resourceTotal.value = 0
   try {
     const res = await getMyResourcesApi({ pageNum: resourcePageNum.value, pageSize: resourcePageSize.value })
     myResources.value = (res.records ?? []).map((r) => ({
@@ -276,7 +272,6 @@ const blogCollectLoading = ref(false)
 const fetchBlogCollects = async () => {
   blogCollectLoading.value = true
   blogCollects.value = []
-  blogCollectTotal.value = 0
   try {
     const res = await listMyCollectedBlogsApi(blogCollectPageNum.value, blogCollectPageSize.value)
     blogCollects.value = (res.records ?? []).map((b) => ({
@@ -340,7 +335,6 @@ const articleCollectLoading = ref(false)
 const fetchArticleCollects = async () => {
   articleCollectLoading.value = true
   articleCollects.value = []
-  articleCollectTotal.value = 0
   try {
     const res = await listMyCollectedArticlesApi(articleCollectPageNum.value, articleCollectPageSize.value)
     articleCollects.value = (res.records ?? []).map((a) => ({
@@ -571,45 +565,58 @@ const collabHandlingId = ref<number | null>(null)
 // ---- 收到的项目邀请 ----
 const collabInvites = ref<ProjectInviteRecord[]>([])
 const collabInvitesLoading = ref(false)
+/** 收到的项目邀请真实总数（后端 PageHelper 分页 total，角标用此而非 .length——>10 条时 length 只显首页 10） */
+const collabInvitesTotal = ref(0)
 // ---- 收到的文章贡献申请 ----
 const collabReceived = ref<ArticleContributorRecord[]>([])
 const collabReceivedLoading = ref(false)
+/** 收到的文章贡献申请真实总数（角标用此而非 .length） */
+const collabReceivedTotal = ref(0)
 // ---- 我申请过的贡献资格 ----
 const collabMine = ref<ArticleContributorRecord[]>([])
 const collabMineLoading = ref(false)
+/** 我申请过的贡献资格真实总数（角标用此而非 .length） */
+const collabMineTotal = ref(0)
 
+/**
+ * 协作三段拉取：只清 records 不清 total（角标保留旧值到新数据到位，不闪 0），
+ * records 赋值后 total 同步更新为后端真实总数。后端走 PageUtil.startPage 真分页，total 是全量真实总数。
+ */
 const fetchCollabInvites = async () => {
   collabInvitesLoading.value = true
-  collabInvites.value = []
   try {
     const page = await listReceivedInvitesApi()
     collabInvites.value = page.records ?? []
+    collabInvitesTotal.value = page.total ?? 0
   } catch {
     collabInvites.value = []
+    collabInvitesTotal.value = 0
   } finally {
     collabInvitesLoading.value = false
   }
 }
 const fetchCollabReceived = async () => {
   collabReceivedLoading.value = true
-  collabReceived.value = []
   try {
     const page = await listReceivedContributorsApi()
     collabReceived.value = page.records ?? []
+    collabReceivedTotal.value = page.total ?? 0
   } catch {
     collabReceived.value = []
+    collabReceivedTotal.value = 0
   } finally {
     collabReceivedLoading.value = false
   }
 }
 const fetchCollabMine = async () => {
   collabMineLoading.value = true
-  collabMine.value = []
   try {
     const page = await listMineContributorsApi()
     collabMine.value = page.records ?? []
+    collabMineTotal.value = page.total ?? 0
   } catch {
     collabMine.value = []
+    collabMineTotal.value = 0
   } finally {
     collabMineLoading.value = false
   }
@@ -620,17 +627,20 @@ const fetchAllCollab = async () => {
   collabLoaded.value = true
 }
 
-/** 待处理数（收到邀请 + 收到申请里的 PENDING，用于 tab 角标红点感；已加载记录里 client 计数） */
+/** 待处理数（收到邀请 + 收到申请里的 PENDING，仅用于协作 tab 是否有待处理的小红点提示，不进角标数字） */
 const collabPendingTotal = computed(
   () =>
     collabInvites.value.filter((r) => r.status === 'PENDING').length +
     collabReceived.value.filter((r) => r.status === 'PENDING').length,
 )
-/** 三小 tab 角标：邀请/申请用各自已加载记录数（含历史）；「我的申请」用 mine 记录数 */
+/**
+ * 三小 tab 角标：各段真实总数（res.total），而非已加载记录数 .length——
+ * 后端真分页，>10 条时 .length 只显首页 10，角标会错；total 是全量真实总数。
+ */
 const collabSubTabs = computed<{ key: CollabSubKey; label: string; count: number }[]>(() => [
-  { key: 'received-invites', label: '项目邀请', count: collabInvites.value.length },
-  { key: 'received-applications', label: '文章贡献申请', count: collabReceived.value.length },
-  { key: 'mine', label: '我的贡献申请', count: collabMine.value.length },
+  { key: 'received-invites', label: '项目邀请', count: collabInvitesTotal.value },
+  { key: 'received-applications', label: '文章贡献申请', count: collabReceivedTotal.value },
+  { key: 'mine', label: '我的贡献申请', count: collabMineTotal.value },
 ])
 
 // —— 项目邀请：同意/拒绝 ——
@@ -700,13 +710,42 @@ const handleRejectApp = async (r: ArticleContributorRecord) => {
   }
 }
 
-// ============================ 消息 tab：前端切片分页（store 全量） ============================
+// ============================ 消息 tab：前端切片分页（store 全量）+ 二级筛选小 tab ============================
+/**
+ * 消息 tab 二级小 tab：全部/公告/通知/提醒。
+ * 角标走 noticeStore.typeCounts（后端 /sys/notice/my-counts 聚合的真实各类型总数），
+ * 不再用 store.myNotices.filter 算（store 是懒加载分页，只含已加载页，filter 角标会随翻页变且漏未加载页）。
+ * 列表数据仍复用 store.myNotices 前端 slice（口径不变，受懒加载限制只显已加载页——角标与列表分离，角标准）。
+ * msgTotal 用 typeCounts.ALL 真实全部总数（而非 store.length 已加载页数），分页器 total 也据此。
+ */
+type MessageSubKey = 'ALL' | 'NOTICE' | 'NOTIFY' | 'REMIND'
+const messageSubTab = ref<MessageSubKey>('ALL')
+const messageSubTabs = computed<{ key: MessageSubKey; label: string; count: number }[]>(() => [
+  { key: 'ALL', label: '全部', count: noticeStore.typeCounts.ALL ?? 0 },
+  { key: 'NOTICE', label: '公告', count: noticeStore.typeCounts.NOTICE ?? 0 },
+  { key: 'NOTIFY', label: '通知', count: noticeStore.typeCounts.NOTIFY ?? 0 },
+  { key: 'REMIND', label: '提醒', count: noticeStore.typeCounts.REMIND ?? 0 },
+])
+/** 切 subTab 时回第一页，避免切到条目少的子类停在空页 */
+const onMessageSubTabChange = (key: MessageSubKey) => {
+  messageSubTab.value = key
+  msgPageNum.value = 1
+}
+
 const msgPageNum = ref(1)
 const msgPageSize = ref(10)
-const msgTotal = computed(() => noticeStore.myNotices.length)
+/**
+ * 当前 subTab 的真实总数（后端聚合计数 typeCounts，而非 store 已加载页 filter），
+ * 驱动分页器 :total 与空态判定。ALL=全部真实总数，其余=该类型真实总数。
+ */
+const msgTotal = computed(() => noticeStore.typeCounts[messageSubTab.value] ?? 0)
 const myMessages = computed(() => {
+  const filtered =
+    messageSubTab.value === 'ALL'
+      ? noticeStore.myNotices
+      : noticeStore.myNotices.filter((n) => n.noticeType === messageSubTab.value)
   const start = (msgPageNum.value - 1) * msgPageSize.value
-  return noticeStore.myNotices.slice(start, start + msgPageSize.value)
+  return filtered.slice(start, start + msgPageSize.value)
 })
 const onMsgPageChange = (p: number, sz: number) => {
   msgPageNum.value = p
@@ -717,6 +756,14 @@ const markMsgRead = (noticeId?: number) => {
 }
 
 // ============================ tabs / 统计 卡（computed 响应式 count） ============================
+/**
+ * 主 8 tab 角标全用真实总数：
+ * - blog/article/project/resource：各创作列表 res.total（真实我共有 N 篇）。
+ * - collect：四段收藏 res.total 合计（真实收藏总数）。
+ * - collaboration：收到邀请 + 收到申请真实总数（collabInvitesTotal + collabReceivedTotal，含历史），
+ *   不再用 collabPendingTotal（已加载 PENDING 计数，>10 漏且翻页变）；待处理用 collabPendingTotal>0 小红点提示。
+ * - message：noticeStore.typeCounts.ALL（后端聚合全部真实总数），不再用 store.myNotices.length（已加载页数）。
+ */
 const tabs = computed<{ key: TabKey; label: string; count: number }[]>(() => [
   { key: 'blog', label: '我的博客', count: blogTotal.value },
   { key: 'article', label: '我的文章', count: articleTotal.value },
@@ -731,11 +778,11 @@ const tabs = computed<{ key: TabKey; label: string; count: number }[]>(() => [
       resourceCollectTotal.value +
       projectCollectTotal.value,
   },
-  { key: 'collaboration', label: '我的协作', count: collabPendingTotal.value },
-  { key: 'message', label: '消息通知', count: noticeStore.myNotices.length },
+  { key: 'collaboration', label: '我的协作', count: collabInvitesTotal.value + collabReceivedTotal.value },
+  { key: 'message', label: '消息通知', count: noticeStore.typeCounts.ALL ?? 0 },
 ])
 
-/** 统计卡：创作四类走真实 total（我共有 N 篇而非本页 N 条）；收藏走四段合计；消息走 store 全量 */
+/** 统计卡：创作四类走真实 total（我共有 N 篇而非本页 N 条）；收藏走四段合计；消息走聚合真实总数 */
 const userStats = computed(() => [
   { label: '博客', value: blogTotal.value, icon: 'blog' as const, tone: 'var(--kh-primary)' },
   { label: '文章', value: articleTotal.value, icon: 'doc' as const, tone: 'var(--kh-accent)' },
@@ -751,7 +798,7 @@ const userStats = computed(() => [
     icon: 'bookmark' as const,
     tone: 'var(--kh-danger)',
   },
-  { label: '消息', value: noticeStore.myNotices.length, icon: 'megaphone' as const, tone: 'var(--kh-accent)' },
+  { label: '消息', value: noticeStore.typeCounts.ALL ?? 0, icon: 'megaphone' as const, tone: 'var(--kh-accent)' },
 ])
 
 /** 当前 Tab 标题 */
@@ -814,6 +861,8 @@ onMounted(() => {
     fetchMyResources(),
     fetchAllCollects(),
     noticeStore.loaded ? Promise.resolve() : noticeStore.fetchMyNotices(true).catch(() => undefined),
+    // 消息四角标（typeCounts）独立刷新：即使列表 loaded 跳过，角标聚合计数也确保进页就绪
+    noticeStore.fetchTypeCounts().catch(() => undefined),
   ])
 })
 
@@ -856,7 +905,7 @@ watch(
       <aside class="profile__side">
         <KhCard padding="lg" class="profile__card">
           <div class="profile__head">
-            <KhAvatar :item="{ label: displayName }" :size="72" />
+            <KhAvatar :item="{ label: displayName, src: userStore.avatarUrl ?? undefined }" :size="72" />
             <div class="profile__info">
               <div class="profile__name-row">
                 <h1 class="profile__name">{{ displayName }}</h1>
@@ -918,6 +967,12 @@ watch(
             >
               {{ t.label }}
               <span class="profile__tab-count">{{ t.count }}</span>
+              <!-- 协作 tab 待处理红点：collabPendingTotal>0 时显小红点提醒（不进角标数字，角标是真实总数） -->
+              <span
+                v-if="t.key === 'collaboration' && collabPendingTotal > 0"
+                class="profile__tab-pending-dot"
+                title="有待处理"
+              ></span>
             </button>
           </div>
 
@@ -1341,8 +1396,21 @@ watch(
               </div>
             </div>
 
-            <!-- 消息通知（前端切片分页，store 全量） -->
+            <!-- 消息通知（前端切片分页，store 全量）+ 二级筛选小 tab（全部/公告/通知/提醒） -->
             <div v-else class="profile__list">
+              <div class="profile__collect-subtabs">
+                <button
+                  v-for="st in messageSubTabs"
+                  :key="st.key"
+                  type="button"
+                  class="profile__collect-subtab"
+                  :class="{ 'is-active': messageSubTab === st.key }"
+                  @click="onMessageSubTabChange(st.key)"
+                >
+                  {{ st.label }}
+                  <span class="profile__collect-subtab-count">{{ st.count }}</span>
+                </button>
+              </div>
               <template v-if="myMessages.length">
                 <div v-for="m in myMessages" :key="m.noticeId" class="profile__row" :class="{ 'is-read': m.hasRead }">
                   <div class="profile__row-main">
@@ -1563,6 +1631,15 @@ watch(
 .profile__tab.is-active .profile__tab-count {
   background: var(--kh-primary-soft);
   color: var(--kh-primary-strong);
+}
+/* 协作 tab 待处理小红点：不进角标数字，仅提示有待处理邀请/申请 */
+.profile__tab-pending-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--kh-danger);
+  flex: none;
+  align-self: center;
 }
 .profile__tab-content {
   padding: 0 var(--kh-space-5);

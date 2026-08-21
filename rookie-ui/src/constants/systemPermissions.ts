@@ -56,11 +56,12 @@ export const SYSTEM_PERMISSION_KEYS = {
   },
   // ---- knowhub 二开新增业务模块（博客文章 / 受控标签 / 文件存储）----
   // 权限键三段式 knowhub:模块:动作，与 sys_menu 中 knowhub:* 行的 perm_key 首值对齐。
-  // 查看等级权限(view:l1-l3)由后端 BlogPermissionResolver 扫 perms 取最高等级判定，
-  // 前端 hasPermission 仅按钮显隐门槛；列表实际可见性由后端 SQL 过滤(level<=userViewLevel OR author_id=userId)。
-  // 编辑/发布/撤回不分等级：仅作者本人 OR 超级管理员可改(后端 canEditBlog 强判 isAuthor||isAdmin)，
+  // 2026-08-18 权限大修单键化：四模块等级权限从 view/edit/download:lN 三操作键合并为单键 knowhub:xxx:lN，
+  // 由后端 XxxPermissionResolver 扫 perms 取最高等级判定，前端 hasPermission 仅按钮显隐门槛；
+  // 列表实际可见性由后端 SQL 过滤(level<=userViewLevel+1 OR author_id=userId，越级作品带 locked 标记)。
+  // 编辑/发布/撤回不分等级：仅作者本人 OR 超级管理员可改(后端 canEditXxx 强判 isAuthor||isAdmin)，
   //   前端编辑/发布/撤回按钮 visible 按 row.authorId===当前用户 OR isAdmin 显隐(permKey 仅作进页面门槛)。
-  // 删除走独立 knowhub:blog:delete 按钮权限(admin 走框架短路全权)；review 走按钮权限+审核员回避。
+  // 删除走独立 knowhub:xxx:delete 按钮权限(admin 走框架短路全权)；review 走按钮权限+审核员回避。
   blog: {
     create: ['knowhub:blog:add'],
     edit: ['knowhub:blog:edit'],
@@ -69,10 +70,11 @@ export const SYSTEM_PERMISSION_KEYS = {
     revoke: ['knowhub:blog:revoke'],
     review: ['knowhub:blog:review'],
     info: ['knowhub:blog:info'],
-    // 查看等级权限（前端按需用 hasPermission 判断等级按钮显隐，实际可见性门控在后端 SQL）
-    viewL1: ['knowhub:blog:view:l1'],
-    viewL2: ['knowhub:blog:view:l2'],
-    viewL3: ['knowhub:blog:view:l3'],
+    quarry: ['knowhub:blog:quarry'],
+    // 等级权限单键（前端按需用 hasPermission 判断等级按钮显隐，实际可见性门控在后端 SQL）
+    l1: ['knowhub:blog:l1'],
+    l2: ['knowhub:blog:l2'],
+    l3: ['knowhub:blog:l3'],
   },
   tag: {
     create: ['knowhub:tag:add'],
@@ -85,10 +87,15 @@ export const SYSTEM_PERMISSION_KEYS = {
     download: ['knowhub:file:download'],
     delete: ['knowhub:file:delete'],
     info: ['knowhub:file:info'],
+    // 扩展点1：打包下载全部 OSS 文件（zip）
+    packDownload: ['knowhub:file:pack-download'],
+    // 扩展点2：OSS 数据迁移（源/目标地址传输）
+    transfer: ['knowhub:file:transfer'],
   },
   // ---- 资源管理（资源推荐）----
   // 权限键三段式 knowhub:resource:动作，与 sys_menu 中 knowhub:resource:* 行对齐。
   // 资源分类管理独立菜单，权限键 knowhub:resource:category:动作。
+  // 2026-08-18 权限大修：资源引入 level 分级，等级权限单键 knowhub:resource:lN（前端按钮显隐门槛，实际门控在后端）。
   resource: {
     create: ['knowhub:resource:add'],
     edit: ['knowhub:resource:edit'],
@@ -99,17 +106,25 @@ export const SYSTEM_PERMISSION_KEYS = {
     reviewLog: ['knowhub:resource:reviewLog'],
     download: ['knowhub:resource:download'],
     info: ['knowhub:resource:info'],
+    quarry: ['knowhub:resource:quarry'],
+    // 等级权限单键（前端按需用 hasPermission 判断等级按钮显隐，实际可见性/下载门控在后端）
+    l1: ['knowhub:resource:l1'],
+    l2: ['knowhub:resource:l2'],
+    l3: ['knowhub:resource:l3'],
   },
   resourceCategory: {
     create: ['knowhub:resource:category:add'],
     edit: ['knowhub:resource:category:edit'],
     delete: ['knowhub:resource:category:delete'],
+    quarry: ['knowhub:resource:category:quarry'],
   },
   // ---- 项目管理（归档记录，等级对标权限）----
   // 权限键三段式 knowhub:project:动作，与 sys_menu 中 knowhub:project:* 行对齐。
-  // 等级权限(view/download/edit:l1-l3)由后端 ProjectPermissionResolver 扫 perms 取最高等级判定，
+  // 2026-08-18 权限大修单键化：等级权限从 view/download/edit:lN 三操作键合并为单键 knowhub:project:lN，
+  // 由后端 ProjectPermissionResolver 扫 perms 取最高等级判定 view/download 闸 + 创作闸；
+  // edit 去系统等级分支=LEADER OR 作者 OR 成员can_edit OR admin（非成员必须被邀请成成员才能编辑）。
   // 前端 hasPermission 仅用于按钮显隐的进页面门槛；实际可见性/可操作性由后端 SQL 过滤 + canOp 判定。
-  // edit/download 不设非等级按钮(纯等级门控)；admin 登录时全 perm_key 已塞入自然得 l3 全权。
+  // admin 登录时全 perm_key 已塞入自然得 l3 全权。
   project: {
     create: ['knowhub:project:add'],
     delete: ['knowhub:project:delete'],
@@ -119,22 +134,18 @@ export const SYSTEM_PERMISSION_KEYS = {
     review: ['knowhub:project:review'],
     reviewLog: ['knowhub:project:reviewLog'],
     info: ['knowhub:project:info'],
-    // 等级权限（前端按需用 hasPermission 判断等级按钮显隐，实际门控在后端）
-    viewL1: ['knowhub:project:view:l1'],
-    viewL2: ['knowhub:project:view:l2'],
-    viewL3: ['knowhub:project:view:l3'],
-    downloadL1: ['knowhub:project:download:l1'],
-    downloadL2: ['knowhub:project:download:l2'],
-    downloadL3: ['knowhub:project:download:l3'],
-    editL1: ['knowhub:project:edit:l1'],
-    editL2: ['knowhub:project:edit:l2'],
-    editL3: ['knowhub:project:edit:l3'],
+    quarry: ['knowhub:project:quarry'],
+    // 等级权限单键（前端按需用 hasPermission 判断等级按钮显隐，实际门控在后端）
+    l1: ['knowhub:project:l1'],
+    l2: ['knowhub:project:l2'],
+    l3: ['knowhub:project:l3'],
   },
   // ---- 文章管理（章节集合，等级对标权限，无成员表/无下载）----
   // 权限键三段式 knowhub:article:动作，与 sys_menu 中 knowhub:article:* 行对齐。
-  // 等级权限(view/edit:l1-l3)由后端 ArticlePermissionResolver 扫 perms 取最高等级判定，
+  // 2026-08-18 权限大修单键化：等级权限从 view/edit:lN 两操作键合并为单键 knowhub:article:lN，
+  // 由后端 ArticlePermissionResolver 扫 perms 取最高等级判定 view 闸 + 创作闸；
+  // edit 去系统等级分支=作者 OR admin（贡献者机制由 ArticleContributor 表管，非等级）。
   // 前端 hasPermission 仅按钮显隐门槛；实际可见性/可操作性由后端 SQL 过滤 + canOp 判定。
-  // edit 不设非等级按钮(纯等级门控)；admin 登录时全 perm_key 已塞入自然得 l3 全权。
   // 编辑复用 add 权限键(与项目一致，无独立 edit 键)；无 download(文章无下载)；无 member(无成员表)。
   article: {
     create: ['knowhub:article:add'],
@@ -145,13 +156,10 @@ export const SYSTEM_PERMISSION_KEYS = {
     reviewLog: ['knowhub:article:reviewLog'],
     info: ['knowhub:article:info'],
     quarry: ['knowhub:article:quarry'],
-    // 等级权限（前端按需用 hasPermission 判断等级按钮显隐，实际门控在后端）
-    viewL1: ['knowhub:article:view:l1'],
-    viewL2: ['knowhub:article:view:l2'],
-    viewL3: ['knowhub:article:view:l3'],
-    editL1: ['knowhub:article:edit:l1'],
-    editL2: ['knowhub:article:edit:l2'],
-    editL3: ['knowhub:article:edit:l3'],
+    // 等级权限单键（前端按需用 hasPermission 判断等级按钮显隐，实际门控在后端）
+    l1: ['knowhub:article:l1'],
+    l2: ['knowhub:article:l2'],
+    l3: ['knowhub:article:l3'],
   },
   // ---- 章节管理（文章子模块，无独立菜单页，从文章列表点"章节"跳二级路由页）----
   // 权限键三段式 knowhub:chapter:动作，挂文章菜单(menu_id=136)下作隐形 menu_type=3（不渲染为菜单项）。

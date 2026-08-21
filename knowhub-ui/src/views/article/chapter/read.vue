@@ -17,6 +17,7 @@ import KhIcon from '@/components/common/KhIcon.vue'
 import KhContentToc from '@/components/common/KhContentToc.vue'
 import KhLoading from '@/components/common/KhLoading.vue'
 import { useMarkdownImageZoom } from '@/composables/useMarkdownImageZoom'
+import { useMarkdownCodeBlock } from '@/composables/useMarkdownCodeBlock'
 import { getArticleDetailApi, getChapterContentApi } from '@/api/knowhub/article'
 import type { ArticlePortalDetailRecord, ChapterContentRecord } from '@/types/api/knowhub/article'
 import { useStickyBottom } from '@/utils/use-footer-visible'
@@ -100,6 +101,8 @@ const contentRef = ref<HTMLElement | null>(null)
 /** 章节正文配图点击放大（与评论区/博客正文同款 el-image-viewer）：复用 contentRef，
  *  onContentClick 只 querySelectorAll('img')，与 handleTocSelect/computeActive 查 h2/h3/h4 正交不冲突。 */
 const { viewerVisible, viewerUrls, viewerIndex, onContentClick, closeViewer } = useMarkdownImageZoom(contentRef)
+// 代码块增强（语言标签 + 复制按钮）：与配图放大/TOC scroll-spy 共用同一 contentRef，正交不冲突
+useMarkdownCodeBlock(contentRef)
 
 /** 点击目录项 i：取正文容器内第 i 个 h2/h3/h4（按 DOM 顺序与 toc 提取顺序一一对应）平滑滚动定位 */
 const handleTocSelect = (idx: number) => {
@@ -221,9 +224,9 @@ void loadAll()
         <!-- 章节标题 -->
         <h1 class="dr__chapter-title">{{ chapter?.chapterName }}</h1>
 
-        <!-- 越级锁态：正文不下发，显示锁态提示 -->
+        <!-- 越级锁态：整片锁定卡片（不展示预览正文，直接锁整片区域提示需更高权限） -->
         <div v-if="chapter?.locked" class="dr__locked">
-          <KhIcon name="lock" :size="40" :stroke="1.4" />
+          <span class="dr__lock-iconwrap"><KhIcon name="lock" :size="34" :stroke="1.5" /></span>
           <p class="dr__locked-title">{{ chapter.lockReason ?? '需更高权限查看完整内容' }}</p>
           <p class="dr__locked-hint">登录并拥有对应等级权限后可查看本章正文</p>
         </div>
@@ -406,19 +409,13 @@ void loadAll()
   line-height: 1.9;
   color: var(--kh-text);
 }
-.dr__content :deep(.github-markdown-body h1),
-.dr__content :deep(.github-markdown-body h2) { border-bottom: none; }
-.dr__content :deep(.github-markdown-body h2),
-.dr__content :deep(.github-markdown-body h3),
-.dr__content :deep(.github-markdown-body h4) {
-  scroll-margin-top: calc(var(--kh-header-height) + var(--kh-space-4));
-}
 /* 章节正文配图可点放大：cursor zoom-in 视觉提示，点击由 .dr__content @click 委托 onContentClick 开 el-image-viewer */
 .dr__content :deep(.github-markdown-body img) {
   cursor: zoom-in;
 }
 
-/* 越级锁态：正文不下发，显示锁态提示 */
+/* 越级锁态：整片锁定卡片（不展示预览正文，直接锁整片区域）。
+   实色卡片 + primary soft 浅底 + icon 圆圈 + 标题/提示居中，清晰体面不显残缺。 */
 .dr__locked {
   display: flex;
   flex-direction: column;
@@ -426,10 +423,22 @@ void loadAll()
   gap: var(--kh-space-3);
   padding: var(--kh-space-12) var(--kh-space-6);
   margin: var(--kh-space-8) 0;
-  border: 1px dashed var(--kh-border);
+  background: var(--kh-primary-soft);
+  border: 1px solid var(--kh-primary-border);
   border-radius: var(--kh-radius-lg);
   color: var(--kh-text-tertiary);
   text-align: center;
+}
+/* 锁 icon 圆圈底：放大 icon 并给实色圆底，U 形锁体完整可见 */
+.dr__lock-iconwrap {
+  width: 56px;
+  height: 56px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--kh-surface);
+  color: var(--kh-primary);
+  box-shadow: var(--kh-shadow-xs);
 }
 .dr__locked-title { font-size: var(--kh-font-size-lg); font-weight: 600; color: var(--kh-text-secondary); margin: 0; }
 .dr__locked-hint { font-size: var(--kh-font-size-sm); margin: 0; }

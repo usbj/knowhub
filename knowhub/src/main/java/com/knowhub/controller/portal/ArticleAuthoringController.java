@@ -53,12 +53,13 @@ public class ArticleAuthoringController {
     // ============================ 创作 ============================
 
     @GetMapping("/level")
-    @Operation(summary = "当前用户文章 view 等级（创作页等级选择器权限感知，0/1/2/3）")
+    @Operation(summary = "当前用户文章查看等级（创作页等级选择器权限感知，0/1/2/3）")
     @PreAuthorize("isAuthenticated()")
     public Result<Integer> myLevel() {
-        // 纯内存计算：扫描当前登录用户 perms 取 view 最高等级（admin 自然 3，未授权 0）。
-        // 前端据此禁用不可选等级（L1 用户只能公开，L2 可选 L1/L2，L3 全开），后端 editArticleInfo 的 level 升级校验兜底。
-        return Result.success(ArticlePermissionResolver.resolve().view());
+        // 纯内存计算：扫描当前登录用户 perms 取最高等级（admin 自然 3，未授权 0）。
+        // 前端据此禁用不可选等级（L1 用户只能公开，L2 可选 L1/L2，L3 全开），后端 addArticleInfo 的 assertCanCreateLevel 兜底。
+        // 2026-08-18 权限大修单键化：resolve().view() → resolve().level()（单键 knowhub:article:lN）。
+        return Result.success(ArticlePermissionResolver.resolve().level());
     }
 
     @GetMapping("/list")

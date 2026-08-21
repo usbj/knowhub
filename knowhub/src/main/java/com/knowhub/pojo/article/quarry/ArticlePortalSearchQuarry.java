@@ -5,7 +5,8 @@ import java.util.List;
 /**
  * 前台文章搜索查询条件（GET /portal/article/search 入参）。照搬 BlogPortalSearchQuarry 范式。
  * 搜索覆盖 文章标题/简介（ft_article_title_summary ngram）+ 章节正文（ft_chapter_content ngram）。
- * 权限透传字段 userViewLevel 由 service 层注入（分级开关关时恒 1，开时取 ArticlePermissionResolver.view）。
+ * 权限透传字段 userViewLevel 由 service 层注入（分级开关关时恒 1，开时取 ArticlePermissionResolver.level），
+ * where 片段 level<=userViewLevel+1（越级作品进列表带 locked 标记）。
  */
 public class ArticlePortalSearchQuarry {
 
@@ -24,6 +25,14 @@ public class ArticlePortalSearchQuarry {
     // ---- 权限透传字段（service 层回填，非前端入参） ----
     /** 当前用户查看等级（分级开关关时恒 1，开时 ArticlePermissionResolver.view；未登录=1） */
     private Integer userViewLevel;
+
+    /**
+     * 标签命中门槛值 = tagIds.size()，service 层回填。
+     * HAVING count(distinct art2.tag_id) = #{tagCount} 用于"同时命中全部所选标签"语义。
+     * 不能在 SQL 里写 #{tagIds.size()}：MyBatis createCacheKey 反射取值时会走 CollectionWrapper.get("size")
+     * 抛 UnsupportedOperationException（列表属性名解析为索引失败），故拆成独立 Integer 参数。
+     */
+    private Integer tagCount;
 
     public String getKeyword() {
         return keyword;
@@ -63,5 +72,13 @@ public class ArticlePortalSearchQuarry {
 
     public void setUserViewLevel(Integer userViewLevel) {
         this.userViewLevel = userViewLevel;
+    }
+
+    public Integer getTagCount() {
+        return tagCount;
+    }
+
+    public void setTagCount(Integer tagCount) {
+        this.tagCount = tagCount;
     }
 }

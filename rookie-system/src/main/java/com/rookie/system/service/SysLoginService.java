@@ -18,6 +18,19 @@ public interface SysLoginService {
     String loginVerification(LoginBody loginBody);
 
     /**
+     * 前台门户登录验证：与 {@link #loginVerification} 同样的账号密码认证 + JWT 签发，
+     * **但不做后台访问权限闸（system:access）**——前台注册的 visitor 默认角色不绑 system:access，
+     * 仍应能登录前台门户。后台访问控制由后台接口的 @PreAuthorize 兜底，前台登录只需拿到 token。
+     * <p>
+     * 与 {@code /login}（后台登录，带 system:access 闸）分离：后台登录走 {@code /login}，
+     * 前台登录走 {@code /portal/login}（permitAll，走 /portal/** 放行）。
+     *
+     * @param loginBody 登录请求体（username / password）
+     * @return JWT token（与后台登录同构，UserInfo 写入 Redis 登录态缓存）
+     */
+    String portalLoginVerification(LoginBody loginBody);
+
+    /**
      * 退出登录：从在线集合移除并删除登录态缓存，旧 token 立即失效（幂等）。
      *
      * @param username 当前登录用户名

@@ -16,7 +16,9 @@ import java.util.Date;
  * 列表 SQL 用 inline 子查询回填（资源量级可接受；超大批量后续再优化）。
  * viewCount/downloadCount 直接读主表冗余列（view_count 由统一浏览历史回写，download_count 仅 FILE 下载 +1）。
  * <p>
- * 铁律：前台 SQL 一律 status='PUBLISHED' AND deleted=0（资源无 level 等级概念，无越级锁态）。
+ * 2026-08-18 权限大修：资源引入 level 分级，前台搜索范围放宽到 level &lt;= userViewLevel + 1（L1 搜 L1+L2 带
+ * locked、L2 搜全部 L3 带 locked），越级作品进列表带 locked=true + 摘要可见 + LINK 类型 linkUrl 置空（锁跳转）。
+ * locked/level 字段由 service 层 for 循环按 vo.level &gt; userViewLevel 回填（不进 SQL 以保 where 片段纯净）。
  */
 public class ResourcePortalVo {
 
@@ -26,6 +28,9 @@ public class ResourcePortalVo {
 
     /** 作者昵称（join sys_user on user_id=author_id 带出） */
     private String authorNickname;
+
+    /** 作者头像 URL（join sys_user.avatar 带出，无头像为 null，前端 <img> 直引失败回退首字） */
+    private String authorAvatar;
 
     /** 资源类型：FILE 文件 / LINK 链接 */
     private String resourceType;
@@ -39,7 +44,19 @@ public class ResourcePortalVo {
 
     private String summary;
 
-    /** LINK 类型：外部链接 URL */
+    /**
+     * 越级锁标记（2026-08-18 权限大修）：level > userViewLevel 时 service 层置 true，
+     * 前端据此给卡片加锁图标 + 锁跳转/下载按钮。null 或 false = 达权可见。
+     */
+    private Boolean locked;
+
+    /**
+     * 资源等级 1公开/2内部/3机密（2026-08-18 权限大修引入，列表 SQL select r.level 带出，
+     * service 据此判越级设 locked；前端也可据此渲染等级标签）。
+     */
+    private Integer level;
+
+    /** LINK 类型：外部链接 URL（越级时 service 置空，锁跳转——前端拿到 null 不渲染跳转按钮或提示"需 L{N} 权限"） */
     private String linkUrl;
 
     /** LINK 类型：图标 URL（可空，前端可运行时拼 favicon 兜底） */
@@ -102,6 +119,14 @@ public class ResourcePortalVo {
         this.authorNickname = authorNickname;
     }
 
+    public String getAuthorAvatar() {
+        return authorAvatar;
+    }
+
+    public void setAuthorAvatar(String authorAvatar) {
+        this.authorAvatar = authorAvatar;
+    }
+
     public String getResourceType() {
         return resourceType;
     }
@@ -140,6 +165,22 @@ public class ResourcePortalVo {
 
     public void setSummary(String summary) {
         this.summary = summary;
+    }
+
+    public Boolean getLocked() {
+        return locked;
+    }
+
+    public void setLocked(Boolean locked) {
+        this.locked = locked;
+    }
+
+    public Integer getLevel() {
+        return level;
+    }
+
+    public void setLevel(Integer level) {
+        this.level = level;
     }
 
     public String getLinkUrl() {

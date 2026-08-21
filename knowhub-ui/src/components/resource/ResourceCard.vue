@@ -1,8 +1,11 @@
 <!--
   ResourceCard —— 资源卡片
   ------------------------------------------------------------------
-  消费前台 ResourcePortalRecord（后端 VO），资源无 mock 的 category 枚举与 cover 色块：
-  - 类型由 resourceType 区分：FILE 文件 / LINK 链接；展示口径与图标色按类型派生（不再依赖 mock category）。
+  消费前台 ResourcePortalRecord（后端 VO）：
+  - 封面图：resource.linkIcon 有值时渲封面图（复用 link_icon 列作封面，FILE/LINK 通用），悬浮卡片时图片
+    scale(1.08) 放大（cover 填满裁切，溢出由 overflow:hidden 裁掉，饱满放大不留白）；无封面时回退占位色块
+    （按 resourceType 派生渐变 + icon，不加放大）。分类标签浮在封面/色块右上。
+  - 类型由 resourceType 区分：FILE 文件 / LINK 链接；占位色块与图标色按类型派生。
   - 分类标签展示 categoryName（join 带出，-1=其他时为 null → 前端硬编码"其他"）。
   - LINK 类卡内行动按钮直接访问 linkUrl；FILE 类按钮去详情页走下载接口（详情计下载量 +1，列表不计）。
 -->
@@ -10,6 +13,7 @@
 import { useRouter } from 'vue-router'
 import KhCard from '@/components/common/KhCard.vue'
 import KhTag from '@/components/common/KhTag.vue'
+import KhAvatar from '@/components/common/KhAvatar.vue'
 import KhStatPill from '@/components/common/KhStatPill.vue'
 import KhIcon from '@/components/common/KhIcon.vue'
 import type { ResourcePortalRecord } from '@/types/api/knowhub/resource'
@@ -21,7 +25,10 @@ const goDetail = () => router.push(`/resource/${props.resource.resourceId}`)
 /** 是否链接类（有 linkUrl，直接访问）；后端 resourceType=LINK */
 const isLinkType = () => props.resource.resourceType === 'LINK'
 
-/** 卡片封面色与图标按资源类型派生（资源主表无 cover 列，前端占位色代替 mock 的 cover） */
+/** 是否有封面图（linkIcon 作封面 URL 载体，有值即渲图，无值回退占位色块） */
+const hasCover = () => Boolean(props.resource.linkIcon)
+
+/** 无封面时的占位封面色与图标按资源类型派生 */
 const coverGradient = () =>
   isLinkType()
     ? 'linear-gradient(135deg,#2563eb,#0ea5e9)'
@@ -52,8 +59,11 @@ const formatSize = (len?: number | null) => {
 
 <template>
   <KhCard clickable padding="none" class="res-card" @click="goDetail">
-    <div class="res-card__cover" :style="{ background: coverGradient() }">
-      <KhIcon :name="coverIcon()" :size="28" class="res-card__cover-icon" />
+    <div class="res-card__cover" :style="hasCover() ? undefined : { background: coverGradient() }">
+      <!-- 有封面图：渲图 + 悬浮放大（cover 填满裁切居中） -->
+      <img v-if="hasCover()" :src="resource.linkIcon ?? ''" alt="" class="res-card__cover-img" />
+      <!-- 无封面：占位 icon -->
+      <KhIcon v-else :name="coverIcon()" :size="28" class="res-card__cover-icon" />
       <KhTag size="sm" type="neutral" class="res-card__cat">{{ categoryLabel() }}</KhTag>
     </div>
 
@@ -62,7 +72,10 @@ const formatSize = (len?: number | null) => {
       <p class="res-card__desc kh-line-clamp-2">{{ resource.summary }}</p>
 
       <div class="res-card__info">
-        <span class="res-card__author">{{ resource.authorNickname || '匿名' }}</span>
+        <span class="res-card__author">
+          <KhAvatar :item="{ label: resource.authorNickname || '匿名', src: resource.authorAvatar ?? undefined }" :size="18" />
+          {{ resource.authorNickname || '匿名' }}
+        </span>
         <span v-if="resource.contentLength" class="res-card__size">
           <KhIcon name="file" :size="12" /> {{ formatSize(resource.contentLength) }}
         </span>
@@ -100,9 +113,22 @@ const formatSize = (len?: number | null) => {
   height: 90px;
   display: grid;
   place-items: center;
+  /* 放大溢出由 overflow:hidden 裁掉，悬浮放大饱满不出框 */
+  overflow: hidden;
 }
 .res-card__cover-icon {
   color: rgba(255, 255, 255, 0.92);
+}
+/* 封面图：cover 等比例填满裁切居中，悬浮卡片时 scale(1.08) 放大（溢出裁掉） */
+.res-card__cover-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
+  transition: transform 280ms ease;
+}
+.res-card:hover .res-card__cover-img {
+  transform: scale(1.08);
 }
 .res-card__cat {
   position: absolute;
@@ -136,6 +162,11 @@ const formatSize = (len?: number | null) => {
   justify-content: space-between;
   font-size: 11px;
   color: var(--kh-text-tertiary);
+}
+.res-card__author {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 .res-card__size {
   display: inline-flex;

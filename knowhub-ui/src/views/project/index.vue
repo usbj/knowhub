@@ -108,12 +108,14 @@ const handleSearch = () => {
   void fetchList()
 }
 
-/** 侧栏统计卡：可见项目总数用 search 返回 total；类型分布只看当前页（无聚合接口，与 docs 页派生同口径） */
+/**
+ * 侧栏统计卡：只显"可见项目"真实总数（search 返回 total）。
+ * 原比赛/练习/运维三行用 list.filter(p=>p.type===...).length 派生当前页计数，翻页会变且 >pageSize 漏计
+ * （无聚合接口拿各类型真实总数）——移除派生行避免错误数字；类型分布由顶部类型筛选按钮承载
+ * （切到某类型后主列表"共 N 个项目"显该类型真实 total，按钮本身不带 count 无 bug）。
+ */
 const stats = computed(() => [
   { label: '可见项目', value: total.value, icon: 'project' as const, tone: 'var(--kh-primary)' },
-  { label: '比赛项目', value: list.value.filter((p) => p.type === 'COMPETITION').length, icon: 'trophy' as const, tone: 'var(--kh-warm)' },
-  { label: '练习项目', value: list.value.filter((p) => p.type === 'PRACTICE').length, icon: 'code' as const, tone: 'var(--kh-accent)' },
-  { label: '运维项目', value: list.value.filter((p) => p.type === 'OPS').length, icon: 'flask' as const, tone: 'var(--kh-text-tertiary)' },
 ])
 
 onMounted(() => {

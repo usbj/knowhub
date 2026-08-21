@@ -15,6 +15,8 @@ export interface CommentRecord {
   authorId: number
   /** 评论人昵称（后端 join sys_user 带出） */
   authorNickname?: string
+  /** 评论人头像 URL（join sys_user.avatar 带出，无头像为 null，前端 <img> 直引失败回退首字） */
+  authorAvatar?: string
   /** 评论内容（Markdown，含配图 inline ![](/file/resolve/{id}) 相对引用；渲染走 v-md-preview） */
   content: string
   /** 创建时间（后端 Date→前端 string "yyyy-MM-dd HH:mm:ss"） */
@@ -36,6 +38,8 @@ export interface CommentReplyRecord {
   commentId: number
   authorId: number
   authorNickname?: string
+  /** 评论人头像 URL（join sys_user.avatar 带出，无头像为 null，前端 <img> 直引失败回退首字） */
+  authorAvatar?: string
   /** 回复内容（Markdown，含配图 inline ![](/file/resolve/{id})；渲染走 v-md-preview） */
   content: string
   createTime: string

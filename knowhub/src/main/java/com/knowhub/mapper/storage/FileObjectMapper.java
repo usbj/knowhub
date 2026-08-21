@@ -47,4 +47,15 @@ public interface FileObjectMapper {
     Boolean softDeleteByBizRef(@Param("businessType") String businessType,
                                @Param("bizRefId") Long bizRefId,
                                @Param("updateBy") String updateBy);
+
+    /**
+     * 打包下载：分页查所有 deleted=0 + CONFIRMED 的行（按 objectId 升序）。
+     * 用于扩展点1 打包下载遍历，防一次查十万行进内存。
+     * @param offset 偏移量
+     * @param size 每页条数
+     */
+    List<FileObject> listAllConfirmedForPack(@Param("offset") long offset, @Param("size") int size);
+
+    /** 打包下载预估总字节数：累加所有 deleted=0 + CONFIRMED 的 content_length */
+    Long sumConfirmedContentLength();
 }

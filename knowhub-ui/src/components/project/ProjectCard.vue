@@ -46,7 +46,7 @@ const typeText = computed(() => typeLabel[props.project.type ?? ''] ?? props.pro
 
     <div class="proj-card__people">
       <div class="proj-card__leader">
-        <KhAvatar :item="{ label: leader }" :size="28" />
+        <KhAvatar :item="{ label: leader, src: project.authorAvatar ?? undefined }" :size="28" />
         <div class="proj-card__leader-info">
           <span class="proj-card__leader-name">{{ leader }}</span>
           <span class="proj-card__leader-role">负责人</span>

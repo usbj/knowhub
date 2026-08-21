@@ -3,6 +3,7 @@ package com.knowhub.service.resource;
 import cn.hutool.core.bean.BeanUtil;
 import com.github.pagehelper.PageInfo;
 import com.knowhub.config.ResourceConfigReader;
+import com.knowhub.enums.resource.ResourceLevel;
 import com.knowhub.enums.resource.ResourceStatus;
 import com.knowhub.enums.resource.ResourceType;
 import com.knowhub.enums.common.ReviewAction;
@@ -24,16 +25,19 @@ import com.knowhub.pojo.resource.vo.ResourceReviewLogVo;
 import com.knowhub.pojo.resource.vo.ResourceReviewVo;
 import com.knowhub.pojo.resource.vo.ResourceVo;
 import com.knowhub.service.resource.impl.ResourceService;
-import com.knowhub.service.review.ReviewNotifyService;
+import com.knowhub.pojo.event.WorkReviewResultEvent;
+import com.knowhub.pojo.event.WorkSubmittedForReviewEvent;
 import com.knowhub.service.storage.impl.FileService;
 import com.knowhub.service.history.impl.ViewHistoryService;
 import com.knowhub.enums.history.ViewBizType;
-import com.knowhub.support.NotifySupport;
+import com.knowhub.support.ResourcePermissionResolver;
 import com.rookie.common.exception.ServiceException;
 import com.rookie.common.util.PageUtil;
+import com.rookie.framework.security.pojo.Permission;
 import com.rookie.framework.security.pojo.UserInfo;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
@@ -98,10 +102,7 @@ public class ResourceServiceImpl implements ResourceService {
     private ViewHistoryService viewHistoryService;
 
     @Autowired
-    private NotifySupport notifySupport;
-
-    @Autowired
-    private ReviewNotifyService reviewNotifyService;
+    private ApplicationEventPublisher applicationEventPublisher;
 
     @Value("${redis.base-key}")
     private String baseKey;
@@ -154,6 +155,13 @@ public class ResourceServiceImpl implements ResourceService {
         resource.setStatus(ResourceStatus.DRAFT.getCode());
         resource.setReviewStatus(ReviewStatus.NONE.getCode());
         resource.setDownloadCount(0L);
+        // level 缺省 L1 公开（2026-08-18 权限大修引入等级，资源原无 level）
+        if (resource.getLevel() == null) {
+            resource.setLevel(ResourceLevel.L1.getCode());
+        }
+        // 分级创作闸（决策#11，与博客同构）：能创作的内容等级上限 <= 自身查看等级；
+        // 非 L2 级成员不能建 L2 资源。admin 走 resolver 自然得 3（登录时全 perm_key 已塞入）；未授权者得 0 只能建 L1。
+        assertCanCreateLevel(ResourcePermissionResolver.resolve().level(), resource.getLevel());
         // resourceCategoryId 缺省置 -1（其他）
         if (resource.getResourceCategoryId() == null) {
             resource.setResourceCategoryId(CATEGORY_OTHER);
@@ -188,7 +196,12 @@ public class ResourceServiceImpl implements ResourceService {
         if (ResourceStatus.PENDING_REVIEW.getCode().equals(cur)) {
             throw new ServiceException(500, "审核中资源不能编辑，如需修改请先驳回或撤回后操作");
         }
-        checkOwnerOrAdmin(exist);
+        // 编辑口径（2026-08-18 权限大修对齐博客）：仅作者本人 OR 超级管理员可编辑。
+        // 不再看 knowhub:resource:review 按钮权限（旧 checkOwnerOrAdmin 用 List<Permission>.contains(String)
+        // 永远 false 的隐坑同步修掉）。admin 走 rookie 框架短路，currentUser().isAdmin() 直接放行。
+        if (!canEditResource(exist)) {
+            throw new ServiceException(500, "无权编辑他人资源");
+        }
         validateResourcePayload(vo);
 
         Resource resource = BeanUtil.toBean(vo, Resource.class);
@@ -217,6 +230,13 @@ public class ResourceServiceImpl implements ResourceService {
                 if (resource == null) {
                     continue;
                 }
+                // 删除口径（2026-08-18 权限大修补缺口，对齐博客 delete = isAuthor OR hasButtonPerm(delete) OR isAdmin）：
+                // 旧版 deleteResourceInfo 无 service 层作者校验，仅靠 Controller @PreAuthorize('hasAuthority("knowhub:resource:delete")')
+                // 兜底——但 admin 之外持 delete 按钮权限者能删任意人资源，与"用户只能动自己的作品"不符。此处补 service 层校验。
+                // admin 走 currentUser().isAdmin() 短路；作者本人可删自己的；持 knowhub:resource:delete 按钮权限者可删（后台管理员语义）。
+                if (!canDeleteResource(resource)) {
+                    throw new ServiceException(500, "无权删除他人资源（resourceId=" + id + "）");
+                }
                 // FILE 类资源：级联软删关联 file_object 行（对象本体由 FileGcTask 异步清）
                 if (resource.getFileObjectId() != null) {
                     try {
@@ -229,6 +249,8 @@ public class ResourceServiceImpl implements ResourceService {
                 }
                 resourceMapper.softDeleteResource(id);
             }
+        } catch (ServiceException e) {
+            throw e; // 权限校验失败原样上抛，不被下方 catch 吞成"资源删除失败"
         } catch (Exception e) {
             throw new ServiceException(500, "资源删除失败", e.getMessage());
         }
@@ -250,7 +272,9 @@ public class ResourceServiceImpl implements ResourceService {
         if (ResourceStatus.PENDING_REVIEW.getCode().equals(cur)) {
             throw new ServiceException(500, "资源审核中，请勿重复提交");
         }
-        checkOwnerOrAdmin(exist);
+        if (!canEditResource(exist)) {
+            throw new ServiceException(500, "无权发布他人资源");
+        }
         UserInfo userInfo = currentUser();
         Date now = new Date();
         // 经审核开关决定目标状态：开关关→直接发布；开→待审核
@@ -266,8 +290,9 @@ public class ResourceServiceImpl implements ResourceService {
             // 标记存在待审核资源，供对账定时任务快速判断是否需要扫表收口（不计数仅标记存在性）
             redisTemplate.opsForValue().set(baseKey + CACHE_PENDING_FLAG, "1");
             // 提审通知：按系统设置 knowhub.review.notify_role_key 通知持该角色的有效用户（总开关缺省关）
-            reviewNotifyService.notifyReviewers("resource", resourceId, exist.getTitle(),
-                    userInfo.getUsername(), userInfo.getUsername());
+            // 经事件 AFTER_COMMIT 由 WorkReviewNotifyListener 调 ReviewNotifyService 落通知，与审核状态变更解耦
+            applicationEventPublisher.publishEvent(new WorkSubmittedForReviewEvent("resource", resourceId, exist.getTitle(),
+                    userInfo.getUsername(), userInfo.getUsername()));
         } else {
             update.setStatus(ResourceStatus.PUBLISHED.getCode());
             update.setPublishTime(now);
@@ -277,8 +302,9 @@ public class ResourceServiceImpl implements ResourceService {
         resourceMapper.editResourceInfo(update);
         // 写审核流水：作者提交(SUBMIT, AUTHOR) 或 系统直通(PUBLISH, SYSTEM)
         writeReviewLog(resourceId, action, userInfo, null);
-        // 审核结果通知作者（PUBLISH 直通发"已发布"通知；SUBMIT 不通知：作者是提交人已知晓）
-        notifyReviewResult(exist, action, null);
+        // 审核结果通知作者（经事件 AFTER_COMMIT 落通知：SUBMIT 不发、PUBLISH 直通发"已发布"）
+        applicationEventPublisher.publishEvent(new WorkReviewResultEvent("resource", resourceId, exist.getAuthorId(),
+                exist.getTitle(), null, null, action, null, false, null, "system"));
         return true;
     }
 
@@ -293,7 +319,9 @@ public class ResourceServiceImpl implements ResourceService {
         if (!ResourceStatus.PUBLISHED.getCode().equals(exist.getStatus())) {
             throw new ServiceException(500, "仅已发布资源可撤回");
         }
-        checkOwnerOrAdmin(exist);
+        if (!canEditResource(exist)) {
+            throw new ServiceException(500, "无权撤回他人资源");
+        }
         UserInfo userInfo = currentUser();
         Resource update = new Resource();
         update.setResourceId(resourceId);
@@ -350,8 +378,9 @@ public class ResourceServiceImpl implements ResourceService {
         resourceMapper.editResourceInfo(update);
         // 写审核流水：通过(APPROVE, REVIEWER) 或 驳回(REJECT, REVIEWER)
         writeReviewLog(vo.getResourceId(), action, userInfo, advice);
-        // 审核结果通知作者（avoid 已保障 author_id==userId 走不到这里）
-        notifyReviewResult(exist, action, advice);
+        // 审核结果通知作者（经事件 AFTER_COMMIT 落通知：APPROVE 发通过、REJECT 发驳回+advice）
+        applicationEventPublisher.publishEvent(new WorkReviewResultEvent("resource", vo.getResourceId(), exist.getAuthorId(),
+                exist.getTitle(), null, null, action, null, false, advice, "system"));
         return true;
     }
 
@@ -483,6 +512,12 @@ public class ResourceServiceImpl implements ResourceService {
                 || exist.getFileObjectId() == null) {
             throw new ServiceException(500, "非文件类资源，无法下载");
         }
+        // 下载等级闸（2026-08-18 权限大修）：下载需查看等级 >= 资源 level OR 作者本人 OR 超级管理员。
+        // 与 view 闸同源（单键 knowhub:resource:lN），等级不够抛"无权下载该资源（等级不足）"。
+        // admin 走 resolver 自然得 3；作者本人全权；未授权者得 0 只能下 L1。
+        if (!canDownloadResource(exist)) {
+            throw new ServiceException(500, "无权下载该资源（等级不足）");
+        }
         // 下载量 +1（原子自增，仅 FILE 下载）
         resourceMapper.incrDownloadCount(resourceId);
         // 取下载链接：资源层已校验 PUBLISHED + FILE（业务可见性闸），传 bizAuthorized=true 跳过文件底座 owner 闸。
@@ -537,14 +572,73 @@ public class ResourceServiceImpl implements ResourceService {
         }
     }
 
-    /** 校验当前用户是作者本人或管理员（具备 knowhub:resource:review 权限视为管理员） */
-    private void checkOwnerOrAdmin(Resource resource) {
-        UserInfo userInfo = currentUser();
-        boolean isAdmin = userInfo.getPermissions() != null
-                && userInfo.getPermissions().contains("knowhub:resource:review");
-        if (!userInfo.getUserId().equals(resource.getAuthorId()) && !isAdmin) {
-            throw new ServiceException(500, "无权操作他人资源");
+    /**
+     * 分级创作闸（决策#11，与博客同构）：能创作的内容等级上限 <= 自身查看等级。
+     * 非 L2 级成员不能创建 L2 资源。userViewLevel 由 ResourcePermissionResolver.resolve().level() 给出
+     * （admin 自然 3，未授权 0）。targetLevel<=1 恒放行（L1 公开人人可建）。
+     */
+    private void assertCanCreateLevel(int userViewLevel, Integer targetLevel) {
+        if (targetLevel == null || targetLevel <= 1) {
+            return;
         }
+        if (userViewLevel < targetLevel) {
+            throw new ServiceException(500, "无权创建 L" + targetLevel + " 级内容（自身查看等级不足）");
+        }
+    }
+
+    /** 当前用户是否该资源作者（author_id 比对，userId 稳定锁定，username 可改不影响） */
+    private boolean isAuthor(Resource resource, UserInfo user) {
+        return resource.getAuthorId() != null && resource.getAuthorId().equals(user.getUserId());
+    }
+
+    /**
+     * 编辑权限判定（2026-08-18 权限大修，对齐博客 canEditBlog）：仅作者本人 OR 超级管理员可编辑/发布/撤回。
+     * 不看 level、不扫 edit:lN 等级键（已废，单键 knowhub:resource:lN 只管 view/download/创作闸）。
+     * admin 走 rookie 框架短路，currentUser().isAdmin() 直接放行。取代旧 checkOwnerOrAdmin
+     * （旧版用 List<Permission>.contains(String) 永远 false 的隐坑同步修掉）。
+     */
+    private boolean canEditResource(Resource resource) {
+        UserInfo user = currentUser();
+        return isAuthor(resource, user) || user.isAdmin();
+    }
+
+    /**
+     * 删除权限判定（2026-08-18 权限大修补缺口，对齐博客 delete 口径）：
+     * isAuthor OR hasButtonPerm("knowhub:resource:delete") OR isAdmin。
+     * 作者删自己的；持 delete 按钮权限者（后台管理员语义）可删任意；admin 全权。
+     */
+    private boolean canDeleteResource(Resource resource) {
+        UserInfo user = currentUser();
+        return isAuthor(resource, user) || user.isAdmin() || hasButtonPerm("knowhub:resource:delete");
+    }
+
+    /**
+     * 下载权限判定（2026-08-18 权限大修）：查看等级 >= 资源 level OR 作者本人 OR 超级管理员。
+     * 与 view 闸同源（单键 knowhub:resource:lN，resolver 取最高等级）。admin 自然得 3；作者全权；未授权者得 0 只能下 L1。
+     */
+    private boolean canDownloadResource(Resource resource) {
+        UserInfo user = currentUser();
+        if (isAuthor(resource, user) || user.isAdmin()) {
+            return true;
+        }
+        int userLevel = ResourcePermissionResolver.resolve().level();
+        return resource.getLevel() == null || userLevel >= resource.getLevel();
+    }
+
+    /** 判断当前用户是否拥有某按钮权限（非等级，如 knowhub:resource:delete）。
+     *  注意：UserInfo.getPermissions() 是 List<Permission>，需遍历比 permKey，不能用 contains(String)
+     *  （旧 checkOwnerOrAdmin 用 contains(String) 对 List<Permission> 永远 false 的隐坑已修） */
+    private boolean hasButtonPerm(String permKey) {
+        UserInfo u = currentUser();
+        if (u.getPermissions() == null) {
+            return false;
+        }
+        for (Permission p : u.getPermissions()) {
+            if (permKey.equals(p.getPermKey())) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -565,34 +659,10 @@ public class ResourceServiceImpl implements ResourceService {
     }
 
     /**
-     * 审核结果通知作者（2026-08-15 落地，复用 NotifySupport 个人通道）。口径同博客/文章：
-     * APPROVE/REJECT 发审核结果通知，PUBLISH（审核关直通）发"已发布"，SUBMIT/REVOKE 不通知。
-     * reviewResource 前作者自审已抛错，不会自通知。失败由 NotifySupport 内部吞掉，不阻断已落库状态。
+     * 审核结果通知：已迁移至 ReviewNotifyService.notifyReviewResult，由 WorkReviewNotifyListener
+     * 在审核事务 AFTER_COMMIT 后消费 WorkReviewResultEvent 落通知。本类不再直接发审核通知，与审核状态机解耦。
+     * 文案（APPROVE/REJECT/PUBLISH）与 routePath（/resource/{id}）集中在 ReviewNotifyService，消除 4x 重复。
      */
-    private void notifyReviewResult(Resource resource, ReviewAction action, String advice) {
-        if (resource == null || resource.getAuthorId() == null) {
-            return;
-        }
-        String title;
-        String content;
-        switch (action) {
-            case APPROVE:
-                title = "你的资源审核通过";
-                content = "《" + resource.getTitle() + "》审核通过，已发布。" + (advice != null && !advice.isEmpty() ? "审核意见：" + advice : "");
-                break;
-            case REJECT:
-                title = "你的资源被驳回";
-                content = "《" + resource.getTitle() + "》被驳回，请修改后重新发布。" + (advice != null && !advice.isEmpty() ? "驳回原因：" + advice : "");
-                break;
-            case PUBLISH:
-                title = "你的资源已发布";
-                content = "《" + resource.getTitle() + "》已直接发布（审核未开启）。";
-                break;
-            default:
-                return;
-        }
-        notifySupport.notifyUser(resource.getAuthorId(), title, content, "/resource/" + resource.getResourceId(), "system");
-    }
 
     /** 构造一个 system 操作者 UserInfo，用于对账放行时写流水（operator_id=0, operator=system） */
     private UserInfo systemOperator() {
@@ -747,7 +817,7 @@ public class ResourceServiceImpl implements ResourceService {
 
     /**
      * 前台编辑回填：先做归属校验（拒非作者），再复用 getResourceInfo 的完整回填逻辑。
-     * 后台 getResourceInfo 不做归属挡（管理员需查任意资源），前台编辑回填必须挡别人草稿，故在此前置 checkOwnerOrAdmin。
+     * 后台 getResourceInfo 不做归属挡（管理员需查任意资源），前台编辑回填必须挡别人草稿，故在此前置 canEditResource。
      * 命中后由 getResourceInfo 回填互动计数 + 当前用户态 + FILE 下载链接 + 记一次浏览量。
      */
     @Override
@@ -756,7 +826,9 @@ public class ResourceServiceImpl implements ResourceService {
         if (exist == null) {
             throw new ServiceException(500, "资源不存在");
         }
-        checkOwnerOrAdmin(exist);
+        if (!canEditResource(exist)) {
+            throw new ServiceException(500, "无权查看他人资源草稿");
+        }
         return getResourceInfo(resourceId);
     }
 }

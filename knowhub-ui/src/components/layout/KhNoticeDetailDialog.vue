@@ -16,6 +16,7 @@ import { ElMessage, ElImageViewer } from 'element-plus'
 import KhTag from '@/components/common/KhTag.vue'
 import KhIcon from '@/components/common/KhIcon.vue'
 import { useMarkdownImageZoom } from '@/composables/useMarkdownImageZoom'
+import { useMarkdownCodeBlock } from '@/composables/useMarkdownCodeBlock'
 import { confirmNoticeApi } from '@/api/system/notice-portal'
 import { useUserStore } from '@/stores/user'
 import { useNoticeStore, type NoticeDetailRecord } from '@/stores/notice'
@@ -95,6 +96,8 @@ const bodyReady = ref(false)
 const contentRef = ref<HTMLElement | null>(null)
 /** 公告正文配图点击放大（el-image-viewer 全屏画廊）——弹窗内，z-index 3000 叠在 dialog overlay 之上不被遮。 */
 const { viewerVisible, viewerUrls, viewerIndex, onContentClick, closeViewer } = useMarkdownImageZoom(contentRef)
+// 代码块增强（语言标签 + 复制按钮）：与配图放大共用同一 contentRef，正交不冲突
+useMarkdownCodeBlock(contentRef)
 const handleOpened = () => {
   bodyReady.value = true
 }
@@ -294,10 +297,6 @@ const handleGoToWork = async () => {
   font-size: var(--kh-font-size-md);
   line-height: 1.9;
   color: var(--kh-text);
-}
-.notice-detail__content :deep(.github-markdown-body h1),
-.notice-detail__content :deep(.github-markdown-body h2) {
-  border-bottom: none;
 }
 /* 公告正文配图可点放大：cursor zoom-in 视觉提示，点击由 .notice-detail__content @click 委托 onContentClick 开 el-image-viewer */
 .notice-detail__content :deep(.github-markdown-body img) {

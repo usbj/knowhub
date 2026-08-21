@@ -43,16 +43,34 @@ const tagRanking = computed(() => hotTags.value.slice(0, 10))
 /** 标签云最大展示数：超出折叠进"更多"（按标签排行 contentCount 降序，与侧栏排行同序） */
 const TAG_LIMIT = 12
 const tagExpanded = ref(false)
-/** 标签云展示项：折叠时只取前 TAG_LIMIT 个（即排行前 N），展开时全部 */
-const visibleTags = computed(() =>
-  tagExpanded.value ? hotTags.value : hotTags.value.slice(0, TAG_LIMIT),
-)
+/** 标签云默认展示项：折叠/展开都只取前 TAG_LIMIT 个，展开时剩余进固定高度滚动区（不撑高 hero） */
+const visibleTags = computed(() => hotTags.value.slice(0, TAG_LIMIT))
 const hasMoreTags = computed(() => hotTags.value.length > TAG_LIMIT)
 
+/**
+ * 标签名是否「过长」需循环滚动播放（照首页 isTagNameLong 范式）。
+ * rank-name 容器固定宽 72px（13px 字号约容 5 个中文字 / 11 个英文字符），
+ * 按字符数粗判：中文等宽字符计 1、半角字符计 0.5，加权和 > 5 即视为过长，开横向 marquee。
+ */
+const isTagNameLong = (name: string): boolean => {
+  if (!name) return false
+  let weight = 0
+  for (const ch of name) {
+    weight += /[　-鿿＀-￯]/.test(ch) ? 1 : 0.5
+  }
+  return weight > 5
+}
+
+/**
+ * 切换标签选中（按 tagId）。
+ * 重新赋值新数组而非 splice/push 原地改——ref<number[]> 的 watch 默认不 deep，原地改不触发；
+ * 赋新数组让引用变化，watch([selectedTagIds,...]) 才能捕获，点击标签即触发筛选。
+ */
 const toggleTag = (tagId: number) => {
   const idx = selectedTagIds.value.indexOf(tagId)
-  if (idx >= 0) selectedTagIds.value.splice(idx, 1)
-  else selectedTagIds.value.push(tagId)
+  selectedTagIds.value = idx >= 0
+    ? selectedTagIds.value.filter((id) => id !== tagId)
+    : [...selectedTagIds.value, tagId]
 }
 
 /** 文档列表（真实接口分页：后端 PageUtil.startPage 从请求参数读 pageNum/pageSize） */
@@ -236,7 +254,15 @@ onMounted(() => {
           <ol v-if="tagRanking.length" class="docs__rank">
             <li v-for="(t, i) in tagRanking" :key="t.tagId" class="docs__rank-item" @click="toggleTag(t.tagId)">
               <span class="docs__rank-no">{{ i + 1 }}</span>
-              <span class="docs__rank-name">{{ t.tagName }}</span>
+              <span class="docs__rank-name">
+                <span class="docs__rank-name-inner" :class="{ 'is-marquee': isTagNameLong(t.tagName) }">
+                  <template v-if="isTagNameLong(t.tagName)">
+                    <span class="docs__rank-name-unit">{{ t.tagName }}</span>
+                    <span class="docs__rank-name-unit">{{ t.tagName }}</span>
+                  </template>
+                  <template v-else>{{ t.tagName }}</template>
+                </span>
+              </span>
               <span class="docs__rank-bar">
                 <span class="docs__rank-bar-fill" :style="{ width: `${((t.contentCount ?? 0) / (tagRanking[0]?.contentCount ?? 1)) * 100}%` }" />
               </span>
@@ -518,7 +544,38 @@ onMounted(() => {
 .docs__rank-item { display: flex; align-items: center; gap: 8px; cursor: pointer; padding: 4px 0; }
 .docs__rank-no { width: 20px; font-family: var(--kh-font-display); font-weight: 700; font-size: 13px; color: var(--kh-text-tertiary); text-align: center; }
 .docs__rank-item:nth-child(-n + 3) .docs__rank-no { color: var(--kh-warm); }
-.docs__rank-name { width: 72px; font-size: 13px; font-weight: 500; color: var(--kh-text); }
+.docs__rank-name {
+  width: 72px;
+  flex: none;
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--kh-text);
+}
+.docs__rank-name-inner {
+  display: inline-block;
+  white-space: nowrap;
+}
+/* 长标签名循环滚动（照首页/博客页范式）：两个 unit 各带 4em 间隔横向平移 -50% 无缝循环。
+   mask 仅挂滚动态——短名不滚，左右清晰不虚化。hover 暂停便于看清。 */
+.docs__rank-name-inner.is-marquee {
+  animation: kh-docs-rank-marquee 14s linear infinite;
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent);
+  mask-image: linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent);
+}
+.docs__rank-name-inner.is-marquee:hover {
+  animation-play-state: paused;
+}
+.docs__rank-name-unit {
+  margin-right: 4em;
+}
+@keyframes kh-docs-rank-marquee {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .docs__rank-name-inner.is-marquee { animation: none; }
+}
 .docs__rank-bar { flex: 1; height: 6px; border-radius: var(--kh-radius-pill); background: var(--kh-bg-soft); overflow: hidden; }
 .docs__rank-bar-fill { display: block; height: 100%; border-radius: var(--kh-radius-pill); background: linear-gradient(90deg, var(--kh-primary), var(--kh-accent)); }
 .docs__rank-count { font-family: var(--kh-font-mono); font-size: 11px; color: var(--kh-text-tertiary); width: 24px; text-align: right; }

@@ -10,8 +10,9 @@ import java.util.Date;
  * 含计数字段（viewCount/likeCount/collectCount/downloadCount，2026-08-03 补建主表冗余列），
  * 用于卡片展示下载量 + 推荐打分。
  * <p>
- * 铁律：前台 SQL 一律 status='PUBLISHED' AND deleted=0 AND level<=userViewLevel
- * （分级开关关恒 1），L2/L3 永不下发前台。越级详情走锁态降级（详情接口）。
+ * 2026-08-18 权限大修搜索范围 +1：前台 SQL 改为 status='PUBLISHED' AND deleted=0 AND level<=userViewLevel+1，
+ * 越级作品（level=userViewLevel+1）进列表带 locked=true 标记、summary 可见，点进详情只锁下载（description 可见）。
+ * 分级开关关恒 1 → level<=2（L1+L2，L2 带 locked）。
  *
  * @author knowhub
  */
@@ -34,6 +35,12 @@ public class ProjectPortalVo {
 
     /** 负责人昵称（join sys_user on user_id=author_id 带出） */
     private String authorNickname;
+
+    /** 负责人头像 URL（join sys_user.avatar 带出，无头像为 null，前端 <img> 直引失败回退首字） */
+    private String authorAvatar;
+
+    /** 越级锁标记：service 层按 vo.level > userViewLevel 置 true，前端据此渲染锁图标（summary 仍可见，只锁下载） */
+    private Boolean locked;
 
     private Date publishTime;
 
@@ -99,6 +106,22 @@ public class ProjectPortalVo {
 
     public void setAuthorNickname(String authorNickname) {
         this.authorNickname = authorNickname;
+    }
+
+    public String getAuthorAvatar() {
+        return authorAvatar;
+    }
+
+    public void setAuthorAvatar(String authorAvatar) {
+        this.authorAvatar = authorAvatar;
+    }
+
+    public Boolean getLocked() {
+        return locked;
+    }
+
+    public void setLocked(Boolean locked) {
+        this.locked = locked;
     }
 
     public Date getPublishTime() {

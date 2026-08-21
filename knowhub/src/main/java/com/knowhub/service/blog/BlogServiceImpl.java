@@ -23,9 +23,9 @@ import com.knowhub.pojo.common.vo.ReviewLogVo;
 import com.knowhub.pojo.common.vo.ReviewVo;
 import com.knowhub.service.blog.impl.BlogService;
 import com.knowhub.service.history.impl.ViewHistoryService;
-import com.knowhub.service.review.ReviewNotifyService;
+import com.knowhub.pojo.event.WorkReviewResultEvent;
+import com.knowhub.pojo.event.WorkSubmittedForReviewEvent;
 import com.knowhub.enums.history.ViewBizType;
-import com.knowhub.support.NotifySupport;
 import com.rookie.common.exception.ServiceException;
 import com.knowhub.pojo.blog.entity.Blog;
 import com.knowhub.pojo.blog.entity.BlogCollect;
@@ -37,6 +37,7 @@ import com.rookie.framework.security.pojo.Permission;
 import com.rookie.framework.security.pojo.UserInfo;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
@@ -93,10 +94,7 @@ public class BlogServiceImpl implements BlogService {
     ViewHistoryService viewHistoryService;
 
     @Autowired
-    NotifySupport notifySupport;
-
-    @Autowired
-    ReviewNotifyService reviewNotifyService;
+    ApplicationEventPublisher applicationEventPublisher;
 
     @Autowired
     StringRedisTemplate redisTemplate;
@@ -113,11 +111,14 @@ public class BlogServiceImpl implements BlogService {
 
     @Override
     public PageInfo<BlogVo> quarryBlog(BlogQuarry quarry) {
-        // 一次扫描 perms 取查看等级（admin 自然 3，无权限者 0）；回填 userId 走"作者能看自己博客"分支
+        // 一次扫描 perms 取最高等级（单键 knowhub:blog:lN，admin 自然 3，无权限者 0）；回填 userId 走"作者能看自己博客"分支
         BlogPermissionLevel lvl = BlogPermissionResolver.resolve();
         UserInfo user = currentUser();
-        quarry.setUserViewLevel(lvl.view());
+        quarry.setUserViewLevel(lvl.level());
         quarry.setUserId(user.getUserId());
+        // 标签命中门槛值：tagCount 在 service 层算好回填，不能在 SQL 里写 #{tagIds.size()}——
+        // MyBatis createCacheKey 反射取 tagIds.size() 会走 CollectionWrapper.get("size") 抛 UnsupportedOperationException。
+        quarry.setTagCount(quarry.getTagIds() == null ? 0 : quarry.getTagIds().size());
         PageUtil.startPage();
         List<Blog> list = blogMapper.quarryBlog(quarry);
         PageInfo<Blog> page = PageUtil.packagedPageInfo(list);
@@ -193,9 +194,10 @@ public class BlogServiceImpl implements BlogService {
         if (blog.getLevel() == null) {
             blog.setLevel(BlogLevel.L1.getCode());
         }
-        // 分级创作闸（决策#11）：能创作的内容等级上限 <= 自身 view 等级；非 L2 级成员不能建 L2 博客。
+        // 分级创作闸（决策#11）：能创作的内容等级上限 <= 自身等级；非 L2 级成员不能建 L2 博客。
         // admin 走 resolver 自然得 3（登录时全 perm_key 已塞入）；未授权者得 0 只能建 L1。
-        assertCanCreateLevel(BlogPermissionResolver.resolve().view(), blog.getLevel());
+        // 2026-08-18 权限大修单键化：resolve().view() → resolve().level()（单键 knowhub:blog:lN）。
+        assertCanCreateLevel(BlogPermissionResolver.resolve().level(), blog.getLevel());
         try {
             blogMapper.addBlog(blog);
         } catch (Exception e) {
@@ -310,8 +312,9 @@ public class BlogServiceImpl implements BlogService {
             // 标记存在待审核文章，供对账定时任务快速判断是否需要扫表收口（不计数仅标记存在性）
             redisTemplate.opsForValue().set(baseKey + CACHE_PENDING_FLAG, "1");
             // 提审通知：按系统设置 knowhub.review.notify_role_key 通知持该角色的有效用户（总开关缺省关）
-            reviewNotifyService.notifyReviewers("blog", blogId, exist.getTitle(),
-                    userInfo.getUsername(), userInfo.getUsername());
+            // 经事件 AFTER_COMMIT 由 WorkReviewNotifyListener 调 ReviewNotifyService 落通知，与审核状态变更解耦
+            applicationEventPublisher.publishEvent(new WorkSubmittedForReviewEvent("blog", blogId, exist.getTitle(),
+                    userInfo.getUsername(), userInfo.getUsername()));
         } else {
             update.setStatus(BlogStatus.PUBLISHED.getCode());
             update.setPublishTime(now);
@@ -321,8 +324,9 @@ public class BlogServiceImpl implements BlogService {
         blogMapper.editBlogInfo(update);
         // 写审核流水：作者提交(SUBMIT, AUTHOR) 或 系统直通(PUBLISH, SYSTEM)
         writeReviewLog(blogId, action, userInfo, null);
-        // 审核结果通知作者
-        notifyReviewResult(exist, action, null);
+        // 审核结果通知作者（经事件 AFTER_COMMIT 落通知：APPROVE/REJECT/PUBLISH 发，SUBMIT/REVOKE 不发）
+        applicationEventPublisher.publishEvent(new WorkReviewResultEvent("blog", blogId, exist.getAuthorId(),
+                exist.getTitle(), null, null, action, null, false, null, "system"));
         evictDetail(blogId);
         return true;
     }
@@ -402,8 +406,9 @@ public class BlogServiceImpl implements BlogService {
         blogMapper.editBlogInfo(update);
         // 写审核流水：通过(APPROVE, REVIEWER) 或 驳回(REJECT, REVIEWER)
         writeReviewLog(vo.getBlogId(), action, userInfo, advice);
-        // 审核结果通知作者（预留，待 rookie 支持个人通知后接入，签名零改动）
-        notifyReviewResult(exist, action, advice);
+        // 审核结果通知作者（经事件 AFTER_COMMIT 落通知：APPROVE 发通过、REJECT 发驳回+advice）
+        applicationEventPublisher.publishEvent(new WorkReviewResultEvent("blog", vo.getBlogId(), exist.getAuthorId(),
+                exist.getTitle(), null, null, action, null, false, advice, "system"));
         evictDetail(vo.getBlogId());
         return true;
     }
@@ -519,6 +524,9 @@ public class BlogServiceImpl implements BlogService {
         if (tagIds == null || tagIds.isEmpty()) {
             return; // 标签非必填
         }
+        if (tagIds.size() > 8) {
+            throw new ServiceException(500, "标签最多选择 8 个");
+        }
         List<Tag> enabled = tagMapper.getEnabledTagsByIds(tagIds);
         if (enabled.size() != tagIds.size()) {
             throw new ServiceException(500, "存在非法或已禁用的标签");
@@ -526,9 +534,9 @@ public class BlogServiceImpl implements BlogService {
     }
 
     /**
-     * 分级创作闸（决策#11，前后台创作共用）：能创作的内容等级上限 <= 自身 view 等级。
-     * 非 L2 级成员不能创建 L2 级博客（文章同理）。userViewLevel 由 BlogPermissionResolver.resolve().view() 给出
-     * （admin 自然 3，未授权 0）。targetLevel<=1 恒放行（L1 公开人人可建）。
+     * 分级创作闸（决策#11，前后台创作共用）：能创作的内容等级上限 <= 自身等级。
+     * 非 L2 级成员不能创建 L2 级博客（文章同理）。userViewLevel 由 BlogPermissionResolver.resolve().level() 给出
+     * （单键 knowhub:blog:lN，admin 自然 3，未授权 0）。targetLevel<=1 恒放行（L1 公开人人可建）。
      */
     private void assertCanCreateLevel(int userViewLevel, Integer targetLevel) {
         if (targetLevel == null || targetLevel <= 1) {
@@ -551,16 +559,17 @@ public class BlogServiceImpl implements BlogService {
     }
 
     /**
-     * 查看权限判定：用户对博客 B 是否有 view 权限。
-     * 公式：userLvl(view) >= B.level OR author_id == userId（作者全权，不看等级）。
-     * admin 因 perms 含全 l3 自然 userLvl=3，对所有博客可查（系统权限分支）。
+     * 查看权限判定：用户对博客 B 是否有 view 权限（2026-08-18 单键化）。
+     * 公式：resolve().level() >= B.level OR author_id == userId（作者全权，不看等级）。
+     * 单键 knowhub:blog:lN 后 resolver 只提供 level()（不再有 view/edit 操作维度），view 闸用 level 与博客 level 比较。
+     * admin 因 perms 含 l3 自然 level=3，对所有博客可查（系统权限分支）。
      * <p>
      * 仅用于 getBlogInfo 二次校验与详情 canView 回填；编辑/发布/撤回走 {@link #canEditBlog}。
      */
     private boolean canOp(Blog blog, String op) {
         BlogPermissionLevel lvl = BlogPermissionResolver.resolve();
-        // 系统权限等级够 → 直接通过
-        if (blog.getLevel() != null && lvl.levelOf(op) >= blog.getLevel()) {
+        // 系统权限等级够 → 直接通过（单键后 op 参数实质只用于 view，level() 即等级）
+        if (blog.getLevel() != null && lvl.level() >= blog.getLevel()) {
             return true;
         }
         // 作者归属：作者对自己的博客全权（无成员表，直接 author_id 比对）
@@ -608,7 +617,7 @@ public class BlogServiceImpl implements BlogService {
         UserInfo user = currentUser();
         boolean author = isAuthor(blog, user);
         vo.setIsAuthor(author);
-        vo.setCanView(author || (blog.getLevel() != null && lvl.view() >= blog.getLevel()));
+        vo.setCanView(author || (blog.getLevel() != null && lvl.level() >= blog.getLevel()));
         vo.setCanEdit(author || user.isAdmin());
     }
 
@@ -641,46 +650,10 @@ public class BlogServiceImpl implements BlogService {
     }
 
     /**
-     * 审核结果通知作者。2026-08-15 落地个人通知通道（NotifySupport）——反转旧策略"前后台展示代替通知"。
-     *
-     * 通知范围：
-     * - APPROVE/REJECT 发审核结果通知（作者通过顶栏铃铛得知作品过了没过）；
-     * - PUBLISH（审核开关关时直通发布）发"已发布"通知，告知作者作品已直接发布无需审核；
-     * - SUBMIT（作者自己提交进 PENDING_REVIEW）不发——作者是动作发起人，已知晓提交结果；
-     * - REVOKE 不发（撤回是作者主动行为，无需自通知自己）。
-     * 回避保障：reviewBlog 在调用前已对 author_id==userId 抛"不能审核自己提交的文章"，
-     *           因此通知分支不会给作者自己发审核结果通知；publish 的 PUBLISH 直通分支无回避顾虑。
-     * 失败由 NotifySupport 内部 try/catch 吞掉，不阻断已落库的审核状态变更（与 writeReviewLog 同口径）。
-     *
-     * @param blog   被审文章（用其 title/authorId 拼通知内容、定位收件人）
-     * @param action 本次动作（SUBMIT/APPROVE/REJECT/REVOKE/PUBLISH）
-     * @param advice 审核意见（驳回必填，通过可选；PUBLISH 直通为 null）
+     * 审核结果通知：已迁移至 ReviewNotifyService.notifyReviewResult，由 WorkReviewNotifyListener
+     * 在审核事务 AFTER_COMMIT 后消费 WorkReviewResultEvent 落通知。本类不再直接发通知，与审核状态机解耦。
+     * 文案（APPROVE/REJECT/PUBLISH）与 routePath（/blog/{id}）集中在 ReviewNotifyService，消除 4x 重复。
      */
-    private void notifyReviewResult(Blog blog, ReviewAction action, String advice) {
-        if (blog == null || blog.getAuthorId() == null) {
-            return;
-        }
-        String title;
-        String content;
-        switch (action) {
-            case APPROVE:
-                title = "你的博客审核通过";
-                content = "《" + blog.getTitle() + "》审核通过，已发布。" + (advice != null && !advice.isEmpty() ? "审核意见：" + advice : "");
-                break;
-            case REJECT:
-                title = "你的博客被驳回";
-                content = "《" + blog.getTitle() + "》被驳回，请修改后重新发布。" + (advice != null && !advice.isEmpty() ? "驳回原因：" + advice : "");
-                break;
-            case PUBLISH:
-                title = "你的博客已发布";
-                content = "《" + blog.getTitle() + "》已直接发布（审核未开启）。";
-                break;
-            default:
-                // SUBMIT / REVOKE 不通知：作者主动行为，已知晓提交/撤回，无需自提醒。
-                return;
-        }
-        notifySupport.notifyUser(blog.getAuthorId(), title, content, "/blog/" + blog.getBlogId(), "system");
-    }
 
     private void fillTagNamesForList(List<BlogVo> list) {
         if (list == null || list.isEmpty()) {

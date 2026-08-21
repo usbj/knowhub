@@ -14,6 +14,7 @@
 import { computed, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import KhAvatar from '@/components/common/KhAvatar.vue'
+import KhIcon from '@/components/common/KhIcon.vue'
 import KhMarkdownEditor from '@/components/common/KhMarkdownEditor.vue'
 import { useImageInsert } from '@/composables/useImageInsert'
 import { useUserStore } from '@/stores/user'
@@ -25,6 +26,11 @@ const props = defineProps<{
   placeholder?: string
   /** 是否禁用发表（如评论区已关——父级通常直接不渲染本组件，此 prop 仅作计划外场景） */
   disabled?: boolean
+  /**
+   * 越级锁态原因（越级看不了完整内容也无法发评论）。非空时输入条整体置灰禁用并显锁态提示，
+   * 替代占位文案与 hint。与 disabled 二选一：disabled 用于评论区关等通用禁用，lockReason 用于越级锁且带原因。
+   */
+  lockReason?: string | null
 }>()
 
 const emit = defineEmits<{
@@ -34,6 +40,10 @@ const emit = defineEmits<{
 const userStore = useUserStore()
 const isLoggedIn = computed(() => userStore.isAuthenticated)
 const content = ref('')
+
+/** 越级锁态：lockReason 非空时整体禁用发表（看不了完整内容也无法发评论），与 disabled 合并判定 */
+const locked = computed(() => Boolean(props.lockReason))
+const inputDisabled = computed(() => props.disabled || locked.value)
 
 const MAX = 2000
 /** 配图张数上限（与 useImageInsert 默认一致，这里同步用于轻量态字数提示语义说明，富文态不拦） */
@@ -56,15 +66,15 @@ const { uploading, pickFiles } = useImageInsert({
   maxSizeMB: 2,
 })
 
-/** 图按钮/富文切换按钮的禁用集合：未登录或禁用或上传中都不让动（发送同理在底部拼） */
-const imageDisabled = computed(() => props.disabled || !isLoggedIn.value || uploading.value)
+/** 图按钮/富文切换按钮的禁用集合：未登录或禁用或越级锁或上传中都不让动（发送同理在底部拼） */
+const imageDisabled = computed(() => inputDisabled.value || !isLoggedIn.value || uploading.value)
 
 const onPickImage = () => {
   if (!isLoggedIn.value) {
     ElMessage.warning('请先登录后再传图')
     return
   }
-  if (!props.disabled) pickFiles()
+  if (!inputDisabled.value) pickFiles()
 }
 
 const sending = ref(false)
@@ -78,6 +88,11 @@ const onSubmit = async () => {
     ElMessage.warning('请先登录后再评论')
     return
   }
+  if (inputDisabled.value) {
+    // 越级锁态/评论区关：兜底拦，正常情况下按钮已 disabled 不会进这
+    if (locked.value) ElMessage.warning(props.lockReason ?? '等级不足，无法评论该作品')
+    return
+  }
   sending.value = true
   // 父级实际调 api；此处先 emit，完成后清空由父反馈再清（乐观立即清让 input 更跟手）
   emit('submit', { content: c })
@@ -87,20 +102,21 @@ const onSubmit = async () => {
 </script>
 
 <template>
-  <div class="kh-comment-input">
-    <KhAvatar :item="{ label: isLoggedIn ? userStore.avatarText : '?' }" :size="36" />
+  <div class="kh-comment-input" :class="{ 'kh-comment-input--locked': locked }">
+    <KhAvatar :item="{ label: isLoggedIn ? userStore.avatarText : '?', src: isLoggedIn ? userStore.avatarUrl ?? undefined : undefined }" :size="36" />
     <div class="kh-comment-input__body">
-      <!-- 轻量态：原 textarea + 图按钮（composable 在光标处插 markdown） -->
+      <!-- 轻量态：原 textarea + 图按钮（composable 在光标处插 markdown）。越级锁态时占位显锁态原因 -->
       <textarea
         v-if="!richMode"
         ref="textareaRef"
         v-model="content"
         class="kh-comment-input__textarea"
-        :disabled="disabled || !isLoggedIn"
-        :placeholder="isLoggedIn ? (placeholder ?? '写下你的评论…') : '登录后评论'"
+        :disabled="inputDisabled || !isLoggedIn"
+        :placeholder="locked ? (props.lockReason ?? '等级不足，无法评论该作品') : (isLoggedIn ? (placeholder ?? '写下你的评论…') : '登录后评论')"
         rows="3"
       />
-      <!-- 富文态：KhMarkdownEditor，工具栏图片按钮/拖拽/粘贴三入口均走 presignedUploadFlow COMMENT_IMAGE -->
+      <!-- 富文态：KhMarkdownEditor，工具栏图片按钮/拖拽/粘贴三入口均走 presignedUploadFlow COMMENT_IMAGE。
+           越级锁态时发送按钮已 disabled，富文输入框文本无法提交（且锁态默认轻量、切换被禁，进不了富文） -->
       <div v-else class="kh-comment-input__rich">
         <KhMarkdownEditor
           v-model="content"
@@ -113,7 +129,10 @@ const onSubmit = async () => {
         />
       </div>
       <div class="kh-comment-input__bar">
-        <span v-if="hint" class="kh-comment-input__hint">{{ hint }}</span>
+        <span v-if="locked" class="kh-comment-input__hint kh-comment-input__hint--locked">
+          <KhIcon name="lock" :size="12" /> {{ props.lockReason ?? '等级不足，无法评论该作品' }}
+        </span>
+        <span v-else-if="hint" class="kh-comment-input__hint">{{ hint }}</span>
         <span v-else class="kh-comment-input__hint">{{ isLoggedIn ? '' : '登录后参与讨论' }}</span>
         <span class="kh-comment-input__count">{{ content.length }}/{{ MAX }}</span>
         <!-- 轻量态图按钮：走 useImageInsert composable（2MB+9 张+白名单校验+光标插入 markdown） -->
@@ -125,17 +144,17 @@ const onSubmit = async () => {
           :title="`配图（最多 ${MAX_IMAGES} 张，单图 ≤2MB）`"
           @click="onPickImage"
         >{{ uploading ? '上传中…' : '📎 图片' }}</button>
-        <!-- 富文切换按钮：切到/切出 KhMarkdownEditor 双向；上传中禁用避免切丢光标上下文 -->
+        <!-- 富文切换按钮：切到/切出 KhMarkdownEditor 双向；上传中/越级锁态禁用避免切丢光标上下文 -->
         <button
           class="kh-comment-input__mode"
           type="button"
-          :disabled="uploading"
+          :disabled="uploading || locked"
           :title="richMode ? '切回轻量输入' : '切到富文编辑器（工具栏配图+拖拽+粘贴）'"
           @click="richMode = !richMode"
         >{{ richMode ? '轻量' : '富文' }}</button>
         <button
           class="kh-comment-input__send"
-          :disabled="disabled || !isLoggedIn || !content.trim() || sending"
+          :disabled="inputDisabled || !isLoggedIn || !content.trim() || sending"
           @click="onSubmit"
         >
           发送
@@ -193,6 +212,17 @@ const onSubmit = async () => {
   font-size: 12px;
   color: var(--kh-text-secondary);
   min-width: 0;
+}
+/* 越级锁态提示：锁图标 + 原因，弱化次要色提示等级不足无法评论（与评论区关的通用 disabled 区分） */
+.kh-comment-input__hint--locked {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--kh-text-muted);
+}
+.kh-comment-input--locked .kh-comment-input__textarea {
+  background: var(--kh-bg-soft);
+  cursor: not-allowed;
 }
 .kh-comment-input__count {
   font-size: 12px;

@@ -2,8 +2,8 @@
   资源上传 /resource/upload（editorial 创作页，与博客/文章 create.vue 顶栏范式对齐）
   ------------------------------------------------------------------
   支持两种资源类型：FILE 文件（presignedUploadFlow RESOURCE_FILE/PRIVATE 直传后端，两模式自适应）/
-  LINK 链接（仅传 linkUrl；图标 URL 字段暂移除，"是否做封面"待讨论再定）。分类用 resource_category_id
-  分类树（el-cascader 树选择），-1=其他前端硬编码。底部双按钮：存草稿 / 发布。
+  LINK 链接（仅传 linkUrl）。封面图复用后端 link_icon 列作封面载体（ResourceCoverUploader 上传 RESOURCE_COVER/PUBLIC，
+  FILE/LINK 两类通用，可空）。分类用 resource_category_id 分类树（el-cascader 树选择），-1=其他前端硬编码。底部双按钮：存草稿 / 发布。
   状态机：新建存草稿后跳 /profile?tab=resource&t=<ts> 触发重拉；编辑 ?id=xxx 走 getMyResourceForEditApi 回填。
   已发布态先撤回才能编辑/换源（后端 editResourceInfo 已挡 PUBLISHED/PENDING_REVIEW）——前端据此隐藏换文件入口。
   顶栏：满宽 header + 内部 max-width 860px 居中限宽 + 半透明毛玻璃；标题输入无边框大字（与博客/文章一致），
@@ -16,12 +16,14 @@ import { ElMessage, ElMessageBox, ElSwitch } from 'element-plus'
 import { ArrowLeft, UploadFilled } from '@element-plus/icons-vue'
 import KhIcon from '@/components/common/KhIcon.vue'
 import KhMarkdownEditor from '@/components/common/KhMarkdownEditor.vue'
+import ResourceCoverUploader from '@/components/resource/ResourceCoverUploader.vue'
 import {
   addMyResourceApi,
   editMyResourceApi,
   publishMyResourceApi,
   revokeMyResourceApi,
   getMyResourceForEditApi,
+  getMyResourceLevelApi,
 } from '@/api/knowhub/resource-authoring'
 import { getResourceCategoryTreeApi } from '@/api/knowhub/resource-portal'
 import type { ResourceAuthoringPayload } from '@/types/api/knowhub/resource-authoring'
@@ -42,11 +44,15 @@ const form = ref<{
   title: string
   summary: string
   description: string
+  /** 资源封面图 URL（/file/resolve/{id}，复用后端 link_icon 列作封面，FILE/LINK 通用，可空） */
+  linkIcon: string
   fileObjectId: number | null
   originalName: string
   contentLength: number | null
   linkUrl: string
   resourceCategoryId: number | null
+  /** 查看等级 1公开/2内部/3机密，创作闸按 myLevel 禁用不可选；缺省 L1 */
+  level: number
   /** 评论区开关 1开/0关，作者在上传页勾选 */
   commentEnabled: number
   /** 评论精选开关 0=新评论直接可见 / 1=新评论仅发表人+作者可见，作者同意展示后他人可见 */
@@ -56,11 +62,13 @@ const form = ref<{
   title: '',
   summary: '',
   description: '',
+  linkIcon: '',
   fileObjectId: null,
   originalName: '',
   contentLength: null,
   linkUrl: '',
   resourceCategoryId: null,
+  level: 1,
   commentEnabled: 1,
   commentCurated: 0,
 })
@@ -70,6 +78,16 @@ const isEdit = computed(() => route.query.id !== undefined)
 const editId = computed(() => (route.query.id ? Number(route.query.id) : undefined))
 const isPublished = computed(() => resourceStatus.value === 'PUBLISHED')
 const canEditNow = computed(() => ['DRAFT', 'REJECTED', 'REVOKED', ''].includes(resourceStatus.value))
+
+/** 当前用户 view 等级（0/1/2/3），等级选项据此禁用（照博客/文章创作页范式） */
+const myLevel = ref<number>(0)
+
+/** 等级选项：禁用态按用户 view 等级算——L1 用户只能公开，L2 可选 L1/L2，L3 全开 */
+const levelOptions = computed(() => [
+  { value: 1, label: '公开', sub: '所有人可见', disabled: false },
+  { value: 2, label: '内部', sub: '登录成员可见', disabled: myLevel.value < 2 },
+  { value: 3, label: '机密', sub: '高权限可见', disabled: myLevel.value < 3 },
+])
 
 /** 分类树（el-cascader 用），-1=其他前端硬编码叶子节点追加到根列表 */
 const categoryTree = ref<ResourceCategoryTreeNode[]>([])
@@ -201,7 +219,10 @@ const buildPayload = (): ResourceAuthoringPayload => {
     title: form.value.title.trim(),
     summary: form.value.summary.trim() || undefined,
     description: form.value.description.trim() || undefined,
+    // 封面图 URL：FILE/LINK 两类通用，复用后端 link_icon 列作封面载体（可空）
+    linkIcon: form.value.linkIcon.trim() || undefined,
     resourceCategoryId: form.value.resourceCategoryId ?? undefined,
+    level: form.value.level,
     commentEnabled: form.value.commentEnabled,
     commentCurated: form.value.commentCurated,
   }
@@ -294,11 +315,13 @@ const fetchForEdit = async (id: number) => {
     form.value.title = b.title ?? ''
     form.value.summary = b.summary ?? ''
     form.value.description = b.description ?? ''
+    form.value.linkIcon = b.linkIcon ?? ''
     form.value.fileObjectId = b.fileObjectId ?? null
     form.value.originalName = b.originalName ?? ''
     form.value.contentLength = b.contentLength ?? null
     form.value.linkUrl = b.linkUrl ?? ''
     form.value.resourceCategoryId = b.resourceCategoryId ?? null
+    form.value.level = b.level ?? 1
     form.value.commentEnabled = b.commentEnabled ?? 1
     form.value.commentCurated = b.commentCurated ?? 0
     resourceStatus.value = b.status ?? ''
@@ -308,7 +331,15 @@ const fetchForEdit = async (id: number) => {
 }
 
 onMounted(async () => {
+  // 拉分类树/允许类型提示 + 当前用户等级（创作闸禁用不可选等级），并行后做编辑回填
   await fetchInit()
+  try {
+    const levelRes = await getMyResourceLevelApi()
+    myLevel.value = levelRes.data ?? 0
+  } catch {
+    // 未登录或拉取失败：myLevel 留 0，等级选项仅 L1 可选（与后端 assertCanCreateLevel 兜底一致）
+    myLevel.value = 0
+  }
   if (isEdit.value && editId.value) {
     void fetchForEdit(editId.value)
   }
@@ -401,7 +432,7 @@ onMounted(async () => {
         </div>
       </section>
 
-      <!-- 链接信息（LINK 类型）：仅链接 URL，图标 URL 暂移除（讨论是否做封面再说） -->
+      <!-- 链接信息（LINK 类型）：仅链接 URL，封面图在「元信息」区（FILE/LINK 通用） -->
       <section v-else class="ru__section">
         <div class="ru__section-title">链接信息</div>
         <div class="ru__field">
@@ -410,9 +441,13 @@ onMounted(async () => {
         </div>
       </section>
 
-      <!-- 元信息：分类 + 摘要 -->
+      <!-- 元信息：封面 + 分类 + 等级 + 摘要 -->
       <section class="ru__section">
         <div class="ru__section-title">元信息</div>
+        <div class="ru__field">
+          <label class="ru__label">封面图（可选）</label>
+          <ResourceCoverUploader v-model="form.linkIcon" />
+        </div>
         <div class="ru__field">
           <label class="ru__label">分类</label>
           <el-cascader
@@ -424,6 +459,27 @@ onMounted(async () => {
             :disabled="!canEditNow"
           />
         </div>
+
+        <!-- 等级：按钮组（L1/L2/L3，按 myLevel 禁用不可选；后端 assertCanCreateLevel 兜底） -->
+        <div class="ru__field">
+          <label class="ru__label">查看等级</label>
+          <div class="ru__level-group">
+            <button
+              v-for="opt in levelOptions"
+              :key="opt.value"
+              class="ru__level-btn"
+              :class="{ 'is-active': form.level === opt.value, 'is-disabled': opt.disabled }"
+              type="button"
+              :disabled="opt.disabled || !canEditNow"
+              :title="opt.disabled ? '当前等级不可创建此级别' : opt.sub"
+              @click="form.level = opt.value"
+            >
+              <span class="ru__level-name">L{{ opt.value }} {{ opt.label }}</span>
+              <span class="ru__level-sub">{{ opt.sub }}</span>
+            </button>
+          </div>
+        </div>
+
         <div class="ru__field">
           <label class="ru__label">摘要</label>
           <textarea v-model="form.summary" class="ru__textarea" rows="2" placeholder="资源一句话简介（列表卡片展示用）" :disabled="!canEditNow" />
@@ -812,6 +868,39 @@ onMounted(async () => {
 .ru__switch-text { font-size: var(--kh-font-size-sm); color: var(--kh-text); font-weight: 500; }
 .ru__switch-hint { font-size: 12px; color: var(--kh-text-tertiary); }
 
+/* —— 等级按钮组（L1/L2/L3，按 myLevel 禁用不可选） —— */
+.ru__level-group { display: flex; gap: var(--kh-space-2); flex-wrap: wrap; }
+.ru__level-btn {
+  flex: 1;
+  min-width: 120px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: var(--kh-space-2) var(--kh-space-3);
+  border: 1px solid var(--kh-border);
+  border-radius: var(--kh-radius-sm);
+  background: var(--kh-surface);
+  cursor: pointer;
+  color: var(--kh-text-secondary);
+  transition: all var(--kh-transition-fast);
+}
+.ru__level-btn:hover:not(.is-disabled):not(.is-active) {
+  border-color: var(--kh-primary-border);
+  color: var(--kh-primary);
+}
+.ru__level-btn.is-active {
+  border-color: var(--kh-primary);
+  background: var(--kh-primary-soft);
+  color: var(--kh-primary-strong);
+}
+.ru__level-btn.is-disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.ru__level-name { font-size: var(--kh-font-size-sm); font-weight: 600; }
+.ru__level-sub { font-size: 11px; color: var(--kh-text-tertiary); }
+
 @media (max-width: 768px) {
   .ru__bar-left {
     flex-wrap: wrap;
@@ -822,6 +911,12 @@ onMounted(async () => {
   }
   .ru__type-group {
     flex-direction: column;
+  }
+  .ru__level-group {
+    flex-direction: column;
+  }
+  .ru__level-btn {
+    min-width: 0;
   }
 }
 </style>

@@ -18,6 +18,8 @@ import type {
   UploadApplyPayload,
   UploadTokenRecord,
   BindPayload,
+  MigrationApplyPayload,
+  MigrationProgressRecord,
 } from '@/types/api/knowhub/file'
 
 /**
@@ -137,3 +139,49 @@ export const buildFileResolveUrl = (objectId: number): string => `/file/resolve/
  */
 export const getPublicAccessUrlApi = (objectId: number) =>
   get<ApiResult<string>>(`/file/url/${objectId}`)
+
+// ---- 扩展点1：OSS 数据打包下载 ----
+
+/**
+ * 方法效果：
+ * 打包下载预估总字节数。后端累加所有 deleted=0 + CONFIRMED 的 file_object.content_length。
+ * 供前端在发起打包下载前做大小预估、超 50G 弹警告确认。
+ * 返回值：
+ * - 后端 Result 包裹的总字节数。
+ */
+export const packSizeApi = () => get<ApiResult<number>>('/file/pack-size')
+
+/**
+ * 方法效果：
+ * 打包下载到服务器本地磁盘（SERVER 模式）。后端写 zip 到 storage.local-base-path 下，返回落盘绝对路径。
+ * 中转模式下打包强制走本端点（用户浏览器不可达 OSS，打包到客户端意义不大，落服务器本地后再人工取）。
+ * 返回值：
+ * - 后端 Result 包裹的落盘绝对路径字符串。
+ */
+export const packDownloadServerApi = () =>
+  post<ApiResult<string>>('/file/pack-download-server')
+
+// ---- 扩展点2：OSS 数据迁移 ----
+
+/**
+ * 方法效果：
+ * 启动 OSS 数据迁移。前端传源/目标 OSS 连接参数（凭证内存用完即弃、不落库），后端建任务行 + @Async 线程拷贝。
+ * 目录结构一致：源 objectKey 原样作目标 objectKey。
+ * 参数：
+ * - `data`：源/目标 OSS 连接参数（endpoint/region/accessKey/secretKey/bucket/pathStyleAccess）。
+ * 返回值：
+ * - 后端 Result 包裹的迁移任务 ID。
+ */
+export const startMigrationApi = (data: MigrationApplyPayload) =>
+  post<ApiResult<number>, MigrationApplyPayload>('/file/migration/start', data)
+
+/**
+ * 方法效果：
+ * 查迁移进度。前端轮询（setInterval 2-3 秒）展示进度条 done/total + 状态，完成/失败停轮询。
+ * 参数：
+ * - `taskId`：startMigrationApi 返回的任务 ID。
+ * 返回值：
+ * - 后端 Result 包裹的迁移进度记录。
+ */
+export const getMigrationProgressApi = (taskId: number) =>
+  get<ApiResult<MigrationProgressRecord>>(`/file/migration/progress/${taskId}`)

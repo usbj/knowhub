@@ -86,6 +86,40 @@ public class SysLoginServiceImpl implements SysLoginService {
 
     @Override
     public String loginVerification(LoginBody loginBody) {
+        // 后台登录权限闸：防无后台访问权限的用户（如前台注册的 visitor 默认角色）登入后台。
+        // admin 短路放行（UserInfo.isAdmin 由 UserDetailServiceImpl 按 roleKey=="admin" 标记，
+        // 且 admin 走 selectAllPermKey 自然含全部按钮权限，无需依赖 system:access 绑定）；
+        // 非 admin 需在 permissions 中持有 system:access 权限码才允许登后台，否则拒绝（不发 token）。
+        // 权限点菜单由 sql/knowhub-admin-access.sql 维护，仅绑给需要登后台的角色，visitor 不绑。
+        // 注意：本闸仅作用于后台登录 /login；前台登录走 /portal/login（portalLoginVerification）不经过此闸。
+        AuthResult auth = authenticateAndIssueToken(loginBody);
+        if (!auth.userInfo().isAdmin()) {
+            boolean hasAccess = auth.userInfo().getPermissions() != null
+                    && auth.userInfo().getPermissions().stream()
+                    .anyMatch(p -> "system:access".equals(p.getPermKey()));
+            if (!hasAccess) {
+                throw new ServiceException(403, "无后台访问权限");
+            }
+        }
+        return auth.token();
+    }
+
+    /**
+     * 前台门户登录：与 {@link #loginVerification} 同样的账号密码认证 + JWT 签发，
+     * **不做后台访问权限闸**——前台 visitor 默认角色不绑 system:access 仍应能登录前台。
+     * 后台访问控制由后台接口 @PreAuthorize 兜底，前台登录只需拿到 token。
+     */
+    @Override
+    public String portalLoginVerification(LoginBody loginBody) {
+        return authenticateAndIssueToken(loginBody).token();
+    }
+
+    /**
+     * 登录认证 + 签发 JWT 的公共逻辑（后台 /login 与前台 /portal/login 共用）：
+     * 账号密码 authenticate → 取 UserInfo → 记录登录 IP → createJwt 写 Redis 登录态 → 返回 UserInfo + token。
+     * 不含任何权限闸——闸由调用方（loginVerification 加后台闸 / portalLoginVerification 不加）决定。
+     */
+    private AuthResult authenticateAndIssueToken(LoginBody loginBody) {
         //根据用户输入的账号密码来获取验证以及身份信息
         UsernamePasswordAuthenticationToken authenticationToken =
                 new UsernamePasswordAuthenticationToken
@@ -103,7 +137,11 @@ public class SysLoginServiceImpl implements SysLoginService {
         }
         //生成JWT（createJwt 内部会把 UserInfo 写入 Redis 登录态缓存）
         String token = tokenService.createJwt(userInfo);
-        return token;
+        return new AuthResult(userInfo, token);
+    }
+
+    /** 认证结果：UserInfo（含权限，供调用方做闸判定）+ 签发的 JWT token。 */
+    private record AuthResult(UserInfo userInfo, String token) {
     }
 
     /**

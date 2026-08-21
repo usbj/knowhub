@@ -16,6 +16,7 @@
         <result property="summary" column="summary"/>
         <result property="authorId" column="author_id"/>
         <result property="authorNickname" column="author_nickname"/>
+        <result property="authorAvatar" column="author_avatar"/>
         <result property="publishTime" column="publish_time"/>
         <result property="viewCount" column="view_count"/>
         <result property="likeCount" column="like_count"/>
@@ -32,6 +33,7 @@
         <result property="summary" column="summary"/>
         <result property="authorId" column="author_id"/>
         <result property="authorNickname" column="author_nickname"/>
+        <result property="authorAvatar" column="author_avatar"/>
         <result property="publishTime" column="publish_time"/>
         <result property="viewCount" column="view_count"/>
         <result property="likeCount" column="like_count"/>
@@ -42,11 +44,14 @@
     </resultMap>
 
     <!--
-      公共 where 片段：前台铁律 = deleted=0 AND status='PUBLISHED' AND level<=userViewLevel。
-      L2/L3 永不下发前台（分级开关关时 userViewLevel 恒 1）。前台不看作者归属（访客不靠作者身份看草稿/私有项目）。
+      公共 where 片段：前台可见口径 = deleted=0 AND status='PUBLISHED' AND level<=userViewLevel+1。
+      2026-08-18 权限大修搜索范围 +1：越级作品（level=userViewLevel+1）进列表带 locked=true 标记、summary 可见，
+      点进详情只锁下载（description 仍下发）。L3 用户 level=3→<=4 搜全部；L2→<=3 搜全部（L3 带 locked）；
+      L1→<=2 搜 L1+L2（L2 带 locked）。分级开关关时 userViewLevel 恒 1 → level<=2（L1+L2，L2 带 locked）。
+      前台不看作者归属（访客不靠作者身份看草稿/私有项目）。
     -->
     <sql id="portalProjectWhere">
-        p.deleted = 0 and p.status = 'PUBLISHED' and p.level &lt;= #{userViewLevel}
+        p.deleted = 0 and p.status = 'PUBLISHED' and p.level &lt;= #{userViewLevel} + 1
     </sql>
 
     <!--
@@ -60,7 +65,7 @@
     <select id="searchProjects" parameterType="com.knowhub.pojo.project.quarry.ProjectPortalSearchQuarry"
             resultMap="ProjectPortalVoMap">
         select p.project_id, p.title, p.type, p.level, p.summary,
-               p.author_id, u.nick_name as author_nickname, p.publish_time,
+               p.author_id, u.nick_name as author_nickname, u.avatar as author_avatar, p.publish_time,
                p.view_count, p.like_count, p.collect_count, p.download_count
         from project p
                 left join sys_user u on p.author_id = u.user_id
@@ -72,6 +77,7 @@
         </if>
         <if test="type != null and type != ''">and p.type = #{type}</if>
         <if test="level != null">and p.level = #{level}</if>
+        <if test="authorId != null">and p.author_id = #{authorId}</if>
         <choose>
             <when test="sort == 'LATEST'">
                 order by p.publish_time desc, p.project_id desc
@@ -90,7 +96,7 @@
     -->
     <select id="recommendHot" resultMap="ProjectPortalVoMap">
         select p.project_id, p.title, p.type, p.level, p.summary,
-               p.author_id, u.nick_name as author_nickname, p.publish_time,
+               p.author_id, u.nick_name as author_nickname, u.avatar as author_avatar, p.publish_time,
                p.view_count, p.like_count, p.collect_count, p.download_count
         from project p
                 left join sys_user u on p.author_id = u.user_id
@@ -111,7 +117,7 @@
     -->
     <select id="listByIds" resultMap="ProjectPortalVoMap">
         select p.project_id, p.title, p.type, p.level, p.summary,
-               p.author_id, u.nick_name as author_nickname, p.publish_time,
+               p.author_id, u.nick_name as author_nickname, u.avatar as author_avatar, p.publish_time,
                p.view_count, p.like_count, p.collect_count, p.download_count
         from project p
                 left join sys_user u on p.author_id = u.user_id
@@ -127,7 +133,7 @@
     -->
     <select id="getPortalProjectMeta" parameterType="long" resultMap="ProjectPortalDetailVoMap">
         select p.project_id, p.title, p.type, p.level, p.summary,
-               p.author_id, u.nick_name as author_nickname, p.publish_time,
+               p.author_id, u.nick_name as author_nickname, u.avatar as author_avatar, p.publish_time,
                p.view_count, p.like_count, p.collect_count, p.download_count,
                p.comment_enabled, p.comment_curated
         from project p
@@ -146,7 +152,7 @@
     -->
     <select id="relatedProjects" resultMap="ProjectPortalVoMap">
         select p.project_id, p.title, p.type, p.level, p.summary,
-               p.author_id, u.nick_name as author_nickname, p.publish_time,
+               p.author_id, u.nick_name as author_nickname, u.avatar as author_avatar, p.publish_time,
                p.view_count, p.like_count, p.collect_count, p.download_count
         from project p
                 left join sys_user u on p.author_id = u.user_id

@@ -73,6 +73,31 @@ const redirectToLogin = () => {
 }
 
 /**
+ * 默认查询参序列化器：数组转逗号分隔单值，单值原样透传，跳过 null/undefined/空串。
+ *
+ * 根因：axios 默认把数组参序列化成 `key[]=1&key[]=2`（带方括号后缀），而 Spring MVC 对
+ * `List<Long>` POJO 字段的默认绑定只认「逗号分隔单值」(`key=1,2,3`) 或「重复同名参」
+ * (`key=1&key=2`)，不认 `key[]=` 这种带 `[]` 后缀的 key，会拿到空列表/null。
+ * 不挂此序列化器时，博客/文章门户搜索的 tagIds 数组过滤会整体失效（后端 <if> 跳过返回全量）。
+ * 在实例级统一收口成逗号分隔单值后，所有走 GET 带数组入参的接口自动对齐 Spring 默认绑定，
+ * 无需各调用点逐个挂 paramsSerializer（资源门户 searchResourcesApi 另有请求级 serializer，
+ * 优先级更高、行为一致，保留不动）。
+ */
+const defaultParamsSerializer = (params: Record<string, unknown>): string => {
+  const sp = new URLSearchParams()
+  for (const [k, v] of Object.entries(params)) {
+    if (v === undefined || v === null || v === '') continue
+    if (Array.isArray(v)) {
+      if (v.length === 0) continue
+      sp.append(k, v.join(','))
+    } else {
+      sp.append(k, String(v))
+    }
+  }
+  return sp.toString()
+}
+
+/**
  * 当前开发环境默认通过 /api 代理转发到后端服务，
  * 生产环境可通过 VITE_API_BASE_URL 指定真实接口地址。
  */
@@ -82,6 +107,7 @@ const http: AxiosInstance = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
+  paramsSerializer: defaultParamsSerializer,
 })
 
 /**

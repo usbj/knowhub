@@ -43,6 +43,22 @@ public class SysLoginController {
     }
 
     /**
+     * 前台门户登录：与 {@code /login} 同样的账号密码认证 + JWT 签发，但**不做后台访问权限闸**
+     * （system:access）——前台注册的 visitor 默认角色不绑 system:access，仍应能登录前台门户。
+     * 后台访问控制由后台接口 {@code @PreAuthorize} 兜底，前台登录只需拿到 token。
+     * <p>
+     * 路径走 {@code /portal/login}，被 {@code SecurityConfig} 的 {@code /portal/** permitAll} 放行（游客可调）。
+     * knowhub-ui 前台登录页调本接口；rookie-ui 后台登录页仍调 {@code /login}（带 system:access 闸）。
+     */
+    @PostMapping("/portal/login")
+    @Operation(summary = "前台门户登录")
+    @Log(title = "登录管理", businessType = BusinessType.OTHER)
+    public Result<String> portalLogin(@RequestBody LoginBody loginBody){
+        String token = sysLoginService.portalLoginVerification(loginBody);
+        return Result.success(token);
+    }
+
+    /**
      * 退出登录（需要登录）：从在线集合移除并删除登录态缓存，旧 token 立即失效。
      * 前端退出时调用后清空本地登录态；幂等，重复调用直接返回成功。
      */

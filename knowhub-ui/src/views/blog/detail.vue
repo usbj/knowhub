@@ -23,6 +23,7 @@ import KhIcon from '@/components/common/KhIcon.vue'
 import KhLoading from '@/components/common/KhLoading.vue'
 import KhCommentList from '@/components/common/KhCommentList.vue'
 import { useMarkdownImageZoom } from '@/composables/useMarkdownImageZoom'
+import { useMarkdownCodeBlock } from '@/composables/useMarkdownCodeBlock'
 import { getBlogDetailApi, relatedBlogsApi } from '@/api/knowhub/blog'
 import { likeBlogApi, collectBlogApi } from '@/api/knowhub/authoring'
 import type { BlogPortalDetailRecord, BlogPortalRecord } from '@/types/api/knowhub/blog'
@@ -69,7 +70,7 @@ const fetchDetail = async () => {
     }
     if (b.publishTime) b.publishTime = formatDateTime(b.publishTime) as string
     blog.value = b
-    // 锁态提示：越级访问只给元数据，正文不下发
+    // 锁态提示：越级访问只给元数据 + 预览正文，完整正文不下发（预览式阅读锁：看几行后面锁）
     if (b.locked) {
       ElMessage.warning(b.lockReason ?? '当前内容需更高权限查看完整正文')
     }
@@ -107,6 +108,8 @@ const contentRef = ref<HTMLElement | null>(null)
 /** 正文配图点击放大（与评论区同款 el-image-viewer 全屏画廊）：复用上面的 contentRef——
  *  onContentClick 只 querySelectorAll('img')，与 handleTocSelect/computeActive 查 h2/h3/h4 正交不冲突。 */
 const { viewerVisible, viewerUrls, viewerIndex, onContentClick, closeViewer } = useMarkdownImageZoom(contentRef)
+// 代码块增强（语言标签 + 复制按钮）：与配图放大/TOC scroll-spy 共用同一 contentRef，正交不冲突
+useMarkdownCodeBlock(contentRef)
 
 /**
  * 点击目录项 i：在正文容器内取第 i 个 h2/h3/h4（v-md-preview github 主题不给 heading 加 id，
@@ -237,9 +240,9 @@ watch(blogId, () => {
           </div>
           <div class="bd__meta">
             <div class="bd__author">
-              <KhAvatar :item="{ label: blog.authorNickname ?? '' }" :size="36" />
+              <KhAvatar :item="{ label: blog.authorNickname ?? '', src: blog.authorAvatar ?? undefined }" :size="36" />
               <div>
-                <div class="bd__author-name">{{ blog.authorNickname }}</div>
+                <div class="bd__author-name" @click="blog.authorId && router.push(`/user/${blog.authorId}`)">{{ blog.authorNickname }}</div>
                 <div class="bd__author-time">发布于 {{ blog.publishTime }}</div>
               </div>
             </div>
@@ -254,9 +257,9 @@ watch(blogId, () => {
           </div>
         </header>
 
-        <!-- 正文：越级锁态时 content 为 null，显示锁态提示而非正文 -->
+        <!-- 正文：越级锁态整片锁定卡片（不展示预览正文，直接锁整片区域提示需更高权限） -->
         <div v-if="blog.locked" class="bd__locked">
-          <KhIcon name="lock" :size="40" :stroke="1.4" />
+          <span class="bd__lock-iconwrap"><KhIcon name="lock" :size="34" :stroke="1.5" /></span>
           <p class="bd__locked-title">{{ blog.lockReason ?? '需更高权限查看完整正文' }}</p>
           <p class="bd__locked-hint">登录并拥有对应等级权限后可查看完整内容</p>
         </div>
@@ -277,7 +280,8 @@ watch(blogId, () => {
           </button>
         </div>
 
-        <!-- 评论区：KhCommentList 内置发表条/列表/回复/作者 inline 精选，未登录只读已「同意展示」评论 -->
+        <!-- 评论区：KhCommentList 内置发表条/列表/回复/作者 inline 精选，未登录只读已「同意展示」评论。
+             越级锁态时传 locked 禁止发评论（评论列表照常可看，只锁发不锁看）。 -->
         <KhCard padding="lg" class="bd__comments">
           <KhCommentList
             biz-type="BLOG"
@@ -285,6 +289,7 @@ watch(blogId, () => {
             :comment-enabled="blog.commentEnabled"
             :comment-curated="blog.commentCurated"
             :is-author="isMyBlog"
+            :locked="blog.locked"
           />
         </KhCard>
       </article>
@@ -410,6 +415,12 @@ watch(blogId, () => {
   font-size: var(--kh-font-size-sm);
   font-weight: 600;
   color: var(--kh-text);
+  cursor: pointer;
+  transition: color var(--kh-transition-fast);
+}
+.bd__author-name:hover {
+  color: var(--kh-primary);
+  text-decoration: underline;
 }
 .bd__author-time {
   font-size: 12px;
@@ -456,21 +467,13 @@ watch(blogId, () => {
   line-height: 1.9;
   color: var(--kh-text);
 }
-.bd__content :deep(.github-markdown-body h1),
-.bd__content :deep(.github-markdown-body h2) {
-  border-bottom: none; /* 去掉 github 主题给一二级标题自带的下横线 */
-}
-/* 目录 scrollIntoView 落点留出头导航高度，否则 sticky 顶栏会遮住滚到顶的标题 */
-.bd__content :deep(.github-markdown-body h2),
-.bd__content :deep(.github-markdown-body h3) {
-  scroll-margin-top: calc(var(--kh-header-height) + var(--kh-space-4));
-}
 /* 正文配图可点放大：cursor zoom-in 作视觉提示，点击由 .bd__content @click 委托 onContentClick 开 el-image-viewer */
 .bd__content :deep(.github-markdown-body img) {
   cursor: zoom-in;
 }
 
-/* 锁态：越级访问只给元数据，正文不下发，展示锁态提示 */
+/* 锁态：越级访问整片锁定卡片（不展示预览正文，直接锁整片区域）。
+   实色卡片 + primary soft 浅底 + icon 圆圈 + 标题/提示居中，清晰体面不显残缺。 */
 .bd__locked {
   display: flex;
   flex-direction: column;
@@ -478,18 +481,32 @@ watch(blogId, () => {
   gap: var(--kh-space-3);
   padding: var(--kh-space-12) var(--kh-space-6);
   margin: var(--kh-space-8) 0;
-  border: 1px dashed var(--kh-border);
+  background: var(--kh-primary-soft);
+  border: 1px solid var(--kh-primary-border);
   border-radius: var(--kh-radius-lg);
   color: var(--kh-text-tertiary);
   text-align: center;
+}
+/* 锁 icon 圆圈底：放大 icon 并给实色圆底，U 形锁体完整可见 */
+.bd__lock-iconwrap {
+  width: 56px;
+  height: 56px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--kh-surface);
+  color: var(--kh-primary);
+  box-shadow: var(--kh-shadow-xs);
 }
 .bd__locked-title {
   font-size: var(--kh-font-size-lg);
   font-weight: 600;
   color: var(--kh-text-secondary);
+  margin: 0;
 }
 .bd__locked-hint {
   font-size: var(--kh-font-size-sm);
+  margin: 0;
 }
 
 .bd__actions {

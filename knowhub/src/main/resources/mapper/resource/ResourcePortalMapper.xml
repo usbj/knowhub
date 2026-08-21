@@ -18,11 +18,13 @@
         <id property="resourceId" column="resource_id"/>
         <result property="authorId" column="author_id"/>
         <result property="authorNickname" column="author_nickname"/>
+        <result property="authorAvatar" column="author_avatar"/>
         <result property="resourceType" column="resource_type"/>
         <result property="resourceCategoryId" column="resource_category_id"/>
         <result property="categoryName" column="category_name"/>
         <result property="title" column="title"/>
         <result property="summary" column="summary"/>
+        <result property="level" column="level"/>
         <result property="linkUrl" column="link_url"/>
         <result property="linkIcon" column="link_icon"/>
         <result property="fileObjectId" column="file_object_id"/>
@@ -46,12 +48,14 @@
         <id property="resourceId" column="resource_id"/>
         <result property="authorId" column="author_id"/>
         <result property="authorNickname" column="author_nickname"/>
+        <result property="authorAvatar" column="author_avatar"/>
         <result property="resourceType" column="resource_type"/>
         <result property="resourceCategoryId" column="resource_category_id"/>
         <result property="categoryName" column="category_name"/>
         <result property="title" column="title"/>
         <result property="summary" column="summary"/>
         <result property="description" column="description"/>
+        <result property="level" column="level"/>
         <result property="linkUrl" column="link_url"/>
         <result property="linkIcon" column="link_icon"/>
         <result property="fileObjectId" column="file_object_id"/>
@@ -71,10 +75,15 @@
 
     <!--
       公共 where 片段：前台铁律 = deleted=0 AND status='PUBLISHED'。
-      资源无 level 等级概念（与博客 portalBlogWhere 的差异点：无 level<=userViewLevel）。
+      2026-08-18 权限大修：资源引入 level 分级，搜索范围放宽到 level <= userViewLevel + 1
+      （L1 搜 L1+L2 带 lock、L2 搜全部 L3 带 lock、L3 搜全部无锁），越级作品进列表带 locked 标记由 service 层回填。
+      分级开关关时 userViewLevel=1 → <=2 搜 L1+L2（L2 带锁），比现状"L2 根本搜不到"更符合"能搜到但锁"。
+      详情 meta 查询（getPortalResourceDetail）也复用本片段——详情走 level 过滤会让越级作品 404 而非锁态，
+      但 getDetail 语义是"取 meta 后判越级给锁态 VO"，故详情查询应**不带 level 过滤**。
+      此处片段被详情复用会导致越级详情 404——故 getPortalResourceDetail 用独立 where（见下方），不复用本片段。
     -->
     <sql id="portalResourceWhere">
-        r.deleted = 0 and r.status = 'PUBLISHED'
+        r.deleted = 0 and r.status = 'PUBLISHED' and r.level &lt;= #{userViewLevel} + 1
     </sql>
 
     <!--
@@ -86,9 +95,9 @@
       likeCount/collectCount/ratingAvg/ratingCount 用 inline 子查询回填（资源主表不冗余互动计数，与下载/浏览量读冗余列正交）。
     -->
     <select id="searchResources" parameterType="com.knowhub.pojo.resource.quarry.ResourcePortalSearchQuarry" resultMap="ResourcePortalVoMap">
-        select r.resource_id, r.author_id, u.nick_name as author_nickname,
+        select r.resource_id, r.author_id, u.nick_name as author_nickname, u.avatar as author_avatar,
                r.resource_type, r.resource_category_id, c.category_name as category_name,
-               r.title, r.summary, r.link_url, r.link_icon, r.file_object_id,
+               r.title, r.summary, r.level, r.link_url, r.link_icon, r.file_object_id,
                f.original_name as original_name, f.content_length as content_length, f.content_type as content_type,
                r.publish_time, r.view_count, r.download_count,
                (select count(*) from resource_like rl where rl.resource_id = r.resource_id) as like_count,
@@ -113,6 +122,7 @@
         <if test="resourceCategoryIds == null and resourceCategoryId != null">
             and r.resource_category_id = #{resourceCategoryId}
         </if>
+        <if test="authorId != null">and r.author_id = #{authorId}</if>
         <choose>
             <when test="sort == 'LATEST'">
                 order by r.publish_time desc, r.resource_id desc
@@ -148,9 +158,9 @@
       列表不带 keyword/分类过滤——纯热度 feed。
     -->
     <select id="recommendHot" resultMap="ResourcePortalVoMap">
-        select r.resource_id, r.author_id, u.nick_name as author_nickname,
+        select r.resource_id, r.author_id, u.nick_name as author_nickname, u.avatar as author_avatar,
                r.resource_type, r.resource_category_id, c.category_name as category_name,
-               r.title, r.summary, r.link_url, r.link_icon, r.file_object_id,
+               r.title, r.summary, r.level, r.link_url, r.link_icon, r.file_object_id,
                f.original_name as original_name, f.content_length as content_length, f.content_type as content_type,
                r.publish_time, r.view_count, r.download_count,
                (select count(*) from resource_like rl where rl.resource_id = r.resource_id) as like_count,
@@ -182,9 +192,9 @@
       不排序——service 拿到后按收藏时间倒序的 resourceIds 顺序拼装，保留"最近收藏在前"语义。
     -->
     <select id="listByIds" resultMap="ResourcePortalVoMap">
-        select r.resource_id, r.author_id, u.nick_name as author_nickname,
+        select r.resource_id, r.author_id, u.nick_name as author_nickname, u.avatar as author_avatar,
                r.resource_type, r.resource_category_id, c.category_name as category_name,
-               r.title, r.summary, r.link_url, r.link_icon, r.file_object_id,
+               r.title, r.summary, r.level, r.link_url, r.link_icon, r.file_object_id,
                f.original_name as original_name, f.content_length as content_length, f.content_type as content_type,
                r.publish_time, r.view_count, r.download_count,
                (select count(*) from resource_like rl where rl.resource_id = r.resource_id) as like_count,
@@ -201,13 +211,15 @@
     </select>
 
     <!--
-      详情：按主键取未删已发布资源，含 description 大字段 + join 带出展示字段 + inline 互动计数。
+      详情：按主键取未删已发布资源，含 description 大字段 + join 带出展示字段 + r.level。
       非 PUBLISHED（草稿/待审/驳回/撤回）返回 null（controller 404 语义）。
+      不复用 portalResourceWhere（不带 level 过滤）——service 取 meta 后判 level > userViewLevel 给锁态 VO
+      （越级仍下发 description，锁下载/跳转，"能搜到但锁"语义）。带 level 过滤会让越级详情直接 404 而非锁态。
     -->
     <select id="getPortalResourceDetail" resultMap="ResourcePortalDetailVoMap">
-        select r.resource_id, r.author_id, u.nick_name as author_nickname,
+        select r.resource_id, r.author_id, u.nick_name as author_nickname, u.avatar as author_avatar,
                r.resource_type, r.resource_category_id, c.category_name as category_name,
-               r.title, r.summary, r.description,
+               r.title, r.summary, r.description, r.level,
                r.link_url, r.link_icon, r.file_object_id,
                f.original_name as original_name, f.content_length as content_length, f.content_type as content_type,
                r.publish_time, r.view_count, r.download_count,
@@ -220,7 +232,7 @@
                 left join sys_user u on r.author_id = u.user_id
                 left join resource_category c on r.resource_category_id = c.category_id and c.deleted = 0
                 left join file_object f on r.file_object_id = f.object_id and f.deleted = 0
-        where <include refid="portalResourceWhere"/>
+        where r.deleted = 0 and r.status = 'PUBLISHED'
           and r.resource_id = #{resourceId}
     </select>
 
@@ -233,9 +245,9 @@
       结果不足以填满 size 时前端不再补（侧栏可空，不影响主用例）。
     -->
     <select id="relatedResources" resultMap="ResourcePortalVoMap">
-        select r.resource_id, r.author_id, u.nick_name as author_nickname,
+        select r.resource_id, r.author_id, u.nick_name as author_nickname, u.avatar as author_avatar,
                r.resource_type, r.resource_category_id, c.category_name as category_name,
-               r.title, r.summary, r.link_url, r.link_icon, r.file_object_id,
+               r.title, r.summary, r.level, r.link_url, r.link_icon, r.file_object_id,
                f.original_name as original_name, f.content_length as content_length, f.content_type as content_type,
                r.publish_time, r.view_count, r.download_count,
                (select count(*) from resource_like rl where rl.resource_id = r.resource_id) as like_count,

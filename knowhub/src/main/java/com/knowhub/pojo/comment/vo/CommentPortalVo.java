@@ -24,6 +24,9 @@ public class CommentPortalVo {
     /** 评论人昵称（join sys_user on user_id=author_id 带出） */
     private String authorNickname;
 
+    /** 评论人头像 URL（join sys_user.avatar 带出，无头像为 null，前端 <img> 直引失败回退首字） */
+    private String authorAvatar;
+
     /** 评论内容（纯文本，前端限长 2000） */
     private String content;
 
@@ -70,6 +73,14 @@ public class CommentPortalVo {
 
     public void setAuthorNickname(String authorNickname) {
         this.authorNickname = authorNickname;
+    }
+
+    public String getAuthorAvatar() {
+        return authorAvatar;
+    }
+
+    public void setAuthorAvatar(String authorAvatar) {
+        this.authorAvatar = authorAvatar;
     }
 
     public String getContent() {

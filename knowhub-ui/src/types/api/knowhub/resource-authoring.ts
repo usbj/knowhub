@@ -1,9 +1,9 @@
 /**
  * 文件作用：
  * 定义资源创作对接后端 /authoring/resource/** 的接口类型，与后端 ResourceVo 对齐。
- * 资源无标签体系、无 level 等级（与博客/文章创作差异点）：创作者只填类型 + 载体字段 + 分类 + 标题/摘要/正文。
- * - 创作提交载荷（ResourceAuthoringPayload）：新建\PUBLISHED 禁编辑（须先撤回）。
- * - 编辑回填（ResourceAuthoringDetail）：消费 getMyResourceForEditApi 返回的 ResourceVo 子集（含 status/reviewStatus 驱动按钮态）。
+ * 资源无标签体系（与博客/文章创作差异点）；2026-08-18 权限大修引入 level 等级（L1公开/L2内部/L3机密）。
+ * - 创作提交载荷（ResourceAuthoringPayload）：新建\PUBLISHED 禁编辑（须先撤回）。level 带入走后端 assertCanCreateLevel 创作闸。
+ * - 编辑回填（ResourceAuthoringDetail）：消费 getMyResourceForEditApi 返回的 ResourceVo 子集（含 status/reviewStatus/level 驱动按钮态+等级选中）。
  * key 约定：noUncheckedIndexedAccess 下所有可选字段访问需 ?. 守卫。
  */
 import type { NormalizedPageResult } from '../common'
@@ -28,10 +28,12 @@ export interface ResourceAuthoringPayload {
   fileObjectId?: number | null
   /** LINK 类型：外部链接 URL（必填） */
   linkUrl?: string | null
-  /** LINK 类型：图标 URL（可空） */
+  /** 资源封面图 URL（/file/resolve/{id}，FILE/LINK 通用，可空；复用后端 link_icon 列作封面载体） */
   linkIcon?: string | null
   /** 分类树叶子 id，不传后端置 -1 */
   resourceCategoryId?: number
+  /** 等级 1公开/2内部/3机密，创作闸按 myLevel 禁用不可选；不传后端缺省 L1 */
+  level?: number
   /** 评论区开关 1开/0关，作者在上传页勾选 */
   commentEnabled?: number
   /** 评论精选开关 0关1开，开启后新评论需作者同意后对他人展示 */
@@ -58,8 +60,11 @@ export interface ResourceAuthoringDetail {
   contentLength?: number | null
   contentType?: string | null
   linkUrl?: string | null
+  /** 资源封面图 URL（复用 link_icon 列作封面载体，FILE/LINK 通用，可空） */
   linkIcon?: string | null
   status?: string
+  /** 等级 1公开/2内部/3机密，编辑回填供等级选择器选中已有等级 */
+  level?: number
   reviewStatus?: string
   publishTime?: string
   createTime?: string
@@ -101,6 +106,7 @@ export interface MyResourceRecord {
   contentLength?: number | null
   contentType?: string | null
   linkUrl?: string | null
+  /** 资源封面图 URL（复用 link_icon 列作封面载体，FILE/LINK 通用，可空） */
   linkIcon?: string | null
   status?: string
   reviewStatus?: string

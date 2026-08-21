@@ -70,7 +70,7 @@ const hasImageCover = computed(() => {
 
       <div class="blog-row__meta">
         <div class="blog-row__author">
-          <KhAvatar :item="{ label: authorNickname }" :size="20" />
+          <KhAvatar :item="{ label: authorNickname, src: blog.authorAvatar ?? undefined }" :size="20" />
           <span>{{ authorNickname }}</span>
         </div>
         <span class="blog-row__sep" />

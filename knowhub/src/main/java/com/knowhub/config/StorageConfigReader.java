@@ -23,6 +23,8 @@ import java.util.stream.Collectors;
  *   可后台改，复用 SysConfigUtil 缓存。
  * - 文件访问模式、直链 OSS 地址 base 走系统设置 STRING 设置项
  *   （knowhub.file.access_mode / knowhub.file.direct_base_url）。
+ * - 本地模式根目录走 StorageProperties.localBasePath（yml storage.local.base-path，改需重启），
+ *   切本地模式前需确保该目录已配且历史 OSS 数据已下载到本地。
  * - 桶策略、连接参数走 StorageProperties（@ConfigurationProperties，改 yml 需重启）。
  *
  * SysConfigUtil 只读 Redis 永久缓存，编辑设置项时由 SysConfigServiceImpl 重写缓存，
@@ -167,9 +169,9 @@ public class StorageConfigReader {
     }
 
     /**
-     * 文件访问模式：TRANSFER（中转）/ DIRECT（直链）。
+     * 文件访问模式：TRANSFER（中转）/ DIRECT（直链）/ LOCAL（本地存储）。
      * <p>
-     * 当前实现走系统设置 knowhub.file.access_mode（STRING，transfer/direct），
+     * 当前实现走系统设置 knowhub.file.access_mode（STRING，transfer/direct/local），
      * 运维后台改、复用 SysConfigUtil 缓存、运行时生效；
      * 设置项缺失、停用或读取异常时默认 TRANSFER（中转模式更通用，不依赖 OSS 公网可达 / CORS）。
      * <p>
@@ -217,5 +219,18 @@ public class StorageConfigReader {
 
     public StorageProperties getProperties() {
         return storageProperties;
+    }
+
+    /**
+     * 本地存储模式根目录（access_mode=local 时文件落盘于此）。
+     * <p>
+     * 走 StorageProperties.localBasePath（yml storage.local.base-path，默认 ./knowhub-upload），
+     * 改需重启。本地后端 LocalStorageBackend 直接 @Value 读同一 key，本方法供打包下载落盘等场景按统一入口取。
+     *
+     * @return 本地存储根目录路径
+     */
+    public String localBasePath() {
+        String path = storageProperties.getLocalBasePath();
+        return path != null && !path.isEmpty() ? path : "./knowhub-upload";
     }
 }

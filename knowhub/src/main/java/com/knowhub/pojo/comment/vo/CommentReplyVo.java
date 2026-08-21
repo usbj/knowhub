@@ -17,6 +17,9 @@ public class CommentReplyVo {
     /** 评论人昵称（join sys_user 带出） */
     private String authorNickname;
 
+    /** 评论人头像 URL（join sys_user.avatar 带出，无头像为 null，前端 <img> 直引失败回退首字） */
+    private String authorAvatar;
+
     private String content;
 
     private Date createTime;
@@ -58,6 +61,14 @@ public class CommentReplyVo {
 
     public void setAuthorNickname(String authorNickname) {
         this.authorNickname = authorNickname;
+    }
+
+    public String getAuthorAvatar() {
+        return authorAvatar;
+    }
+
+    public void setAuthorAvatar(String authorAvatar) {
+        this.authorAvatar = authorAvatar;
     }
 
     public String getContent() {

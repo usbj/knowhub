@@ -13,6 +13,8 @@ export interface ResourcePortalRecord {
   authorId?: number
   /** 作者昵称（后端 join sys_user on author_id 带出） */
   authorNickname?: string
+  /** 作者头像 URL（join sys_user.avatar 带出，无头像为 null，前端 <img> 直引失败回退首字） */
+  authorAvatar?: string
   /** 资源类型：FILE 文件 / LINK 链接 */
   resourceType: string
   resourceCategoryId?: number
@@ -20,9 +22,13 @@ export interface ResourcePortalRecord {
   categoryName?: string | null
   title: string
   summary?: string
+  /** 资源等级 1公开/2内部/3机密（2026-08-18 权限大修引入，列表 SQL select r.level 带出，前端可据此渲染等级标签） */
+  level?: number
+  /** 越级锁标记（service 层按 level > userViewLevel 回填；越级作品进列表带 locked=true，LINK 类型 linkUrl 置空锁跳转） */
+  locked?: boolean
   /** LINK 类型的外链 URL */
   linkUrl?: string | null
-  /** LINK 类型的图标 URL（可空，前端可运行时拼 favicon 兜底） */
+  /** 资源封面图 URL（复用 link_icon 列作封面，可空；无封面时卡片回退占位 icon 色块） */
   linkIcon?: string | null
   /** FILE 类型关联 file_object.object_id */
   fileObjectId?: number | null
@@ -49,8 +55,14 @@ export interface ResourcePortalRecord {
  *  不含 downloadUrl：详情不下发下载链接（避免 permitAll 区触发 fileService checkOwnerOrAdmin 强转 CCE）。
  *  FILE 下载链接由前端点"下载资源"按钮时调 /authoring/resource/{id}/download 现取（带 download_count +1）。 */
 export interface ResourcePortalDetailRecord extends ResourcePortalRecord {
-  /** 详细说明（支持 Markdown，仅详情接口下发） */
+  /** 详细说明（支持 Markdown，仅详情接口下发；越级锁态时仍下发——资源越级只锁下载/跳转，description 可见） */
   description?: string | null
+  /** 资源等级 1公开/2内部/3机密（service 判越级锁态用；2026-08-18 资源新建 level 分级体系后下发） */
+  level?: number
+  /** 是否越级锁态：true=无权下载/跳转，description 仍可见只锁下载/跳转（FILE 锁下载、LINK 锁跳转 linkUrl 置空） */
+  locked?: boolean
+  /** 锁态原因提示（如"需 L2 权限"，正常态为 null） */
+  lockReason?: string | null
   /** 当前用户是否已点赞（登录态回填，未登录为 null/false） */
   hasLiked?: boolean | null
   /** 当前用户是否已收藏（登录态回填，未登录为 null/false） */
@@ -74,6 +86,8 @@ export interface ResourcePortalSearchQuery {
   /** 分类 id 多选过滤（-1=其他作为合法元素参与 IN）；不传/空数组不过滤。
    *  前端 paramsSerializer 把数组 join 成逗号串（1,2,3），Spring MVC 顺序绑定 + String→List<Long> 转换接收。 */
   resourceCategoryIds?: number[]
+  /** 作者 id 过滤（用户主页按作者筛作品，不传不过滤） */
+  authorId?: number
   /** 排序：RELEVANCE 相关度 / HOT 热度 / LATEST 最新；缺省 HOT（资源推荐是主用例） */
   sort?: 'RELEVANCE' | 'HOT' | 'LATEST'
   pageNum?: number

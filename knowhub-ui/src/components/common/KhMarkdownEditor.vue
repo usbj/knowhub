@@ -19,9 +19,12 @@
   - 想限定正文图访问模式：传 access（默认 PUBLIC，博客/文章/章节正文图均公开读语义）。
 -->
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import type { ComponentPublicInstance } from 'vue'
 import { ElMessage } from 'element-plus'
 import { presignedUploadFlow } from '@/utils/upload'
+import { useMarkdownCodeBlock } from '@/composables/useMarkdownCodeBlock'
+import { useMarkdownImageZoom } from '@/composables/useMarkdownImageZoom'
 
 const props = withDefaults(
   defineProps<{
@@ -127,6 +130,46 @@ const onInput = (val: string) => {
   emit('update:modelValue', val)
 }
 
+// ---- 编辑器预览区代码块工具栏/配图放大（与详情页同款 composable 接管 v-md-preview 站点）----
+// v-md-editor 自带编辑/预览/对比模式，预览态/对比态右侧渲染 .v-md-editor__preview-wrapper > .github-markdown-body。
+// 详情页用的是 <v-md-preview>（独立组件），其 .github-markdown-body 由 7 处详情页 contentRef 上的 composable 接管；
+// 编辑器 <v-md-editor> 是另一条渲染链路，详情页 composable 不覆盖它 → 预览区代码块无工具栏、容器样式因 markdown.css
+// 期望 .kh-code-header 而塌（fix：把 composable 也接到编辑器预览体上）。
+// 预览体只在 preview/editable 模式存在（edit 模式是 textarea 无预览 DOM），且模式切换时 wrapper 会挂卸——
+// 故 resolvePreviewBody 在挂载 + 模式切换 + 编辑器子树变化时反复查；contentRef watch + MutationObserver（composable 内）
+// 已能响应「预览体出现后其内部 v-md-preview 异步渲染代码块」，这里只负责把 previewBodyRef 指到正确的预览 DOM。
+const editorRef = ref<ComponentPublicInstance | null>(null)
+/** 预览渲染体 ref：喂给 useMarkdownCodeBlock / useMarkdownImageZoom（与详情页 contentRef 同角色） */
+const previewBodyRef = ref<HTMLElement | null>(null)
+
+/** 从编辑器实例根查预览渲染体（.v-md-editor__preview-wrapper 内首个 .github-markdown-body）。
+ *  edit 模式无预览 DOM → 返回 null（composable 收到 null 会断 observer，等预览体再出现时重接）。 */
+const resolvePreviewBody = () => {
+  const root = (editorRef.value?.$el as HTMLElement | undefined) ?? null
+  if (!root) {
+    previewBodyRef.value = null
+    return
+  }
+  const body = root.querySelector<HTMLElement>('.v-md-editor__preview-wrapper .github-markdown-body')
+  previewBodyRef.value = body ?? null
+}
+
+useMarkdownImageZoom(previewBodyRef)
+useMarkdownCodeBlock(previewBodyRef)
+
+// 模式切到 preview/editable 才有预览 DOM；切时等渲染后重解预览体
+watch([innerMode, () => props.mode], () => {
+  nextTick(resolvePreviewBody)
+})
+
+onMounted(() => {
+  nextTick(resolvePreviewBody)
+})
+
+onBeforeUnmount(() => {
+  previewBodyRef.value = null
+})
+
 // 提示 ElMessage 已引入以防 lint 误报未用（组件内暂未直接调用，留拓展用）
 void ElMessage
 </script>
@@ -145,6 +188,7 @@ void ElMessage
       >{{ m.t }}</button>
     </div>
     <v-md-editor
+      ref="editorRef"
       :model-value="modelValue"
       :mode="editorMode"
       :height="height"

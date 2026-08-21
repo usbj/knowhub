@@ -25,6 +25,14 @@ public class BlogPortalSearchQuarry {
     /** 当前用户查看等级（分级开关关时恒 1，开时 BlogPermissionResolver.view；未登录=1） */
     private Integer userViewLevel;
 
+    /**
+     * 标签命中门槛值 = tagIds.size()，service 层回填。
+     * HAVING count(distinct bt.tag_id) = #{tagCount} 用于"同时命中全部所选标签"语义。
+     * 不能在 SQL 里写 #{tagIds.size()}：MyBatis createCacheKey 反射取值时会走 CollectionWrapper.get("size")
+     * 抛 UnsupportedOperationException（列表属性名解析为索引失败），故拆成独立 Integer 参数。
+     */
+    private Integer tagCount;
+
     public String getKeyword() {
         return keyword;
     }
@@ -63,5 +71,13 @@ public class BlogPortalSearchQuarry {
 
     public void setUserViewLevel(Integer userViewLevel) {
         this.userViewLevel = userViewLevel;
+    }
+
+    public Integer getTagCount() {
+        return tagCount;
+    }
+
+    public void setTagCount(Integer tagCount) {
+        this.tagCount = tagCount;
     }
 }

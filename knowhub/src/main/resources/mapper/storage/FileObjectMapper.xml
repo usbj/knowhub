@@ -115,4 +115,18 @@
         where business_type = #{businessType} and biz_ref_id = #{bizRefId} and deleted = 0
     </update>
 
+    <!-- 打包下载：分页查所有未删 + CONFIRMED 行，按 objectId 升序，防一次查十万行 -->
+    <select id="listAllConfirmedForPack" resultMap="FileObjectResultMap">
+        select * from file_object
+        where deleted = 0 and upload_status = 'CONFIRMED'
+        order by object_id asc
+        limit #{offset}, #{size}
+    </select>
+
+    <!-- 打包下载预估总字节数：累加所有未删 + CONFIRMED 的 content_length（NULL 视为 0） -->
+    <select id="sumConfirmedContentLength" resultType="long">
+        select coalesce(sum(content_length), 0) from file_object
+        where deleted = 0 and upload_status = 'CONFIRMED'
+    </select>
+
 </mapper>

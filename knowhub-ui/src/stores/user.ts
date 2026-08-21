@@ -40,7 +40,7 @@ const readStoredUserInfo = (): SysUserProfile | null => {
 export const useUserStore = defineStore('user', () => {
   /**
    * 当前登录 token。
-   * 后端 /login 返回的 data 目前就是这个字符串。
+   * 后端 /portal/login（前台门户登录）返回的 data 目前就是这个字符串。
    */
   const token = ref<string>(localStorage.getItem(USER_TOKEN_STORAGE_KEY) || '')
 
@@ -64,7 +64,15 @@ export const useUserStore = defineStore('user', () => {
   const displayName = computed(() => userInfo.value?.nickName || userInfo.value?.username || '')
 
   /**
-   * 顶栏头像首字。
+   * 当前登录用户头像 URL（/file/resolve/{objectId} 形态，后端 /person 下发）。
+   * 无头像或未登录为 null，界面显示昵称首字占位（KhAvatar @error 也走同兜底）。
+   * 与后台 rookie 不同：rookie 走 GET /person/avatar blob+Token 转 objectURL，
+   * 前台统一改用 URL 直引（<img src> 命中 /file/resolve permitAll 解析链路，无需 blob）。
+   */
+  const avatarUrl = computed(() => userInfo.value?.avatar || null)
+
+  /**
+   * 顶栏头像首字（avatarUrl 为空或图片加载失败时的兜底文字）。
    * 优先取昵称首字，再取账号首字；空则落到占位字。
    */
   const avatarText = computed(() => {
@@ -124,6 +132,7 @@ export const useUserStore = defineStore('user', () => {
     userInfo,
     isAuthenticated,
     displayName,
+    avatarUrl,
     avatarText,
     setLoginSession,
     setUserProfile,

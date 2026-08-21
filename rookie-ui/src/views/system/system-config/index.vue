@@ -74,6 +74,7 @@ const sysConfigSchema = computed<SharedFieldSchemaMap<SysConfigFormModel>>(() =>
     sysConfigDialogMode.value,
     Number(sysConfigFormModel.value.isSystem ?? 0),
     String(sysConfigFormModel.value.valueType ?? 'STRING'),
+    String(sysConfigFormModel.value.configKey ?? ''),
   ),
 )
 
