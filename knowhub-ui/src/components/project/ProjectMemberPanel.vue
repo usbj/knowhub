@@ -222,13 +222,13 @@ defineExpose({ fetchMembers })
       </ElTableColumn>
       <ElTableColumn label="操作" width="140" fixed="right">
         <template #default="{ row }">
-          <ElButton link type="primary" size="small" @click="openEditDialog(row)">编辑</ElButton>
+          <ElButton link type="primary" size="small" @click="openEditDialog(row as ProjectMemberRecord)">编辑</ElButton>
           <ElButton
             link
             type="danger"
             size="small"
-            :disabled="row.memberRole === 'LEADER'"
-            @click="handleDelete(row)"
+            :disabled="(row as ProjectMemberRecord).memberRole === 'LEADER'"
+            @click="handleDelete(row as ProjectMemberRecord)"
           >
             删除
           </ElButton>

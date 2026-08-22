@@ -104,8 +104,9 @@ const bizLabel: Record<string, string> = {
   PROJECT_PKG: '打包',
   PROJECT_DOC: '文档',
 }
-const bizTagType = (biz: string): 'primary' | 'accent' | 'info' =>
-  biz === PROJECT_BUSINESS_TYPE.SRC ? 'primary' : biz === PROJECT_BUSINESS_TYPE.PKG ? 'accent' : 'info'
+/** ElTag type 仅支持 primary/success/warning/danger/info（无 accent），PKG 用 warning 着色 */
+const bizTagType = (biz: string): 'primary' | 'warning' | 'info' =>
+  biz === PROJECT_BUSINESS_TYPE.SRC ? 'primary' : biz === PROJECT_BUSINESS_TYPE.PKG ? 'warning' : 'info'
 
 /**
  * 方法效果：

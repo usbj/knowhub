@@ -23,3 +23,7 @@ export const viewLevelTagType: Record<ViewLevel, 'neutral' | 'info' | 'warning' 
 /** 取等级文字，非法值兜底「未知」 */
 export const getViewLevelLabel = (level: number): string =>
   (viewLevelLabel as Record<number, string>)[level] ?? '未知'
+
+/** 取等级 KhTag 着色，非法值兜底「neutral」。用 number 索引避开 TS7053（Record<ViewLevel> 不接受 number 下标）。 */
+export const getViewLevelTagType = (level: number): 'neutral' | 'info' | 'warning' | 'danger' | 'success' =>
+  (viewLevelTagType as Record<number, 'neutral' | 'info' | 'warning' | 'danger' | 'success'>)[level] ?? 'neutral'

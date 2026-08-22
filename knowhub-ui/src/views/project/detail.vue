@@ -57,7 +57,7 @@ import type {
 } from '@/types/api/knowhub/project-authoring'
 import { useUserStore } from '@/stores/user'
 import { formatDateTime } from '@/utils/format'
-import { viewLevelTagType, getViewLevelLabel } from '@/utils/viewLevel'
+import { getViewLevelTagType, getViewLevelLabel } from '@/utils/viewLevel'
 import { presignedUploadFlow } from '@/utils/upload'
 import { checkFileAllowed, formatAllowedHint } from '@/utils/upload-whitelist'
 
@@ -694,7 +694,7 @@ watch(projectId, () => {
         <div v-if="project" class="pd__head-tags">
           <KhTag type="primary">{{ typeLabel[project.type ?? ''] ?? project.type ?? '项目' }}</KhTag>
           <KhTag :type="statusTag.type" dot>{{ statusTag.text }}</KhTag>
-          <KhTag :type="viewLevelTagType[project.level ?? 1] ?? 'neutral'">{{ getViewLevelLabel(project.level ?? 1) }}</KhTag>
+          <KhTag :type="getViewLevelTagType(project.level ?? 1)">{{ getViewLevelLabel(project.level ?? 1) }}</KhTag>
         </div>
         <div class="pd__head-titlerow">
           <h1 class="pd__title">{{ project?.title ?? '加载中…' }}</h1>

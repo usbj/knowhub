@@ -24,7 +24,7 @@ import KhPagination from '@/components/common/KhPagination.vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useUserStore } from '@/stores/user'
 import { useNoticeStore } from '@/stores/notice'
-import { viewLevelTagType, getViewLevelLabel } from '@/utils/viewLevel'
+import { getViewLevelTagType, getViewLevelLabel } from '@/utils/viewLevel'
 import { formatDateTime } from '@/utils/format'
 import { getMyBlogsApi, collectBlogApi, listMyCollectedBlogsApi, deleteBlogApi } from '@/api/knowhub/authoring'
 import { getMyArticlesApi, deleteArticleAuthoringApi } from '@/api/knowhub/article-authoring'
@@ -1078,7 +1078,7 @@ watch(
                   <div class="profile__row-meta">
                     <KhTag size="sm" type="primary">{{ typeLabel[p.type] ?? p.type }}</KhTag>
                     <KhTag size="sm" :type="statusMeta[p.status]?.type ?? 'neutral'">{{ statusMeta[p.status]?.text ?? '未知' }}</KhTag>
-                    <KhTag size="sm" :type="viewLevelTagType[p.level] ?? 'neutral'">{{ getViewLevelLabel(p.level) }}</KhTag>
+                    <KhTag size="sm" :type="getViewLevelTagType(p.level)">{{ getViewLevelLabel(p.level) }}</KhTag>
                     <KhTag v-if="p.myMemberRole && p.myMemberRole !== 'LEADER'" size="sm" type="info">{{ memberRoleLabel[p.myMemberRole] ?? p.myMemberRole }}</KhTag>
                     <span>·</span>
                     <span>{{ p.updateTime }}</span>

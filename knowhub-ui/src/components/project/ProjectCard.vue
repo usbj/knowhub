@@ -15,7 +15,7 @@ import KhTag from '@/components/common/KhTag.vue'
 import KhAvatar from '@/components/common/KhAvatar.vue'
 import KhStatPill from '@/components/common/KhStatPill.vue'
 import type { ProjectPortalRecord } from '@/types/api/knowhub/project-portal'
-import { viewLevelTagType, getViewLevelLabel } from '@/utils/viewLevel'
+import { getViewLevelTagType, getViewLevelLabel } from '@/utils/viewLevel'
 
 const props = defineProps<{ project: ProjectPortalRecord }>()
 const router = useRouter()
@@ -37,7 +37,7 @@ const typeText = computed(() => typeLabel[props.project.type ?? ''] ?? props.pro
         <KhTag size="sm" type="primary">{{ typeText }}</KhTag>
       </div>
       <div class="proj-card__header-tail">
-        <KhTag size="sm" :type="viewLevelTagType[project.level ?? 1] ?? 'neutral'">{{ getViewLevelLabel(project.level ?? 1) }}</KhTag>
+        <KhTag size="sm" :type="getViewLevelTagType(project.level ?? 1)">{{ getViewLevelLabel(project.level ?? 1) }}</KhTag>
       </div>
     </div>
 
