@@ -31,8 +31,8 @@ const registerEnabled = ref(false)
  * 账号也不回填本地浏览器，避免在本机暴露登录账号带来安全问题。
  */
 const form = reactive({
-  username: 'admin',
-  password: 'rookie',
+  username: '',
+  password: '',
 })
 
 /**
