@@ -43,7 +43,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * 安全约束：
  * <ul>
  *   <li>调用目标限定 {@code task.bean-package-prefixes} 配置项所列前缀包下的 Spring Bean（白名单前缀校验，
- *       默认 {@code com.rookie.system.task}；二开项目可追加自身任务包前缀，如 knowhub 追加 {@code com.knowhub.task}），
+ *       默认 {@code com.rookie.system.task}；二开项目可追加自身任务包前缀），
  *       任务方法须为 public、无参或单个 String 参数（参数来自 sys_job.params）；</li>
  *   <li>cron 合法性由 Service 层在保存前用 CronExpression 校验，本组件仅按已入库配置调度。</li>
  * </ul>
@@ -56,7 +56,7 @@ public class SysJobScheduler implements ApplicationRunner {
 
     /** 任务 Bean 白名单包前缀列表：只有这些前缀下的 Spring Bean 允许被调度（反射调用安全边界）。
      *  由配置项 {@code task.bean-package-prefixes} 提供，默认 {@code com.rookie.system.task}；
-     *  二开项目可追加自身任务包前缀（如 knowhub 追加 com.knowhub.task）。 */
+     *  二开项目可追加自身任务包前缀。 */
     @Value("${task.bean-package-prefixes:com.rookie.system.task}")
     private List<String> taskBeanPackagePrefixes;
 

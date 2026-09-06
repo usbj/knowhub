@@ -24,7 +24,7 @@
 
     <properties>
         <java.version>17</java.version>
-        <rookie.version>1.0.5</rookie.version>
+        <rookie.version>2.0.5</rookie.version>
         <knowhub.version>1.0.5</knowhub.version>
         <mybatis-starter.version>3.0.4</mybatis-starter.version>
         <pagehelper-start>2.1.0</pagehelper-start>
