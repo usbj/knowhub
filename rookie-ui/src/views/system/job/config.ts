@@ -5,7 +5,8 @@
  * 关键约定：
  * - 状态（status）不依赖字典，直接硬编码选项（启用/停用），表格用 tag 渲染；
  * - cron 表达式为 Spring 6 段式，表单做必填与 6 段格式的轻校验，完整合法性由后端校验；
- * - 调用目标（beanName + methodName）限定 com.rookie.system.task 包，表单 placeholder 明确提示。
+ * - 调用目标（beanName + methodName）限定 task.bean-package-prefixes 配置项所列包（默认 com.rookie.system.task），
+ *   表单 placeholder 明确提示。
  */
 import type { FormRules } from 'element-plus'
 import type { SharedFieldSchemaMap } from '@/types/components/data-display'
@@ -133,7 +134,7 @@ export const createJobSchema = (
   beanName: {
     label: 'Bean 名称',
     inputType: 'text',
-    placeholder: '如 demoTask（限 com.rookie.system.task 包）',
+    placeholder: '如 demoTask（限配置项所列任务包）',
     tableVisible: true,
     formVisible: true,
     tableOrder: 3,
@@ -144,7 +145,7 @@ export const createJobSchema = (
   methodName: {
     label: '方法名',
     inputType: 'text',
-    placeholder: '如 execute（public，无参或单个 String 参数）',
+    placeholder: '如 reconcile / gc（public，无参或单个 String 参数）',
     tableVisible: true,
     formVisible: true,
     tableOrder: 4,

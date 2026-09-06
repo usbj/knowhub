@@ -12,6 +12,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.BeansException;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
@@ -41,7 +42,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * </ul>
  * 安全约束：
  * <ul>
- *   <li>调用目标限定 {@code com.rookie.system.task} 包下的 Spring Bean（白名单前缀校验），
+ *   <li>调用目标限定 {@code task.bean-package-prefixes} 配置项所列前缀包下的 Spring Bean（白名单前缀校验，
+ *       默认 {@code com.rookie.system.task}；二开项目可追加自身任务包前缀），
  *       任务方法须为 public、无参或单个 String 参数（参数来自 sys_job.params）；</li>
  *   <li>cron 合法性由 Service 层在保存前用 CronExpression 校验，本组件仅按已入库配置调度。</li>
  * </ul>
@@ -52,8 +54,11 @@ public class SysJobScheduler implements ApplicationRunner {
 
     private static final Logger log = LoggerFactory.getLogger(SysJobScheduler.class);
 
-    /** 任务 Bean 白名单包前缀：只有该包下的 Spring Bean 允许被调度（反射调用安全边界） */
-    private static final String TASK_BEAN_PACKAGE_PREFIX = "com.rookie.system.task";
+    /** 任务 Bean 白名单包前缀列表：只有这些前缀下的 Spring Bean 允许被调度（反射调用安全边界）。
+     *  由配置项 {@code task.bean-package-prefixes} 提供，默认 {@code com.rookie.system.task}；
+     *  二开项目可追加自身任务包前缀。 */
+    @Value("${task.bean-package-prefixes:com.rookie.system.task}")
+    private List<String> taskBeanPackagePrefixes;
 
     /** 异常信息落库最大长度（sys_job_log.exception_msg varchar(2000)） */
     private static final int MAX_EXCEPTION_MSG_LENGTH = 2000;
@@ -196,9 +201,10 @@ public class SysJobScheduler implements ApplicationRunner {
         } catch (BeansException e) {
             throw new ServiceException(500, "任务 Bean 不存在：" + job.getBeanName());
         }
-        // 与执行期同一安全边界：只允许调度白名单包下的 Bean
-        if (!bean.getClass().getName().startsWith(TASK_BEAN_PACKAGE_PREFIX)) {
-            throw new ServiceException(500, "任务目标 Bean 不在白名单包内（" + TASK_BEAN_PACKAGE_PREFIX + "）");
+        // 与执行期同一安全边界：只允许调度白名单包（task.bean-package-prefixes）下的 Bean
+        String beanClassName = bean.getClass().getName();
+        if (taskBeanPackagePrefixes.stream().noneMatch(p -> beanClassName.startsWith(p))) {
+            throw new ServiceException(500, "任务目标 Bean 不在白名单包内（" + taskBeanPackagePrefixes + "）");
         }
         if (findTaskMethod(bean.getClass(), job.getMethodName()) == null) {
             throw new ServiceException(500, "任务方法不存在：" + job.getBeanName() + "." + job.getMethodName()
@@ -217,9 +223,10 @@ public class SysJobScheduler implements ApplicationRunner {
         } catch (BeansException e) {
             throw new ServiceException(500, "任务 Bean 不存在：" + job.getBeanName());
         }
-        // 安全边界：只允许调度白名单包下的 Bean，防止任意 Bean 方法被反射调用
-        if (!bean.getClass().getName().startsWith(TASK_BEAN_PACKAGE_PREFIX)) {
-            throw new ServiceException(500, "任务目标 Bean 不在白名单包内（" + TASK_BEAN_PACKAGE_PREFIX + "）");
+        // 安全边界：只允许调度白名单包（task.bean-package-prefixes）下的 Bean，防止任意 Bean 方法被反射调用
+        String beanClassName = bean.getClass().getName();
+        if (taskBeanPackagePrefixes.stream().noneMatch(p -> beanClassName.startsWith(p))) {
+            throw new ServiceException(500, "任务目标 Bean 不在白名单包内（" + taskBeanPackagePrefixes + "）");
         }
         Method method = findTaskMethod(bean.getClass(), job.getMethodName());
         if (method == null) {

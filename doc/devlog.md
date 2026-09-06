@@ -850,3 +850,12 @@
 - `doc/devlog.md` — 追加本条开发日志
 
 > 历史日志条目中提及的旧脚本文件名（如 `sys_menu_init.sql`、`sys_notice_menu_admin.sql` 等）保留原样，作为当时事实记录，不改写
+
+### 12:12 — 定时任务白名单改为配置驱动
+
+为支持下游 knowhub 将自身 `com.knowhub.task` 包中的任务纳入 rookie 定时任务管理，将调度器原本写死的单一白名单改为配置项驱动的多前缀列表，同时保持默认配置下的原有行为。
+
+- `rookie-system/src/main/java/com/rookie/system/scheduler/SysJobScheduler.java` — 新增 `task.bean-package-prefixes` 配置注入；保存前校验和执行期校验统一按白名单前缀列表判断
+- `rookie-admin/src/main/resources/application.yml` — 增加任务白名单配置，默认保留 `com.rookie.system.task`；使用逗号分隔单行格式以兼容 `@Value` 的 `List<String>` 注入
+- `rookie-ui/src/views/system/job/config.ts` — 更新任务 Bean 白名单 placeholder，改为提示遵循配置项范围
+- `doc/devlog.md` — 追加本条开发日志
