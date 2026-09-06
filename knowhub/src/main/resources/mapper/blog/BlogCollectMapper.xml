@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.knowhub.mapper.blog.BlogCollectMapper">
+
+    <resultMap id="BlogCollectResultMap" type="com.knowhub.pojo.blog.entity.BlogCollect">
+        <id property="blogId" column="blog_id"/>
+        <id property="userId" column="user_id"/>
+        <result property="createTime" column="create_time"/>
+    </resultMap>
+
+    <insert id="addBlogCollect" parameterType="com.knowhub.pojo.blog.entity.BlogCollect">
+        insert ignore into blog_collect(blog_id, user_id) values (#{blogId}, #{userId})
+    </insert>
+
+    <delete id="deleteBlogCollect" parameterType="com.knowhub.pojo.blog.entity.BlogCollect">
+        delete from blog_collect where blog_id = #{blogId} and user_id = #{userId}
+    </delete>
+
+    <select id="getBlogCollect" parameterType="com.knowhub.pojo.blog.entity.BlogCollect" resultMap="BlogCollectResultMap">
+        select * from blog_collect where blog_id = #{blogId} and user_id = #{userId}
+    </select>
+
+    <!-- 当前用户的收藏博客 ID 列表（按收藏时间倒序；service 层据此 join 出 VO） -->
+    <select id="listCollectedBlogIds" resultType="java.lang.Long">
+        select blog_id from blog_collect where user_id = #{userId} order by create_time desc
+    </select>
+
+</mapper>

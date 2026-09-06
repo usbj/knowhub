@@ -1,0 +1,167 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.knowhub.mapper.audit.AuditFundFlowMapper">
+
+    <!--
+      资金流水结果映射。
+      含 join 带出的展示字段（非表字段，AuditFundFlow 实体扩展属性）：
+      - subjectName：join audit_subject on subject_id，LEFT JOIN 防止主体被删时丢行
+      - handlerNickname：join sys_user on user_id=handler_id，LEFT JOIN 防 nick_name 缺失
+      - categoryLabel 字典翻译由 Service/前端做（保持 Mapper 纯数据，避免加 dict join 拖慢）
+    -->
+    <resultMap id="AuditFundFlowResultMap" type="com.knowhub.pojo.audit.entity.AuditFundFlow">
+        <id property="flowId" column="flow_id"/>
+        <result property="subjectId" column="subject_id"/>
+        <result property="flowType" column="flow_type"/>
+        <result property="amount" column="amount"/>
+        <result property="occurDate" column="occur_date"/>
+        <result property="category" column="category"/>
+        <result property="handlerId" column="handler_id"/>
+        <result property="voucherObjectId" column="voucher_object_id"/>
+        <result property="note" column="note"/>
+        <result property="status" column="status"/>
+        <result property="reviewStatus" column="review_status"/>
+        <result property="createBy" column="create_by"/>
+        <result property="createTime" column="create_time"/>
+        <result property="updateBy" column="update_by"/>
+        <result property="updateTime" column="update_time"/>
+        <result property="deleted" column="deleted"/>
+        <!-- join 带出的展示字段（非表字段） -->
+        <result property="subjectName" column="subject_name"/>
+        <result property="handlerNickname" column="handler_nickname"/>
+    </resultMap>
+
+    <!--
+      审核历史结果映射（直接投影到 VO，join sys_user 带出 operatorNickname）。
+      与 blog_review_log 的 resultMap 同构，仅关联键换 flow_id。
+    -->
+    <resultMap id="AuditFlowReviewLogVoResultMap" type="com.knowhub.pojo.audit.vo.AuditFlowReviewLogVo">
+        <id property="reviewLogId" column="review_log_id"/>
+        <result property="flowId" column="flow_id"/>
+        <result property="action" column="action"/>
+        <result property="operatorId" column="operator_id"/>
+        <result property="operator" column="operator"/>
+        <result property="operatorNickname" column="nick_name"/>
+        <result property="role" column="role"/>
+        <result property="advice" column="advice"/>
+        <result property="createTime" column="create_time"/>
+    </resultMap>
+
+    <!--
+      列表查询：join audit_subject(subject_name) + sys_user(handler_nickname)。
+      筛选区按 subjectName/handlerName 模糊搜；周期流水明细弹窗按 subjectId 精确。
+      支持按 subjectId(精确)、subjectName(模糊)、flowType、category、status、reviewStatus、handlerId(精确)、handlerName(模糊)、occur_date 区间过滤。
+      按 occur_date desc, flow_id desc 排序（最近发生在前）。
+    -->
+    <select id="quarryAuditFundFlow" parameterType="com.knowhub.pojo.audit.quarry.AuditFundFlowQuarry" resultMap="AuditFundFlowResultMap">
+        select f.flow_id, f.subject_id, f.flow_type, f.amount, f.occur_date, f.category,
+               f.handler_id, f.voucher_object_id, f.note, f.status, f.review_status,
+               f.create_by, f.create_time, f.update_by, f.update_time, f.deleted,
+               s.name as subject_name,
+               u.nick_name as handler_nickname
+        from audit_fund_flow f
+                left join audit_subject s on f.subject_id = s.subject_id
+                left join sys_user u on f.handler_id = u.user_id
+        where f.deleted = 0
+        <if test="subjectId != null">and f.subject_id = #{subjectId}</if>
+        <if test="subjectName != null and subjectName != ''">and s.name like concat('%', #{subjectName}, '%')</if>
+        <if test="flowType != null and flowType != ''">and f.flow_type = #{flowType}</if>
+        <if test="category != null and category != ''">and f.category = #{category}</if>
+        <if test="status != null and status != ''">and f.status = #{status}</if>
+        <if test="reviewStatus != null and reviewStatus != ''">and f.review_status = #{reviewStatus}</if>
+        <if test="handlerId != null">and f.handler_id = #{handlerId}</if>
+        <if test="handlerName != null and handlerName != ''">and u.nick_name like concat('%', #{handlerName}, '%')</if>
+        <if test="beginTime != null">and f.occur_date &gt;= #{beginTime}</if>
+        <if test="endTime != null">and f.occur_date &lt;= #{endTime}</if>
+        order by f.occur_date desc, f.flow_id desc
+    </select>
+
+    <!-- 详情：按主键取未删除流水，含 subject_name/handler_nickname -->
+    <select id="getAuditFundFlowInfo" parameterType="long" resultMap="AuditFundFlowResultMap">
+        select f.flow_id, f.subject_id, f.flow_type, f.amount, f.occur_date, f.category,
+               f.handler_id, f.voucher_object_id, f.note, f.status, f.review_status,
+               f.create_by, f.create_time, f.update_by, f.update_time, f.deleted,
+               s.name as subject_name,
+               u.nick_name as handler_nickname
+        from audit_fund_flow f
+                left join audit_subject s on f.subject_id = s.subject_id
+                left join sys_user u on f.handler_id = u.user_id
+        where f.flow_id = #{flowId} and f.deleted = 0
+    </select>
+
+    <!-- 新增流水，动态列（对齐 README.dev「Mapper XML insert 均改为动态列」约定） -->
+    <insert id="insertAuditFundFlow" parameterType="com.knowhub.pojo.audit.entity.AuditFundFlow" useGeneratedKeys="true" keyProperty="flowId">
+        insert into audit_fund_flow
+        <trim prefix="(" suffix=")" suffixOverrides=",">
+            <if test="subjectId != null">subject_id,</if>
+            <if test="flowType != null">flow_type,</if>
+            <if test="amount != null">amount,</if>
+            <if test="occurDate != null">occur_date,</if>
+            <if test="category != null">category,</if>
+            <if test="handlerId != null">handler_id,</if>
+            <if test="voucherObjectId != null">voucher_object_id,</if>
+            <if test="note != null">note,</if>
+            <if test="status != null">status,</if>
+            <if test="reviewStatus != null">review_status,</if>
+            create_by, create_time, update_by, update_time
+        </trim>
+        values
+        <trim prefix="(" suffix=")" suffixOverrides=",">
+            <if test="subjectId != null">#{subjectId},</if>
+            <if test="flowType != null">#{flowType},</if>
+            <if test="amount != null">#{amount},</if>
+            <if test="occurDate != null">#{occurDate},</if>
+            <if test="category != null">#{category},</if>
+            <if test="handlerId != null">#{handlerId},</if>
+            <if test="voucherObjectId != null">#{voucherObjectId},</if>
+            <if test="note != null">#{note},</if>
+            <if test="status != null">#{status},</if>
+            <if test="reviewStatus != null">#{reviewStatus},</if>
+            #{createBy}, now(), #{updateBy}, now()
+        </trim>
+    </insert>
+
+    <!-- 编辑流水（动态列，用于审批改 status/reviewStatus 等） -->
+    <update id="updateAuditFundFlow" parameterType="com.knowhub.pojo.audit.entity.AuditFundFlow">
+        update audit_fund_flow
+        <set>
+            <if test="subjectId != null">subject_id = #{subjectId},</if>
+            <if test="flowType != null and flowType != ''">flow_type = #{flowType},</if>
+            <if test="amount != null">amount = #{amount},</if>
+            <if test="occurDate != null">occur_date = #{occurDate},</if>
+            <if test="category != null">category = #{category},</if>
+            <if test="handlerId != null">handler_id = #{handlerId},</if>
+            <if test="voucherObjectId != null">voucher_object_id = #{voucherObjectId},</if>
+            <if test="note != null">note = #{note},</if>
+            <if test="status != null and status != ''">status = #{status},</if>
+            <if test="reviewStatus != null and reviewStatus != ''">review_status = #{reviewStatus},</if>
+            <if test="deleted != null">deleted = #{deleted},</if>
+            update_by = #{updateBy},
+            update_time = now()
+        </set>
+        where flow_id = #{flowId}
+    </update>
+
+    <!-- 软删流水（deleted=1）。审批改状态走 updateAuditFundFlow，软删仅删条目用 -->
+    <update id="deleteAuditFundFlow" parameterType="long">
+        update audit_fund_flow set deleted = 1, update_time = now() where flow_id = #{flowId}
+    </update>
+
+    <!--
+      按流水ID查审核历史，按动作时间升序还原轨迹（最早→最新）。
+      左 join sys_user 带出操作人昵称(nick_name)，直接投影到 VO（resultMap 映射 operatorNickname=nick_name）。
+      用 LEFT JOIN 而非 INNER，确保用户被删/改名时流水行不丢（昵称回落 null）。
+      operator 列已存 username 快照，即使 sys_user 行不存在也能展示账号串。
+    -->
+    <select id="listReviewLogByFlowId" parameterType="long" resultMap="AuditFlowReviewLogVoResultMap">
+        select l.review_log_id, l.flow_id, l.action, l.operator_id, l.operator,
+               l.role, l.advice, l.create_time, u.nick_name
+        from audit_flow_review_log l
+        left join sys_user u on l.operator_id = u.user_id
+        where l.flow_id = #{flowId}
+        order by l.create_time asc, l.review_log_id asc
+    </select>
+
+</mapper>

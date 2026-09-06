@@ -1,0 +1,146 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.knowhub.mapper.history.UserViewHistoryMapper">
+
+    <!-- getByUserBiz 专用：映射到 UserViewHistory 实体（声明返回类型与实际一致，避免 ViewHistoryVo→UserViewHistory 强转 CCE） -->
+    <resultMap id="UserViewHistoryMap" type="com.knowhub.pojo.history.entity.UserViewHistory">
+        <id property="viewId" column="view_id"/>
+        <result property="userId" column="user_id"/>
+        <result property="bizType" column="biz_type"/>
+        <result property="bizId" column="biz_id"/>
+        <result property="viewTime" column="view_time"/>
+        <result property="lastViewTime" column="last_view_time"/>
+        <result property="viewCount" column="view_count"/>
+    </resultMap>
+
+    <resultMap id="ViewHistoryVoMap" type="com.knowhub.pojo.history.vo.ViewHistoryVo">
+        <id property="viewId" column="view_id"/>
+        <result property="bizType" column="biz_type"/>
+        <result property="bizId" column="biz_id"/>
+        <result property="title" column="title"/>
+        <result property="coverObjectKey" column="cover_object_key"/>
+        <result property="authorName" column="author_name"/>
+        <result property="viewTime" column="view_time"/>
+        <result property="lastViewTime" column="last_view_time"/>
+        <result property="viewCount" column="view_count"/>
+    </resultMap>
+
+    <!-- 查命中行：UNIQUE(user_id,biz_type,biz_id)，命中返回该行，未命中 null -->
+    <select id="getByUserBiz" resultMap="UserViewHistoryMap">
+        select view_id, user_id, biz_type, biz_id, view_time, last_view_time, view_count
+        from user_view_history
+        where user_id = #{userId} and biz_type = #{bizType} and biz_id = #{bizId}
+    </select>
+
+    <insert id="insertViewHistory" parameterType="com.knowhub.pojo.history.entity.UserViewHistory"
+            useGeneratedKeys="true" keyProperty="viewId">
+        insert into user_view_history(user_id, biz_type, biz_id, view_time, last_view_time, view_count)
+        values (#{userId}, #{bizType}, #{bizId}, now(), now(), 1)
+    </insert>
+
+    <!-- 命中行累加 view_count +1 + 刷新 last_view_time（主表 view_count 不动=刷不动） -->
+    <update id="incrementViewCount">
+        update user_view_history
+        set view_count = view_count + 1, last_view_time = now()
+        where view_id = #{viewId}
+    </update>
+
+    <!--
+        当前用户浏览历史分页：UNION ALL 四类内容各取一行（章节取所属 article 标题+作者）。
+        blog 无 author_id 列，author_name 取 create_by(username)；article/chapter/resource
+        join sys_user on user_id=author_id 取 nick_name（缺失则回落 create_by/author_id）。
+        PageHelper 对外层 union 做 count+分页，orderby 用 last_view_time desc。
+    -->
+    <select id="listViewHistory" parameterType="com.knowhub.pojo.history.quarry.ViewHistoryQuarry"
+            resultMap="ViewHistoryVoMap">
+        select * from (
+            <!-- 博客 -->
+            select h.view_id, h.biz_type, h.biz_id, b.title, b.cover_url as cover_object_key,
+                   b.create_by as author_name, h.view_time, h.last_view_time, h.view_count
+            from user_view_history h
+            inner join blog b on b.blog_id = h.biz_id
+            where h.user_id = #{userId} and h.biz_type = 'BLOG'
+            <if test="bizType != null and bizType != ''">and h.biz_type = #{bizType}</if>
+
+            union all
+            <!-- 文章 -->
+            select h.view_id, h.biz_type, h.biz_id, a.title, a.cover_object_key,
+                   u.nick_name as author_name, h.view_time, h.last_view_time, h.view_count
+            from user_view_history h
+            inner join article a on a.article_id = h.biz_id
+            left join sys_user u on u.user_id = a.author_id
+            where h.user_id = #{userId} and h.biz_type = 'ARTICLE'
+            <if test="bizType != null and bizType != ''">and h.biz_type = #{bizType}</if>
+
+            union all
+            <!-- 章节：取所属 article 标题 + article 作者 -->
+            select h.view_id, h.biz_type, h.biz_id, a.title, a.cover_object_key,
+                   u.nick_name as author_name, h.view_time, h.last_view_time, h.view_count
+            from user_view_history h
+            inner join chapter c on c.chapter_id = h.biz_id
+            inner join article a on a.article_id = c.article_id
+            left join sys_user u on u.user_id = a.author_id
+            where h.user_id = #{userId} and h.biz_type = 'CHAPTER'
+            <if test="bizType != null and bizType != ''">and h.biz_type = #{bizType}</if>
+
+            union all
+            <!-- 资源 -->
+            select h.view_id, h.biz_type, h.biz_id, r.title, cast(null as char) as cover_object_key,
+                   u.nick_name as author_name, h.view_time, h.last_view_time, h.view_count
+            from user_view_history h
+            inner join resource r on r.resource_id = h.biz_id
+            left join sys_user u on u.user_id = r.author_id
+            where h.user_id = #{userId} and h.biz_type = 'RESOURCE'
+            <if test="bizType != null and bizType != ''">and h.biz_type = #{bizType}</if>
+
+            union all
+            <!-- 项目：项目无封面/独立作者列，author_name 取 author_id join 出 nick_name（项目负责人昵称），与文章同构 -->
+            select h.view_id, h.biz_type, h.biz_id, p.title, cast(null as char) as cover_object_key,
+                   u.nick_name as author_name, h.view_time, h.last_view_time, h.view_count
+            from user_view_history h
+            inner join project p on p.project_id = h.biz_id
+            left join sys_user u on u.user_id = p.author_id
+            where h.user_id = #{userId} and h.biz_type = 'PROJECT'
+            <if test="bizType != null and bizType != ''">and h.biz_type = #{bizType}</if>
+        ) t
+        order by t.last_view_time desc, t.view_id desc
+    </select>
+
+    <delete id="deleteViewById">
+        delete from user_view_history where view_id = #{viewId} and user_id = #{userId}
+    </delete>
+
+    <delete id="clearByUser">
+        delete from user_view_history where user_id = #{userId}
+    </delete>
+
+    <!--
+        主表 view_count +1（仅 recordView 首次 INSERT 时调一次，记独立访客）。
+        按 bizType 用 <choose> 分发表名+主键列名（blog_id/article_id/chapter_id/resource_id/project_id），
+        表名/列名走 ${} 字面拼接（service 层已用 ViewBizType 枚举校验，非用户输入，无注入风险）。
+        PROJECT 分支 2026-08-03 增：项目前台门户详情计浏览量，回写 project.view_count。
+    -->
+    <update id="incrementMainViewCount">
+        update
+        <choose>
+            <when test="bizType == 'BLOG'">blog</when>
+            <when test="bizType == 'ARTICLE'">article</when>
+            <when test="bizType == 'CHAPTER'">chapter</when>
+            <when test="bizType == 'RESOURCE'">resource</when>
+            <when test="bizType == 'PROJECT'">project</when>
+        </choose>
+        set view_count = view_count + 1
+        where
+        <choose>
+            <when test="bizType == 'BLOG'">blog_id</when>
+            <when test="bizType == 'ARTICLE'">article_id</when>
+            <when test="bizType == 'CHAPTER'">chapter_id</when>
+            <when test="bizType == 'RESOURCE'">resource_id</when>
+            <when test="bizType == 'PROJECT'">project_id</when>
+        </choose>
+        = #{bizId}
+    </update>
+
+</mapper>

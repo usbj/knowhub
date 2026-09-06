@@ -1,0 +1,25 @@
+# 前台构建上下文 = knowhub-ui/。镜像只需 dist/ + nginx 配置，排除其余。
+
+# 源码与开发依赖（镜像不编译，只拷预构建 dist）
+src/
+node_modules/
+.vite/
+coverage/
+public/
+
+# 构建产物之外的配置文件
+*.md
+*.json
+*.ts
+*.html
+env.d.ts
+
+# 不要排掉 dist/（镜像要 COPY 它）和 nginx-portal.conf
+
+# IDE / 版本控制
+.idea/
+.git/
+.claude/
+
+# Docker 自身
+Dockerfile

@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.knowhub.mapper.audit.AuditFlowReviewLogMapper">
+
+    <resultMap id="AuditFlowReviewLogResultMap" type="com.knowhub.pojo.audit.entity.AuditFlowReviewLog">
+        <id property="reviewLogId" column="review_log_id"/>
+        <result property="flowId" column="flow_id"/>
+        <result property="action" column="action"/>
+        <result property="operatorId" column="operator_id"/>
+        <result property="operator" column="operator"/>
+        <result property="role" column="role"/>
+        <result property="advice" column="advice"/>
+        <result property="createTime" column="create_time"/>
+        <result property="operatorNickname" column="nick_name"/>
+    </resultMap>
+
+    <!--
+      追加一条审核流水。
+      create_time 由 DB 默认 CURRENT_TIMESTAMP 填充，故 insert 不含该列。
+      advice 为可空字段（通过时可选填，驳回必填），用 if 动态拼接（对齐 README.dev「Mapper XML insert 均改为动态列」约定）。
+    -->
+    <insert id="insertAuditFlowReviewLog" parameterType="com.knowhub.pojo.audit.entity.AuditFlowReviewLog" useGeneratedKeys="true" keyProperty="reviewLogId">
+        insert into audit_flow_review_log (flow_id, action, operator_id, operator, role
+        <if test="advice != null">, advice</if>)
+        values (#{flowId}, #{action}, #{operatorId}, #{operator}, #{role}
+        <if test="advice != null">, #{advice}</if>)
+    </insert>
+
+    <!--
+      按流水ID查审核历史，按动作时间升序还原轨迹（最早→最新）。
+      左 join sys_user 带出操作人昵称(nick_name)，供前端直接展示；
+      用 LEFT JOIN 而非 INNER，确保用户被删/改名时流水行不丢（昵称回落 null）。
+      operator 列已存 username 快照，即使 sys_user 行不存在也能展示账号串。
+    -->
+    <select id="listByFlowId" parameterType="long" resultMap="AuditFlowReviewLogResultMap">
+        select l.review_log_id, l.flow_id, l.action, l.operator_id, l.operator,
+               l.role, l.advice, l.create_time, u.nick_name
+        from audit_flow_review_log l
+        left join sys_user u on l.operator_id = u.user_id
+        where l.flow_id = #{flowId}
+        order by l.create_time asc, l.review_log_id asc
+    </select>
+
+</mapper>

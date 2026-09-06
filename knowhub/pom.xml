@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>com.rookie</groupId>
+        <artifactId>knowhub</artifactId>
+        <version>1.0.5</version>
+    </parent>
+
+    <groupId>com.knowhub</groupId>
+    <artifactId>knowhub</artifactId>
+    <version>1.0.5</version>
+
+    <properties>
+        <maven.compiler.source>17</maven.compiler.source>
+        <maven.compiler.target>17</maven.compiler.target>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    </properties>
+
+    <dependencies>
+        <dependency>
+            <groupId>com.rookie</groupId>
+            <artifactId>rookie-framework</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>com.rookie</groupId>
+            <artifactId>rookie-system</artifactId>
+        </dependency>
+
+        <!--s3 sdk（版本由根 pom 的 software.amazon.awssdk:bom 统一管理；预签名 S3Presigner 类同在此 jar 内）-->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>s3</artifactId>
+        </dependency>
+    </dependencies>
+
+</project>

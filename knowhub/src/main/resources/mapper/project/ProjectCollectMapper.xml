@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.knowhub.mapper.project.ProjectCollectMapper">
+
+    <resultMap id="ProjectCollectResultMap" type="com.knowhub.pojo.project.entity.ProjectCollect">
+        <id property="projectId" column="project_id"/>
+        <id property="userId" column="user_id"/>
+        <result property="createTime" column="create_time"/>
+    </resultMap>
+
+    <insert id="addProjectCollect" parameterType="com.knowhub.pojo.project.entity.ProjectCollect">
+        insert ignore into project_collect(project_id, user_id) values (#{projectId}, #{userId})
+    </insert>
+
+    <delete id="deleteProjectCollect" parameterType="com.knowhub.pojo.project.entity.ProjectCollect">
+        delete from project_collect where project_id = #{projectId} and user_id = #{userId}
+    </delete>
+
+    <select id="getProjectCollect" parameterType="com.knowhub.pojo.project.entity.ProjectCollect" resultMap="ProjectCollectResultMap">
+        select * from project_collect where project_id = #{projectId} and user_id = #{userId}
+    </select>
+
+    <!-- 当前用户的收藏项目 ID 列表（按收藏时间倒序；service 层据此 join 出 VO） -->
+    <select id="listCollectedProjectIds" resultType="java.lang.Long">
+        select project_id from project_collect where user_id = #{userId} order by create_time desc
+    </select>
+
+</mapper>

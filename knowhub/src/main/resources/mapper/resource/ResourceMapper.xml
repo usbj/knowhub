@@ -1,0 +1,231 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.knowhub.mapper.resource.ResourceMapper">
+
+    <!--
+      资源主表结果映射。
+      含 join 带出的展示字段（非表字段，Resource 实体扩展属性）：
+      - authorNickname：join sys_user on user_id=author_id，LEFT JOIN 防止用户被删时丢行
+      - categoryName：join resource_category on resource_category_id=category_id，LEFT JOIN；
+        resource_category_id=-1(其他)时无匹配行，categoryName 落 null，前端硬编码展示"其他"
+      - originalName/contentLength/contentType：join file_object on file_object_id=object_id，
+        FILE 类型才有意义，LINK 类型 file_object_id 为 null，LEFT JOIN 不影响
+    -->
+    <resultMap id="ResourceResultMap" type="com.knowhub.pojo.resource.entity.Resource">
+        <id property="resourceId" column="resource_id"/>
+        <result property="authorId" column="author_id"/>
+        <result property="resourceType" column="resource_type"/>
+        <result property="resourceCategoryId" column="resource_category_id"/>
+        <result property="title" column="title"/>
+        <result property="summary" column="summary"/>
+        <result property="description" column="description"/>
+        <result property="fileObjectId" column="file_object_id"/>
+        <result property="linkUrl" column="link_url"/>
+        <result property="linkIcon" column="link_icon"/>
+        <result property="status" column="status"/>
+        <result property="level" column="level"/>
+        <result property="reviewStatus" column="review_status"/>
+        <result property="publishTime" column="publish_time"/>
+        <result property="downloadCount" column="download_count"/>
+        <result property="createBy" column="create_by"/>
+        <result property="createTime" column="create_time"/>
+        <result property="updateBy" column="update_by"/>
+        <result property="updateTime" column="update_time"/>
+        <result property="deleted" column="deleted"/>
+        <result property="commentEnabled" column="comment_enabled"/>
+        <result property="commentCurated" column="comment_curated"/>
+        <!-- join 带出的展示字段（非表字段） -->
+        <result property="authorNickname" column="author_nickname"/>
+        <result property="categoryName" column="category_name"/>
+        <result property="originalName" column="original_name"/>
+        <result property="contentLength" column="content_length"/>
+        <result property="contentType" column="content_type"/>
+    </resultMap>
+
+    <!--
+      列表查询：不带 description（大字段，详情接口单独查），避免拖列表。
+      join sys_user(作者昵称) + resource_category(分类名) + file_object(FILE元数据)。
+      支持按 title 模糊、resourceType、resourceCategoryId、status、reviewStatus、createBy、时间区间过滤。
+      按 publish_time desc, resource_id desc 排序（与博客列表一致）。
+    -->
+    <select id="quarryResource" parameterType="com.knowhub.pojo.resource.quarry.ResourceQuarry" resultMap="ResourceResultMap">
+        select r.resource_id, r.author_id, r.resource_type, r.resource_category_id,
+               r.title, r.summary, r.file_object_id, r.link_url, r.link_icon,
+               r.status, r.level, r.review_status, r.publish_time, r.download_count,
+               r.create_by, r.create_time, r.update_by, r.update_time, r.deleted,
+               r.comment_enabled, r.comment_curated,
+               u.nick_name as author_nickname,
+               c.category_name as category_name,
+               f.original_name as original_name, f.content_length as content_length, f.content_type as content_type
+        from resource r
+                left join sys_user u on r.author_id = u.user_id
+                left join resource_category c on r.resource_category_id = c.category_id and c.deleted = 0
+                left join file_object f on r.file_object_id = f.object_id and f.deleted = 0
+        where r.deleted = 0
+        <if test="title != null and title != ''">and r.title like concat('%', #{title}, '%')</if>
+        <if test="resourceType != null and resourceType != ''">and r.resource_type = #{resourceType}</if>
+        <if test="resourceCategoryId != null">and r.resource_category_id = #{resourceCategoryId}</if>
+        <if test="status != null and status != ''">and r.status = #{status}</if>
+        <if test="reviewStatus != null and reviewStatus != ''">and r.review_status = #{reviewStatus}</if>
+        <if test="createBy != null and createBy != ''">and r.create_by = #{createBy}</if>
+        <if test="authorId != null">and r.author_id = #{authorId}</if>
+        <if test="beginTime != null">and r.create_time &gt;= #{beginTime}</if>
+        <if test="endTime != null">and r.create_time &lt;= #{endTime}</if>
+        order by r.publish_time desc, r.resource_id desc
+    </select>
+
+    <!--
+      详情：按主键取未删资源，含 description 大字段 + join 带出展示字段。
+      与列表共用 ResourceResultMap。
+    -->
+    <select id="getResourceInfoById" parameterType="long" resultMap="ResourceResultMap">
+        select r.*, u.nick_name as author_nickname, c.category_name as category_name,
+               f.original_name as original_name, f.content_length as content_length, f.content_type as content_type
+        from resource r
+                left join sys_user u on r.author_id = u.user_id
+                left join resource_category c on r.resource_category_id = c.category_id and c.deleted = 0
+                left join file_object f on r.file_object_id = f.object_id and f.deleted = 0
+        where r.resource_id = #{resourceId} and r.deleted = 0
+    </select>
+
+    <!-- 新增资源，动态列（对齐 README.dev「Mapper XML insert 均改为动态列」约定） -->
+    <insert id="addResource" parameterType="com.knowhub.pojo.resource.entity.Resource" useGeneratedKeys="true" keyProperty="resourceId">
+        insert into resource
+        <trim prefix="(" suffix=")" suffixOverrides=",">
+            <if test="authorId != null">author_id,</if>
+            <if test="resourceType != null">resource_type,</if>
+            <if test="resourceCategoryId != null">resource_category_id,</if>
+            <if test="title != null">title,</if>
+            <if test="summary != null">summary,</if>
+            <if test="description != null">description,</if>
+            <if test="fileObjectId != null">file_object_id,</if>
+            <if test="linkUrl != null">link_url,</if>
+            <if test="linkIcon != null">link_icon,</if>
+            <if test="status != null">status,</if>
+            <if test="level != null">level,</if>
+            <if test="reviewStatus != null">review_status,</if>
+            <if test="publishTime != null">publish_time,</if>
+            <if test="downloadCount != null">download_count,</if>
+            <if test="commentEnabled != null">comment_enabled,</if>
+            <if test="commentCurated != null">comment_curated,</if>
+            create_by, create_time, update_by, update_time
+        </trim>
+        values
+        <trim prefix="(" suffix=")" suffixOverrides=",">
+            <if test="authorId != null">#{authorId},</if>
+            <if test="resourceType != null">#{resourceType},</if>
+            <if test="resourceCategoryId != null">#{resourceCategoryId},</if>
+            <if test="title != null">#{title},</if>
+            <if test="summary != null">#{summary},</if>
+            <if test="description != null">#{description},</if>
+            <if test="fileObjectId != null">#{fileObjectId},</if>
+            <if test="linkUrl != null">#{linkUrl},</if>
+            <if test="linkIcon != null">#{linkIcon},</if>
+            <if test="status != null">#{status},</if>
+            <if test="level != null">#{level},</if>
+            <if test="reviewStatus != null">#{reviewStatus},</if>
+            <if test="publishTime != null">#{publishTime},</if>
+            <if test="downloadCount != null">#{downloadCount},</if>
+            <if test="commentEnabled != null">#{commentEnabled},</if>
+            <if test="commentCurated != null">#{commentCurated},</if>
+            #{createBy}, now(), #{updateBy}, now()
+        </trim>
+    </insert>
+
+    <!-- 编辑资源（动态列） -->
+    <update id="editResourceInfo" parameterType="com.knowhub.pojo.resource.entity.Resource">
+        update resource
+        <set>
+            <if test="authorId != null">author_id = #{authorId},</if>
+            <if test="resourceType != null and resourceType != ''">resource_type = #{resourceType},</if>
+            <if test="resourceCategoryId != null">resource_category_id = #{resourceCategoryId},</if>
+            <if test="title != null and title != ''">title = #{title},</if>
+            <if test="summary != null">summary = #{summary},</if>
+            <if test="description != null">description = #{description},</if>
+            <if test="fileObjectId != null">file_object_id = #{fileObjectId},</if>
+            <if test="linkUrl != null">link_url = #{linkUrl},</if>
+            <if test="linkIcon != null">link_icon = #{linkIcon},</if>
+            <if test="status != null and status != ''">status = #{status},</if>
+            <if test="level != null">level = #{level},</if>
+            <if test="reviewStatus != null and reviewStatus != ''">review_status = #{reviewStatus},</if>
+            <if test="publishTime != null">publish_time = #{publishTime},</if>
+            <if test="downloadCount != null">download_count = #{downloadCount},</if>
+            <if test="deleted != null">deleted = #{deleted},</if>
+            <if test="commentEnabled != null">comment_enabled = #{commentEnabled},</if>
+            <if test="commentCurated != null">comment_curated = #{commentCurated},</if>
+            update_by = #{updateBy},
+            update_time = now()
+        </set>
+        where resource_id = #{resourceId}
+    </update>
+
+    <update id="softDeleteResource" parameterType="long">
+        update resource set deleted = 1, update_time = now() where resource_id = #{resourceId}
+    </update>
+
+    <!-- 下载量 +1（原子自增，仅 FILE 下载调用） -->
+    <update id="incrDownloadCount" parameterType="long">
+        update resource set download_count = download_count + 1 where resource_id = #{resourceId}
+    </update>
+
+    <!-- 对账用：列出所有待审核且未删除的资源 ID，供审核关闭后定时任务批量放行 -->
+    <select id="listPendingReviewIds" resultType="java.lang.Long">
+        select resource_id from resource where status = 'PENDING_REVIEW' and deleted = 0
+    </select>
+
+    <!-- 按 categoryId 统计挂载该分类的资源数（删分类前校验） -->
+    <select id="countByCategoryId" resultType="java.lang.Long">
+        select count(*) from resource where resource_category_id = #{categoryId} and deleted = 0
+    </select>
+
+    <!-- 批量把挂载某分类的资源置 -1（其他），删分类前调用 -->
+    <update id="resetCategoryToOther">
+        update resource set resource_category_id = -1, update_time = now()
+        where resource_category_id = #{categoryId} and deleted = 0
+    </update>
+
+    <!--
+      批量查多个资源的点赞数（事实表聚合，列表回填用）。
+      返回每行 {resourceId, cnt}，Service 层按 resourceId 收集到 VO。
+      resourceIds 为空时由外层 if 拦截（避免生成 in () 语法错误）。
+    -->
+    <select id="countLikesByResourceIds" resultType="java.util.Map">
+        <if test="resourceIds != null and resourceIds.size() > 0">
+            select resource_id as resourceId, count(*) as cnt
+            from resource_like
+            where resource_id in
+            <foreach collection="resourceIds" item="rid" open="(" separator="," close=")">#{rid}</foreach>
+            group by resource_id
+        </if>
+    </select>
+
+    <!-- 批量查多个资源的收藏数 -->
+    <select id="countCollectsByResourceIds" resultType="java.util.Map">
+        <if test="resourceIds != null and resourceIds.size() > 0">
+            select resource_id as resourceId, count(*) as cnt
+            from resource_collect
+            where resource_id in
+            <foreach collection="resourceIds" item="rid" open="(" separator="," close=")">#{rid}</foreach>
+            group by resource_id
+        </if>
+    </select>
+
+    <!--
+      批量查多个资源的评分均值与计数。
+      AVG(score) 保留 2 位小数（round）；无评分的资源不在此结果集，Service 层按缺省 0/0 处理。
+    -->
+    <select id="ratingStatsByResourceIds" resultType="java.util.Map">
+        <if test="resourceIds != null and resourceIds.size() > 0">
+            select resource_id as resourceId,
+                   round(avg(score), 2) as ratingAvg,
+                   count(*) as ratingCnt
+            from resource_rating
+            where resource_id in
+            <foreach collection="resourceIds" item="rid" open="(" separator="," close=")">#{rid}</foreach>
+            group by resource_id
+        </if>
+    </select>
+
+</mapper>

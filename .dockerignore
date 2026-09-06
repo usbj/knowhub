@@ -1,0 +1,55 @@
+# 后端构建上下文 = 仓库根。镜像只需 fat-jar，故尽量瘦身上下文。
+# 注意：不能整目录忽略 target/，否则 COPY 的 fat-jar 也被排除。下面只排除 target 里的噪音目录，
+# 保留 rookie-admin/target/rookie-admin-*.jar。
+
+# target 下除 fat-jar 外的编译中间产物
+**/target/classes/
+**/target/test-classes/
+**/target/generated-sources/
+**/target/generated-test-sources/
+**/target/maven-archiver/
+**/target/maven-status/
+**/target/site/
+**/target/surefire-reports/
+**/target/*.original
+**/target/*.jar.original
+
+# Maven Wrapper jar（镜像不编译，不需要）
+.mvn/wrapper/maven-wrapper.jar
+
+# 前端依赖与构建产物（前端有各自的 build context，这里不会被用到，但顺手排掉省上下文）
+**/node_modules/
+**/dist/
+**/.vite/
+**/coverage/
+
+# 源码本身（镜像只拷 jar，不需要 .java/资源源码）
+**/*.java
+**/*.xml
+**/*.yml
+**/*.yaml
+**/src/
+
+# IDE / 版本控制 / 本地分析
+.idea/
+.git/
+.gitignore
+**/*.iml
+.vscode/
+.claude/
+graphify-out/
+
+# 文档（构建不需要）
+*.md
+LICENSE
+doc/
+sql/
+knowhub-upload/
+upload/
+
+# Docker 自身与部署文件不进上下文
+Dockerfile
+**/Dockerfile
+docker-compose*.yml
+.env*
+deploy/

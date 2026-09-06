@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { reactive, ref } from 'vue'
+import { onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Lock, User } from '@element-plus/icons-vue'
-import { loginApi } from '@/api/system/login'
+import { getRegisterEnabledApi, loginApi } from '@/api/system/login'
 import { useUserStore } from '@/stores/user'
 import type { LoginRequestData } from '@/types/api/system/login'
 
@@ -17,14 +17,22 @@ const userStore = useUserStore()
 const loading = ref(false)
 
 /**
+ * 注册是否开放：由后端公开接口 GET /register/enabled 返回
+ * （后端读系统设置 sys.user.registerEnabled，BOOLEAN，默认 false）。
+ * 前端不直接读取系统设置接口；读取失败按"未开放"处理（与后端默认关闭一致），
+ * 此时隐藏"注册账号"入口。
+ */
+const registerEnabled = ref(false)
+
+/**
  * 登录表单数据。
  * 账号字段最终会映射为后端需要的 username。
  * 不再提供"记住本次登录"：后端 token 自带过期时间，前端切换存储范围无意义；
  * 账号也不回填本地浏览器，避免在本机暴露登录账号带来安全问题。
  */
 const form = reactive({
-  username: 'admin',
-  password: 'rookie',
+  username: '',
+  password: '',
 })
 
 /**
@@ -81,6 +89,37 @@ const handleForgotPassword = () => {
     },
   )
 }
+
+/**
+ * 方法效果：
+ * 调用公开接口 GET /register/enabled 判断注册开关是否开放，控制"注册账号"入口显隐。
+ * 参数：
+ * - 无。
+ * 返回值：
+ * - 无返回值；副作用是更新 registerEnabled 状态。
+ */
+const loadRegisterEnabled = async () => {
+  try {
+    const result = await getRegisterEnabledApi()
+    registerEnabled.value = result.data === true
+  } catch {
+    registerEnabled.value = false
+  }
+}
+
+/**
+ * 方法效果：
+ * 跳转注册页（/register 为 public 路由，无需登录）。
+ * 参数：
+ * - 无。
+ * 返回值：
+ * - 无返回值；副作用是触发路由跳转。
+ */
+const handleGoRegister = () => {
+  router.push('/register')
+}
+
+onMounted(loadRegisterEnabled)
 </script>
 
 <template>
@@ -155,6 +194,14 @@ const handleForgotPassword = () => {
         </label>
 
         <div class="login-view__options">
+          <button
+            v-if="registerEnabled"
+            class="login-view__text-action"
+            type="button"
+            @click="handleGoRegister"
+          >
+            注册账号
+          </button>
           <button
             class="login-view__text-action"
             type="button"
@@ -374,7 +421,7 @@ const handleForgotPassword = () => {
 .login-view__options {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: space-between;
 }
 
 .login-view__text-action {

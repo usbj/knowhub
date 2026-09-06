@@ -105,7 +105,7 @@
         select * from sys_notice where notice_id = #{noticeId}
     </select>
 
-    <select id="getNoticesForUser" parameterType="long" resultMap="SysNoticeResultMap">
+    <select id="getNoticesForUser" resultMap="SysNoticeResultMap">
         select * from sys_notice
         where `delete` = 0
           and status = 'PUBLISHED'
@@ -114,8 +114,85 @@
                    select rel.notice_id from sys_notice_group_rel rel
                    inner join sys_notice_group_member mem on mem.group_id = rel.group_id
                    where mem.user_id = #{userId}
+               )
+               or notice_id in (
+                   select user_rel.notice_id from sys_notice_user_rel user_rel
+                   where user_rel.user_id = #{userId}
                ))
+          <if test="noticeType != null and noticeType != ''">and notice_type = #{noticeType}</if>
         order by is_top desc, publish_time desc, notice_id desc
+    </select>
+
+    <!-- 未读计数：可见范围与 getNoticesForUser 一致，未读 = sys_notice_read 无 read_time 记录 -->
+    <select id="countUnreadNoticesForUser" parameterType="long" resultType="long">
+        select count(*)
+        from sys_notice n
+        where n.`delete` = 0
+          and n.status = 'PUBLISHED'
+          and (n.publish_scope = 'ALL'
+               or n.notice_id in (
+                   select rel.notice_id from sys_notice_group_rel rel
+                   inner join sys_notice_group_member mem on mem.group_id = rel.group_id
+                   where mem.user_id = #{userId}
+               )
+               or n.notice_id in (
+                   select user_rel.notice_id from sys_notice_user_rel user_rel
+                   where user_rel.user_id = #{userId}
+               ))
+          and not exists (
+              select 1 from sys_notice_read r
+              where r.notice_id = n.notice_id
+                and r.user_id = #{userId}
+                and r.read_time is not null
+          )
+    </select>
+
+    <!-- 全部已读：一次性把当前用户所有可见且未读的通知批量插入 sys_notice_read（read_time=now()）。
+         可见范围与未读判定与 countUnreadNoticesForUser 完全一致（ALL / 分组 / 指定成员 + 无 read_time 记录），
+         INSERT...SELECT 单 SQL 完成批量，避免前端逐条调 /sys/notice/read/{id}（下拉懒加载只含已加载页，未加载页未读无法覆盖）。 -->
+    <insert id="markAllReadForUser" parameterType="long">
+        insert into sys_notice_read (notice_id, user_id, read_time)
+        select n.notice_id, #{userId}, now()
+        from sys_notice n
+        where n.`delete` = 0
+          and n.status = 'PUBLISHED'
+          and (n.publish_scope = 'ALL'
+               or n.notice_id in (
+                   select rel.notice_id from sys_notice_group_rel rel
+                   inner join sys_notice_group_member mem on mem.group_id = rel.group_id
+                   where mem.user_id = #{userId}
+               )
+               or n.notice_id in (
+                   select user_rel.notice_id from sys_notice_user_rel user_rel
+                   where user_rel.user_id = #{userId}
+               ))
+          and not exists (
+              select 1 from sys_notice_read r
+              where r.notice_id = n.notice_id
+                and r.user_id = #{userId}
+                and r.read_time is not null
+          )
+    </insert>
+
+    <!-- 按类型分组计数：可见范围与 getNoticesForUser / countUnreadNoticesForUser 一致，
+         GROUP BY notice_type 一次出所有类型计数，供前台分类 tab 角标显示真实总数
+         （避免前端为四个角标发四次分页请求读 total）。无可见通知时返空列表。 -->
+    <select id="countMyNoticesByType" resultType="com.rookie.system.pojo.vo.NoticeTypeCount">
+        select n.notice_type as noticeType, count(*) as count
+        from sys_notice n
+        where n.`delete` = 0
+          and n.status = 'PUBLISHED'
+          and (n.publish_scope = 'ALL'
+               or n.notice_id in (
+                   select rel.notice_id from sys_notice_group_rel rel
+                   inner join sys_notice_group_member mem on mem.group_id = rel.group_id
+                   where mem.user_id = #{userId}
+               )
+               or n.notice_id in (
+                   select user_rel.notice_id from sys_notice_user_rel user_rel
+                   where user_rel.user_id = #{userId}
+               ))
+        group by n.notice_type
     </select>
 
 </mapper>

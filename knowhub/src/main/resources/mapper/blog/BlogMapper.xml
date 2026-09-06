@@ -1,0 +1,167 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.knowhub.mapper.blog.BlogMapper">
+
+    <resultMap id="BlogResultMap" type="com.knowhub.pojo.blog.entity.Blog">
+        <id property="blogId" column="blog_id"/>
+        <result property="authorId" column="author_id"/>
+        <result property="level" column="level"/>
+        <result property="title" column="title"/>
+        <result property="content" column="content"/>
+        <result property="summary" column="summary"/>
+        <result property="coverUrl" column="cover_url"/>
+        <result property="status" column="status"/>
+        <result property="publishTime" column="publish_time"/>
+        <result property="viewCount" column="view_count"/>
+        <result property="likeCount" column="like_count"/>
+        <result property="collectCount" column="collect_count"/>
+        <result property="reviewStatus" column="review_status"/>
+        <result property="reviewer" column="reviewer"/>
+        <result property="reviewTime" column="review_time"/>
+        <result property="reviewAdvice" column="review_advice"/>
+        <result property="createBy" column="create_by"/>
+        <result property="createTime" column="create_time"/>
+        <result property="updateBy" column="update_by"/>
+        <result property="updateTime" column="update_time"/>
+        <result property="deleted" column="deleted"/>
+        <result property="commentEnabled" column="comment_enabled"/>
+        <result property="commentCurated" column="comment_curated"/>
+    </resultMap>
+
+    <!--
+      列表查询：支持 fulltext(keyword) + 标签(tagIds) 复合筛选。
+      - tagIds 非空时，join blog_tag 要求同时命中全部所选标签
+        （GROUP BY blog_id HAVING COUNT(DISTINCT tag_id) = tagIds.size）。
+      - tagIds 为空时不 join，避免影响 fulltext 与其它过滤。
+    -->
+    <select id="quarryBlog" parameterType="com.knowhub.pojo.blog.quarry.BlogQuarry" resultMap="BlogResultMap">
+        select b.* from blog b
+        <if test="tagIds != null and tagIds.size() > 0">
+            inner join blog_tag bt on bt.blog_id = b.blog_id
+        </if>
+        where b.deleted = 0
+        <if test="title != null and title != ''">and b.title like concat('%', #{title}, '%')</if>
+        <if test="keyword != null and keyword != ''">
+            and MATCH(b.title, b.content) AGAINST(#{keyword} IN BOOLEAN MODE)
+        </if>
+        <if test="level != null">and b.level = #{level}</if>
+        <if test="status != null and status != ''">and b.status = #{status}</if>
+        <if test="reviewStatus != null and reviewStatus != ''">and b.review_status = #{reviewStatus}</if>
+        <if test="createBy != null and createBy != ''">and b.create_by = #{createBy}</if>
+        <if test="beginTime != null">and b.create_time &gt;= #{beginTime}</if>
+        <if test="endTime != null">and b.create_time &lt;= #{endTime}</if>
+        <if test="tagIds != null and tagIds.size() > 0">
+            and bt.tag_id in
+            <foreach collection="tagIds" item="tid" open="(" separator="," close=")">#{tid}</foreach>
+            group by b.blog_id
+            having count(distinct bt.tag_id) = #{tagCount}
+        </if>
+        <!-- 前台"我的博客"强制收紧：前台 BlogAuthoringController.myList 注入 authorId=当前用户 userId，
+             叠加此 AND 后"level<=userViewLevel OR author_id=userId"OR 分支被压回本人创建，
+             防登录用户在 /authoring/blog/list 召回他人博客（零 admin 回归——admin 不注入此字段，<if>不命中）。 -->
+        <if test="authorId != null">and b.author_id = #{authorId}</if>
+        <!-- 权限过滤（service 层透传 userViewLevel/userId，博客无成员表轻量模型，对齐文章）：
+             level <= userViewLevel OR author_id = userId（作者始终能看自己的博客，不看等级）。
+             无系统查看权限者 userViewLevel=0，level<=0 永假，只走 author_id=userId 分支 → 只看自己写的。 -->
+        and (
+            b.level &lt;= #{userViewLevel}
+            or b.author_id = #{userId}
+        )
+        order by b.publish_time desc, b.blog_id desc
+    </select>
+
+    <select id="getBlogInfoById" parameterType="long" resultMap="BlogResultMap">
+        select * from blog where blog_id = #{blogId} and deleted = 0
+    </select>
+
+    <insert id="addBlog" parameterType="com.knowhub.pojo.blog.entity.Blog" useGeneratedKeys="true" keyProperty="blogId">
+        insert into blog
+        <trim prefix="(" suffix=")" suffixOverrides=",">
+            <if test="authorId != null">author_id,</if>
+            <if test="level != null">level,</if>
+            <if test="title != null">title,</if>
+            <if test="content != null">content,</if>
+            <if test="summary != null">summary,</if>
+            <if test="coverUrl != null">cover_url,</if>
+            <if test="status != null">status,</if>
+            <if test="publishTime != null">publish_time,</if>
+            <if test="viewCount != null">view_count,</if>
+            <if test="likeCount != null">like_count,</if>
+            <if test="collectCount != null">collect_count,</if>
+            <if test="reviewStatus != null">review_status,</if>
+            <if test="reviewer != null">reviewer,</if>
+            <if test="reviewTime != null">review_time,</if>
+            <if test="reviewAdvice != null">review_advice,</if>
+            <if test="commentEnabled != null">comment_enabled,</if>
+            <if test="commentCurated != null">comment_curated,</if>
+            create_by, create_time, update_by, update_time
+        </trim>
+        values
+        <trim prefix="(" suffix=")" suffixOverrides=",">
+            <if test="authorId != null">#{authorId},</if>
+            <if test="level != null">#{level},</if>
+            <if test="title != null">#{title},</if>
+            <if test="content != null">#{content},</if>
+            <if test="summary != null">#{summary},</if>
+            <if test="coverUrl != null">#{coverUrl},</if>
+            <if test="status != null">#{status},</if>
+            <if test="publishTime != null">#{publishTime},</if>
+            <if test="viewCount != null">#{viewCount},</if>
+            <if test="likeCount != null">#{likeCount},</if>
+            <if test="collectCount != null">#{collectCount},</if>
+            <if test="reviewStatus != null">#{reviewStatus},</if>
+            <if test="reviewer != null">#{reviewer},</if>
+            <if test="reviewTime != null">#{reviewTime},</if>
+            <if test="reviewAdvice != null">#{reviewAdvice},</if>
+            <if test="commentEnabled != null">#{commentEnabled},</if>
+            <if test="commentCurated != null">#{commentCurated},</if>
+            #{createBy}, now(), #{updateBy}, now()
+        </trim>
+    </insert>
+
+    <update id="editBlogInfo" parameterType="com.knowhub.pojo.blog.entity.Blog">
+        update blog
+        <set>
+            <if test="level != null">level = #{level},</if>
+            <if test="title != null and title != ''">title = #{title},</if>
+            <if test="content != null and content != ''">content = #{content},</if>
+            <if test="summary != null">summary = #{summary},</if>
+            <if test="coverUrl != null">cover_url = #{coverUrl},</if>
+            <if test="status != null and status != ''">status = #{status},</if>
+            <if test="publishTime != null">publish_time = #{publishTime},</if>
+            <if test="viewCount != null">view_count = #{viewCount},</if>
+            <if test="likeCount != null">like_count = #{likeCount},</if>
+            <if test="collectCount != null">collect_count = #{collectCount},</if>
+            <if test="reviewStatus != null">review_status = #{reviewStatus},</if>
+            <if test="reviewer != null">reviewer = #{reviewer},</if>
+            <if test="reviewTime != null">review_time = #{reviewTime},</if>
+            <if test="reviewAdvice != null">review_advice = #{reviewAdvice},</if>
+            <if test="deleted != null">deleted = #{deleted},</if>
+            <if test="commentEnabled != null">comment_enabled = #{commentEnabled},</if>
+            <if test="commentCurated != null">comment_curated = #{commentCurated},</if>
+            update_by = #{updateBy},
+            update_time = now()
+        </set>
+        where blog_id = #{blogId}
+    </update>
+
+    <update id="softDeleteBlog" parameterType="long">
+        update blog set deleted = 1, update_time = now() where blog_id = #{blogId}
+    </update>
+
+    <update id="incrLikeCount">
+        update blog set like_count = like_count + #{delta} where blog_id = #{blogId}
+    </update>
+
+    <update id="incrCollectCount">
+        update blog set collect_count = collect_count + #{delta} where blog_id = #{blogId}
+    </update>
+
+    <!-- 对账用：列出所有待审核且未删除的文章 ID，供审核关闭后定时任务批量放行 -->
+    <select id="listPendingReviewIds" resultType="java.lang.Long">
+        select blog_id from blog where status = 'PENDING_REVIEW' and deleted = 0
+    </select>
+
+</mapper>

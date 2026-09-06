@@ -1,0 +1,188 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.knowhub.mapper.project.ProjectPortalMapper">
+
+    <!--
+      前台项目门户 VO 结果映射（含 authorNickname join sys_user 带出）。
+      计数列照 ProjectVo/resultMap 同名映射，列表/推荐/相关推荐共用。
+    -->
+    <resultMap id="ProjectPortalVoMap" type="com.knowhub.pojo.project.vo.ProjectPortalVo">
+        <id property="projectId" column="project_id"/>
+        <result property="title" column="title"/>
+        <result property="type" column="type"/>
+        <result property="level" column="level"/>
+        <result property="summary" column="summary"/>
+        <result property="authorId" column="author_id"/>
+        <result property="authorNickname" column="author_nickname"/>
+        <result property="authorAvatar" column="author_avatar"/>
+        <result property="publishTime" column="publish_time"/>
+        <result property="viewCount" column="view_count"/>
+        <result property="likeCount" column="like_count"/>
+        <result property="collectCount" column="collect_count"/>
+        <result property="downloadCount" column="download_count"/>
+    </resultMap>
+
+    <!-- 详情 VO 结果映射（继承列表字段 + description/locked 锁态不在此 SQL 出，service 填） -->
+    <resultMap id="ProjectPortalDetailVoMap" type="com.knowhub.pojo.project.vo.ProjectPortalDetailVo">
+        <id property="projectId" column="project_id"/>
+        <result property="title" column="title"/>
+        <result property="type" column="type"/>
+        <result property="level" column="level"/>
+        <result property="summary" column="summary"/>
+        <result property="authorId" column="author_id"/>
+        <result property="authorNickname" column="author_nickname"/>
+        <result property="authorAvatar" column="author_avatar"/>
+        <result property="publishTime" column="publish_time"/>
+        <result property="viewCount" column="view_count"/>
+        <result property="likeCount" column="like_count"/>
+        <result property="collectCount" column="collect_count"/>
+        <result property="downloadCount" column="download_count"/>
+        <result property="commentEnabled" column="comment_enabled"/>
+        <result property="commentCurated" column="comment_curated"/>
+    </resultMap>
+
+    <!--
+      公共 where 片段：前台可见口径 = deleted=0 AND status='PUBLISHED' AND level<=userViewLevel+1。
+      2026-08-18 权限大修搜索范围 +1：越级作品（level=userViewLevel+1）进列表带 locked=true 标记、summary 可见，
+      点进详情只锁下载（description 仍下发）。L3 用户 level=3→<=4 搜全部；L2→<=3 搜全部（L3 带 locked）；
+      L1→<=2 搜 L1+L2（L2 带 locked）。分级开关关时 userViewLevel 恒 1 → level<=2（L1+L2，L2 带 locked）。
+      前台不看作者归属（访客不靠作者身份看草稿/私有项目）。
+    -->
+    <sql id="portalProjectWhere">
+        p.deleted = 0 and p.status = 'PUBLISHED' and p.level &lt;= #{userViewLevel} + 1
+    </sql>
+
+    <!--
+      搜索：标题/简介/介绍 LIKE + type + level 复合过滤 + 排序，分页由 PageHelper 在 Service 层接管。
+      项目主表 title/summary/description 无 FULLTEXT 索引，数据量小 acceptable LIKE；数据量上来再加 ft idx（不改主表其他结构）。
+      keyword 一个词同时匹配 title / summary / description（介绍正文 mediumtext，前端传单 keyword，不需要分列字段）。
+      排序：HOT 走推荐打分公式 (download*3+like*2+collect*1+view*1) desc + publish_time desc；
+           LATEST/其它走 publish_time desc, project_id desc。列表不 select description（介绍正文仅在详情页按越级锁态单独拉）。
+      注：当 level 不传时按 userViewLevel 自动收窄（与博客一样，前台不暴露等级筛选项给无权者）。
+    -->
+    <select id="searchProjects" parameterType="com.knowhub.pojo.project.quarry.ProjectPortalSearchQuarry"
+            resultMap="ProjectPortalVoMap">
+        select p.project_id, p.title, p.type, p.level, p.summary,
+               p.author_id, u.nick_name as author_nickname, u.avatar as author_avatar, p.publish_time,
+               p.view_count, p.like_count, p.collect_count, p.download_count
+        from project p
+                left join sys_user u on p.author_id = u.user_id
+        where <include refid="portalProjectWhere"/>
+        <if test="keyword != null and keyword != ''">
+            and (p.title like concat('%', #{keyword}, '%')
+                 or p.summary like concat('%', #{keyword}, '%')
+                 or p.description like concat('%', #{keyword}, '%'))
+        </if>
+        <if test="type != null and type != ''">and p.type = #{type}</if>
+        <if test="level != null">and p.level = #{level}</if>
+        <if test="authorId != null">and p.author_id = #{authorId}</if>
+        <choose>
+            <when test="sort == 'LATEST'">
+                order by p.publish_time desc, p.project_id desc
+            </when>
+            <otherwise>
+                order by (p.download_count * 3 + p.like_count * 2 + p.collect_count * 1 + p.view_count * 1) desc,
+                         p.publish_time desc, p.project_id desc
+            </otherwise>
+        </choose>
+    </select>
+
+    <!--
+      推荐兜底：全局热门，排除 excludeProjectId（详情页相关用，避免推自己）+ excludeViewedProjectIds（登录用户已浏览拔重）。
+      打分公式同搜索 HOT：download*3 + like*2 + collect*1 + view*1，按 publish_time desc tie-break。
+      兜底召 size 直接用 LIMIT（项目数量有限，召回不足 service 不补——前台项目量不及博客的偏好召回场景，无召回不足需补）。
+    -->
+    <select id="recommendHot" resultMap="ProjectPortalVoMap">
+        select p.project_id, p.title, p.type, p.level, p.summary,
+               p.author_id, u.nick_name as author_nickname, u.avatar as author_avatar, p.publish_time,
+               p.view_count, p.like_count, p.collect_count, p.download_count
+        from project p
+                left join sys_user u on p.author_id = u.user_id
+        where <include refid="portalProjectWhere"/>
+        <if test="excludeProjectId != null">and p.project_id != #{excludeProjectId}</if>
+        <if test="excludeViewedProjectIds != null and excludeViewedProjectIds.size() > 0">
+            and p.project_id not in
+            <foreach collection="excludeViewedProjectIds" item="vid" open="(" separator="," close=")">#{vid}</foreach>
+        </if>
+        order by (p.download_count * 3 + p.like_count * 2 + p.collect_count * 1 + p.view_count * 1) desc,
+                 p.publish_time desc, p.project_id desc
+        limit #{size}
+    </select>
+
+    <!--
+      按 ID 集合取前台可见项目 VO（"我的收藏"列表用）。
+      照前台铁律过滤未发布/越级项目，IN 给定的 projectIds。不排序——service 按收藏时间倒序的 projectIds 顺序拼装。
+    -->
+    <select id="listByIds" resultMap="ProjectPortalVoMap">
+        select p.project_id, p.title, p.type, p.level, p.summary,
+               p.author_id, u.nick_name as author_nickname, u.avatar as author_avatar, p.publish_time,
+               p.view_count, p.like_count, p.collect_count, p.download_count
+        from project p
+                left join sys_user u on p.author_id = u.user_id
+        where <include refid="portalProjectWhere"/>
+          and p.project_id in
+          <foreach collection="projectIds" item="pid" open="(" separator="," close=")">#{pid}</foreach>
+    </select>
+
+    <!--
+      详情元数据：含 level + 各计数，不含 description（service 判越级锁态后再单独拉正文，避免越级白拉 mediumtext）。
+      强制 status='PUBLISHED' 约束：草稿/PENDING_REVIEW/REJECTED/REVOKED 不下发前台门户（这是公开访客面）。
+      不带 level<=userViewLevel 过滤——service 据返回的 level 与 userViewLevel 判锁态，元数据照给（含等级标签）。
+    -->
+    <select id="getPortalProjectMeta" parameterType="long" resultMap="ProjectPortalDetailVoMap">
+        select p.project_id, p.title, p.type, p.level, p.summary,
+               p.author_id, u.nick_name as author_nickname, u.avatar as author_avatar, p.publish_time,
+               p.view_count, p.like_count, p.collect_count, p.download_count,
+               p.comment_enabled, p.comment_curated
+        from project p
+                left join sys_user u on p.author_id = u.user_id
+        where p.project_id = #{projectId} and p.deleted = 0 and p.status = 'PUBLISHED'
+    </select>
+
+    <!-- 取详细介绍正文（仅 service 判定达权后调用） -->
+    <select id="getProjectDescription" parameterType="long" resultType="java.lang.String">
+        select description from project where project_id = #{projectId} and deleted = 0 and status = 'PUBLISHED'
+    </select>
+
+    <!--
+      相关推荐：同 type 排除自身，level<=userViewLevel，按推荐打分 desc，限 size。
+      若同 type 召回不足暂不跨 type 补（项目量不及博客标签场景，简单同 type 召回已满足详情页需求）。
+    -->
+    <select id="relatedProjects" resultMap="ProjectPortalVoMap">
+        select p.project_id, p.title, p.type, p.level, p.summary,
+               p.author_id, u.nick_name as author_nickname, u.avatar as author_avatar, p.publish_time,
+               p.view_count, p.like_count, p.collect_count, p.download_count
+        from project p
+                left join sys_user u on p.author_id = u.user_id
+        where <include refid="portalProjectWhere"/>
+          and p.project_id != #{projectId}
+          and p.type = (select type from project where project_id = #{projectId} and deleted = 0)
+        order by (p.download_count * 3 + p.like_count * 2 + p.collect_count * 1 + p.view_count * 1) desc,
+                 p.publish_time desc, p.project_id desc
+        limit #{size}
+    </select>
+
+    <!--
+      登录用户浏览过的项目 ID（推荐召回时排除已浏览，防看点重复；未登录由 service 判 null 不调）。
+      查 user_view_history biz_type='PROJECT' AND biz_id=projectId。
+      关键：排除自身的创作项目（author_id != userId）——作者已浏览自己发布的项目不应被"已浏览"拔重掉，
+      否则作者在 /projects 推荐页看不到自己的项目（用户反馈："登录后项目展示看不到自己的项目"）。
+    -->
+    <select id="viewedProjectIdsByUser" parameterType="long" resultType="java.lang.Long">
+        select distinct h.biz_id
+        from user_view_history h
+                 inner join project p on p.project_id = h.biz_id and p.deleted = 0 and p.status = 'PUBLISHED'
+        where h.user_id = #{userId} and h.biz_type = 'PROJECT' and p.author_id != #{userId}
+        limit 500
+    </select>
+
+    <!-- 下载计数 +1（前台文件下载成功下发后调；推荐打分权重最高依赖此计数，与 admin downloadFile 同口径）。
+     不指定 parameterType：多 @Param 时 MyBatis 封装为 Map，按各 param 实际 javaType 设 TypeHandler；
+     若指定 parameterType="long"，MyBatis 会强用 LongTypeHandler 设所有参数，传 int delta 触发 Integer→Long CCE。 -->
+    <update id="incrDownloadCount">
+        update project set download_count = download_count + #{delta} where project_id = #{projectId}
+    </update>
+
+</mapper>

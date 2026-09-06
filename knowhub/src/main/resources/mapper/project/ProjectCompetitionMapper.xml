@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.knowhub.mapper.project.ProjectCompetitionMapper">
+
+    <resultMap id="ProjectCompetitionResultMap" type="com.knowhub.pojo.project.entity.ProjectCompetition">
+        <id property="projectId" column="project_id"/>
+        <result property="competitionName" column="competition_name"/>
+        <result property="competitionLevel" column="competition_level"/>
+        <result property="awardLevel" column="award_level"/>
+        <result property="awardTime" column="award_time"/>
+        <result property="competitionTime" column="competition_time"/>
+    </resultMap>
+
+    <!-- 按主键查比赛特有字段 -->
+    <select id="getByProjectId" parameterType="long" resultMap="ProjectCompetitionResultMap">
+        select * from project_competition where project_id = #{projectId}
+    </select>
+
+    <!--
+      新增比赛子表行（projectId 为主键兼外键）。
+      动态列：award_time/competition_time 可空（项目可能未获奖/未开赛）。
+    -->
+    <insert id="addProjectCompetition" parameterType="com.knowhub.pojo.project.entity.ProjectCompetition">
+        insert into project_competition
+        <trim prefix="(" suffix=")" suffixOverrides=",">
+            project_id,
+            <if test="competitionName != null">competition_name,</if>
+            <if test="competitionLevel != null">competition_level,</if>
+            <if test="awardLevel != null">award_level,</if>
+            <if test="awardTime != null">award_time,</if>
+            <if test="competitionTime != null">competition_time,</if>
+        </trim>
+        values
+        <trim prefix="(" suffix=")" suffixOverrides=",">
+            #{projectId},
+            <if test="competitionName != null">#{competitionName},</if>
+            <if test="competitionLevel != null">#{competitionLevel},</if>
+            <if test="awardLevel != null">#{awardLevel},</if>
+            <if test="awardTime != null">#{awardTime},</if>
+            <if test="competitionTime != null">#{competitionTime},</if>
+        </trim>
+    </insert>
+
+    <!-- 编辑比赛子表行（按 projectId 主键，动态列） -->
+    <update id="editProjectCompetition" parameterType="com.knowhub.pojo.project.entity.ProjectCompetition">
+        update project_competition
+        <set>
+            <if test="competitionName != null">competition_name = #{competitionName},</if>
+            <if test="competitionLevel != null">competition_level = #{competitionLevel},</if>
+            <if test="awardLevel != null">award_level = #{awardLevel},</if>
+            <if test="awardTime != null">award_time = #{awardTime},</if>
+            <if test="competitionTime != null">competition_time = #{competitionTime},</if>
+        </set>
+        where project_id = #{projectId}
+    </update>
+
+    <!-- 按 projectId 物理删（主表软删时配套清理子表行，子表不软删随主表） -->
+    <delete id="deleteByProjectId" parameterType="long">
+        delete from project_competition where project_id = #{projectId}
+    </delete>
+
+</mapper>

@@ -1,0 +1,364 @@
+/**
+ * knowhub-ui 全局 Markdown 渲染样式
+ * ------------------------------------------------------------------
+ * 收口前台正文/评论/公告的 v-md-preview（github 主题 + highlight.js github 配色）渲染。
+ * 7 处页面 scoped :deep(.github-markdown-body) 原先只零散覆盖背景/字体/h1h2 去横线/img，
+ * 代码块/表格/引用/列表/标题梯度全无覆盖——代码块近白底与正文融为一体无法区分。
+ * 本全局文件统一覆盖 .github-markdown-body，复用 --kh-* 设计令牌，引入顺序在
+ * v-md-editor 的 github.css / highlight.js github.css 之后（main.ts），确保覆盖优先。
+ * <p>
+ * 保留项（全局无法覆盖、由各 scoped 保留）：
+ * - 背景/字体/字号/行高/正文色：各页正文容器尺寸不同，scoped 各自定义（本全局给一份默认，
+ *   scoped 仍可覆盖）。实际上为收敛，本全局统一给默认值，scoped 里与之相同的可删（见各页清理）。
+ * - h1/h2 去 border-bottom：本全局统一去掉，scoped 重复项可删。
+ * - img cursor:zoom-in：配图点击放大是页面级交互（委托 onContentClick），scoped 保留。
+ * - :first-child/:last-child 去首尾间距：评论/公告容器需贴边，scoped 保留。
+ * - scroll-margin-top：本全局统一给 h2-h4 补齐（防 sticky 顶栏遮目录跳转落点），scoped 重复项可删。
+ */
+
+.github-markdown-body {
+  /* 默认正文排版（各 scoped 可按容器尺寸覆盖字号/行高） */
+  background: transparent;
+  font-family: var(--kh-font-body);
+  font-size: var(--kh-font-size-md);
+  line-height: 1.85;
+  color: var(--kh-text);
+}
+
+/* —— 标题梯度：h1~h4 字号递减 + 去横线 + scroll-margin-top 防顶栏遮跳转落点 —— */
+.github-markdown-body h1 {
+  font-size: var(--kh-font-size-3xl);
+  font-weight: 700;
+  margin: var(--kh-space-8) 0 var(--kh-space-4);
+  border-bottom: none;
+  scroll-margin-top: calc(var(--kh-header-height) + var(--kh-space-4));
+}
+.github-markdown-body h2 {
+  font-size: var(--kh-font-size-xl);
+  font-weight: 700;
+  margin: var(--kh-space-6) 0 var(--kh-space-3);
+  border-bottom: none;
+  scroll-margin-top: calc(var(--kh-header-height) + var(--kh-space-4));
+}
+.github-markdown-body h3 {
+  font-size: var(--kh-font-size-lg);
+  font-weight: 600;
+  margin: var(--kh-space-5) 0 var(--kh-space-2);
+  scroll-margin-top: calc(var(--kh-header-height) + var(--kh-space-4));
+}
+.github-markdown-body h4 {
+  font-size: var(--kh-font-size-md);
+  font-weight: 600;
+  margin: var(--kh-space-4) 0 var(--kh-space-2);
+  scroll-margin-top: calc(var(--kh-header-height) + var(--kh-space-4));
+}
+
+/* —— 代码块：浅色编辑器风格 —— 背景 --kh-code-bg(#F8F8F2) + 左侧行号区 --kh-code-gutter-bg(#E9E9F2)（行号 --kh-code-linenum-color）
+   + 语法高亮 atom-one-light（VS Code Light+ 系，token 由 hljs 持）+ 顶部工具栏（语言标签左 + 复制按钮右）。
+   v-md-editor github 主题把每个 fence 代码块包一层 div[class*=v-md-pre-wrapper]（自带浅色 #f6f8fa 实底，库固有结构无法去掉），
+   本样式把 wrapper 改 flex column 容器：工具栏（.kh-code-header）+ 代码区（pre）成 flex 兄弟（提示词方案 A）。
+   工具栏 flex-shrink:0 永远固定顶部不随代码横向/纵向滚动移走；pre 是 flex:1 代码区，横向滚动只发生在 pre（不在 wrapper）。
+   行号区用 pre 背景的 linear-gradient 左右分区实现（单层 pre，不加额外容器）：
+   pre 背景 = linear-gradient(to right, --kh-code-gutter-bg 0, … 48px, --kh-code-bg 48px)，左 48px 行号区、右代码区。
+   useMarkdownCodeBlock composable 给 code 内每行包 .kh-code-line，CSS counter 在 .kh-code-line::before 自动生成行号。
+   工具栏/复制按钮由 composable 注入 wrapper（header 插在 pre 之前，是 pre 的兄弟而非子元素 → 不被滚走）。 */
+.github-markdown-body div[class*="v-md-pre-wrapper"] {
+  margin: var(--kh-space-4) 0;
+  /* flex column：工具栏 + pre 成兄弟，工具栏固定顶部，代码区滚动只发生在 pre */
+  display: flex;
+  flex-direction: column;
+  /* 浅色编辑器底，覆盖 github 主题自带 wrapper 浅色底 #f6f8fa */
+  background: var(--kh-code-bg) !important;
+  border: 1px solid var(--kh-code-border);
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.06);
+  /* wrapper 裁剪圆角，但不出滚动条——滚动交由 pre（防工具栏被 wrapper 滚动条截断） */
+  overflow: hidden;
+}
+
+/* —— 代码块顶部工具栏：永远固定顶部 —— flex-shrink:0 不参与滚动；左语言标签 + 右复制按钮；
+   背景与代码块一致（略深一档 #f1f1eb 做视觉分层），下边框分隔，padding 与代码左内边距对齐。 —— */
+.github-markdown-body .kh-code-header {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--kh-space-2);
+  /* 左 padding 与代码区左内边距对齐（行号区 48px + 间隔 8px = 56px，见 .kh-code-line padding-left） */
+  padding: 0 8px 0 56px;
+  height: 34px;
+  background: var(--kh-code-header-bg);
+  border-bottom: 1px solid var(--kh-code-header-border);
+}
+
+.github-markdown-body pre {
+  /* 代码区：自然高度，不做内部滚动（用户不想要代码块滚轮；超长块由页面整体滚动）。
+     背景用 linear-gradient 左右分区——左 48px 行号区 --kh-code-gutter-bg，右代码区 --kh-code-bg。
+     !important 覆盖 github 主题自带 pre 实色底。
+     ⚠️ 不设 overflow-x:auto：按 CSS 规范，一旦一轴 overflow 非 visible，另一轴 visible 会被强制算成 auto，
+     会把 pre 变成会出纵向滚动条的矮框（曾致「高度给小了 + 出滚轮」）。横向溢出改由 pre-wrap + overflow-wrap
+     软换行兜底（见 pre code / .kh-code-line），无溢出则无需 overflow。
+     padding 左 0：行号区由 .kh-code-line padding-left 让出，pre 左 padding 必须为 0 否则行号 ::before left:0 错位。
+     min-width:0：flex 子项默认 min-width:auto=min-content，长 token 会撑宽 pre 顶破 wrapper；置 0 让 pre 可缩，
+     迫使 overflow-wrap 打断长 token。 */
+  flex: 0 0 auto;
+  min-width: 0;
+  background: linear-gradient(
+    to right,
+    var(--kh-code-gutter-bg) 0,
+    var(--kh-code-gutter-bg) 48px,
+    var(--kh-code-bg) 48px
+  ) !important;
+  border: none;
+  border-radius: 0;
+  padding: 14px 0 0;
+  overflow: visible;
+  font-family: var(--kh-font-mono);
+  /* 13.75px：Retina 下清晰且不拥挤；1.65：代码密度高时的舒适下限 */
+  font-size: 13.75px;
+  line-height: 1.65;
+  letter-spacing: 0;
+  word-spacing: normal;
+  /* 启用连字（JetBrains Mono 的 => != === 等编程连字），.no-ligatures 开关类可关闭 */
+  font-feature-settings: "liga" 1, "calt" 1;
+  font-variant-ligatures: contextual common-ligatures;
+  /* 缩进用 2 空格宽（现代代码风格主流，4 会横向占多） */
+  tab-size: 2;
+  /* Mac 下渲染锐度 */
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  margin: 0;
+  /* 行号 counter：在 pre 上重置，每个 .kh-code-line 递增 */
+  counter-reset: kh-line-number;
+  color: var(--kh-code-text);
+}
+
+/* pre 内 code：背景透明（底色由 pre 的 linear-gradient 持），等宽 + 行高继承 pre，atom-one-light token 配色由 hljs 持 */
+.github-markdown-body pre code {
+  display: block;
+  background: transparent !important;
+  padding: 0 20px 14px 0;
+  border-radius: 0;
+  font-size: inherit;
+  line-height: inherit;
+  font-family: inherit;
+  color: inherit;
+  /* 软换行：pre-wrap 在空格处换行 + overflow-wrap:break-word 兜底打断超长无空格 token（如长 URL/长标识符），
+     确保代码不横向溢出、不出滚动条。单 pre-wrap 不打断长 token 会溢出触发 overflow-x，故两者并用。
+     overflow-wrap（标准）替代已废弃的 word-break:break-word。 */
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+}
+/* 关闭连字开关：给代码块容器加 .no-ligatures 即关掉 => != === 连字，回退到等宽原样字符 */
+.github-markdown-body .no-ligatures,
+.github-markdown-body .no-ligatures pre,
+.github-markdown-body .no-ligatures code {
+  font-feature-settings: "liga" 0, "calt" 0;
+  font-variant-ligatures: none;
+}
+/* 行：useMarkdownCodeBlock 给 code 内每行包的 .kh-code-line。block 独占一行，左侧 padding 让出 48px 行号区。
+   position:relative 作为行号 ::before 的定位上下文；overflow-wrap 软换行（与 pre code 一致，超长 token 在行内打断）。
+   ⚠️ min-height: 一行高（font-size × line-height = 13.75px × 1.65 ≈ 22.69px）：空行 span 无子节点会塌成 0 高度，
+   致行号 ::before height:100%=0 跟着塌、与相邻行号重叠，且空行本身被遮一半。给行保底一行高，空行也占满一行，
+   行号不再重叠、末尾空行完整展示。用 calc 复合字号线高，随字号联动。 */
+.github-markdown-body .kh-code-line {
+  display: block;
+  position: relative;
+  min-height: calc(13.75px * 1.65);
+  padding-left: 56px; /* 48px 行号区 + 8px 间隔 */
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+}
+/* 行号：CSS counter 自动生成，绝对定位到 .kh-code-line 左侧行号区，--kh-code-linenum-color 灰，与代码用 pre 背景的分区色差自然分隔。
+   ⚠️ top:0 + 固定一行高 height：锁定行号块到所在行顶部、占满一行高。无 height 时靠 height:100% 跟随父行，
+   空行父高为 0 行号块也塌 0 → 与相邻行号重叠。给行号块固定一行高，即便所在行是空行/换行成多视觉行，
+   行号块都稳占一行高贴顶，不漂移不重叠。 */
+.github-markdown-body .kh-code-line::before {
+  counter-increment: kh-line-number;
+  content: counter(kh-line-number);
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 40px;
+  height: calc(13.75px * 1.65);
+  text-align: right;
+  color: var(--kh-code-linenum-color);
+  font-family: var(--kh-font-mono);
+  font-size: inherit;
+  line-height: inherit;
+  user-select: none;
+}
+/* 行内 code：--kh-code-inline-bg 底 + --kh-code-inline-color 紫字（Dracula 系紫），0.9em 等宽，4px 圆角。
+   连字 + Mac 锐度与代码块一致；中英文混排中文走 --kh-font-mono 回退链里的系统字体。 */
+.github-markdown-body :not(pre) > code {
+  background: var(--kh-code-inline-bg);
+  border: none;
+  border-radius: 4px;
+  padding: 2px 6px;
+  font-family: var(--kh-font-mono);
+  font-size: 0.9em;
+  font-feature-settings: "liga" 1, "calt" 1;
+  font-variant-ligatures: contextual common-ligatures;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  color: var(--kh-code-inline-color);
+}
+
+/* —— 代码块语言标签（useMarkdownCodeBlock 注入，工具栏左侧）—— 11px 等宽、低饱和灰、极淡底块 + 小圆角增强辨识。
+   无语言时 .is-plain 显更淡灰 + 去底块（仅占位「Text」，不抢视觉）。 —— */
+.github-markdown-body .kh-code-lang {
+  font-family: var(--kh-font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1;
+  color: var(--kh-code-lang-color);
+  background: var(--kh-code-lang-bg);
+  border: 1px solid var(--kh-code-lang-border);
+  border-radius: 4px;
+  padding: 3px 7px;
+  pointer-events: none;
+  user-select: none;
+  letter-spacing: 0.3px;
+  white-space: nowrap;
+}
+.github-markdown-body .kh-code-lang.is-plain {
+  color: var(--kh-code-lang-plain-color);
+  background: transparent;
+  border-color: transparent;
+  font-weight: 400;
+}
+
+/* —— 代码块复制按钮（useMarkdownCodeBlock 注入，工具栏右侧）—— 默认仅图标 opacity .6，
+   hover opacity 1 + 背景微亮 + 4px 圆角 + 150ms 过渡；is-copied 绿 ✓；is-failed 红 ✕；focus-visible 清晰聚焦环。
+   触摸目标 32×32px（图标 16px，命中区放大防误触，提示词三·6）。margin-left:auto 推到工具栏右端。 —— */
+.github-markdown-body .kh-code-copy {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  color: var(--kh-code-copy-icon);
+  cursor: pointer;
+  opacity: 0.6;
+  transition: color var(--kh-transition-fast), background var(--kh-transition-fast), opacity var(--kh-transition-fast);
+}
+.github-markdown-body .kh-code-copy svg {
+  width: 16px;
+  height: 16px;
+}
+/* hover：opacity 1 + 背景微亮 */
+.github-markdown-body .kh-code-copy:hover {
+  opacity: 1;
+  color: var(--kh-code-text);
+  background: var(--kh-code-copy-hover-bg);
+}
+/* 键盘聚焦：清晰聚焦环（提示词三·5 无障碍） */
+.github-markdown-body .kh-code-copy:focus-visible {
+  outline: none;
+  opacity: 1;
+  box-shadow: 0 0 0 3px var(--kh-code-copy-focus);
+}
+/* 已复制态：绿 ✓ */
+.github-markdown-body .kh-code-copy.is-copied {
+  color: var(--kh-code-copy-success);
+  opacity: 1;
+}
+.github-markdown-body .kh-code-copy.is-copied:hover {
+  background: var(--kh-code-copy-success-bg);
+}
+/* 复制失败态：红 ✕ */
+.github-markdown-body .kh-code-copy.is-failed {
+  color: var(--kh-code-copy-fail);
+  opacity: 1;
+}
+.github-markdown-body .kh-code-copy.is-failed:hover {
+  background: var(--kh-code-copy-fail-bg);
+}
+
+/* —— 表格：表头底色 + 斑马纹 + 边框 + 外层横向滚动圆角容器 —— */
+.github-markdown-body table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: var(--kh-space-4) 0;
+  display: block;
+  overflow-x: auto;
+  border-radius: var(--kh-radius-sm);
+}
+.github-markdown-body thead {
+  background: var(--kh-surface-muted);
+}
+.github-markdown-body th,
+.github-markdown-body td {
+  border: 1px solid var(--kh-border);
+  padding: var(--kh-space-2) var(--kh-space-3);
+  text-align: left;
+}
+.github-markdown-body th {
+  font-weight: 600;
+}
+.github-markdown-body tr:nth-child(2n) {
+  background: var(--kh-surface-muted);
+}
+
+/* —— 引用 blockquote：左侧竖线风格 —— 浅紫底 #F5F3FF + 左侧 4px 靛蓝竖线 #6366F1，仿文档引用。
+   单层 blockquote（不嵌套额外容器），无边框仅左侧竖线，文字继承正文色，圆角左侧无右侧 6px。
+   与代码块（浅色编辑器风格）完全独立：代码块 #F8F8F2 底 + 行号 + 等宽，引用 #F5F3FF 底 + 靛蓝竖线 + 正文字体。 */
+.github-markdown-body blockquote {
+  margin: var(--kh-space-4) 0;
+  padding: 12px 16px 12px 20px;
+  border: none;
+  border-left: 4px solid #6366f1;
+  background: #f5f3ff;
+  border-radius: 0 6px 6px 0;
+  color: inherit;
+}
+.github-markdown-body blockquote p {
+  margin: var(--kh-space-1) 0;
+}
+/* 深色模式：背景改靛蓝半透明，竖线保持 #6366F1，文字调亮（前台 demo 阶段留接口，data-theme=dark 时生效） */
+[data-theme='dark'] .github-markdown-body blockquote {
+  background: rgba(99, 102, 241, 0.12);
+  color: var(--kh-text);
+}
+
+/* —— 列表 / 分隔线 / 链接 / kbd —— */
+.github-markdown-body ul,
+.github-markdown-body ol {
+  padding-left: var(--kh-space-6);
+  margin: var(--kh-space-3) 0;
+}
+.github-markdown-body li {
+  margin: var(--kh-space-1) 0;
+}
+.github-markdown-body hr {
+  border: 0;
+  border-top: 1px solid var(--kh-border);
+  margin: var(--kh-space-6) 0;
+}
+.github-markdown-body a {
+  color: var(--kh-primary);
+  text-decoration: none;
+  transition: color var(--kh-transition-fast);
+}
+.github-markdown-body a:hover {
+  color: var(--kh-primary-strong);
+  text-decoration: underline;
+}
+.github-markdown-body kbd {
+  background: var(--kh-surface-muted);
+  border: 1px solid var(--kh-border);
+  border-radius: var(--kh-radius-sm);
+  padding: 2px 6px;
+  font-family: var(--kh-font-mono);
+  font-size: var(--kh-font-size-xs);
+  color: var(--kh-text);
+}
+
+/* —— 段落间距默认（v-md-preview 对 p 已有 margin，此处保底） —— */
+.github-markdown-body p {
+  margin: var(--kh-space-3) 0;
+}

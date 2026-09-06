@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.knowhub.mapper.user.ReviewNotifyRoleMapper">
+
+    <!--
+      按角色 role_key 查拥有该角色的有效用户 userId（提审通知用）。
+      join sys_user_role + sys_role + sys_user 三表，强制 sys_role/sys_user 双方 status=1 AND delete=0
+      过滤停用/已删账号与停用角色，仅输出 user_id 列（resultType=long 直出，无 resultMap）。
+      delete 是 MySQL 保留字加反引号。
+    -->
+    <select id="listActiveUserIdsByRoleKey" parameterType="string" resultType="long">
+        select ur.user_id
+        from sys_user_role ur
+        join sys_role r on ur.role_id = r.role_id
+        join sys_user u on ur.user_id = u.user_id
+        where r.role_key = #{roleKey}
+          and r.status = 1
+          and r.`delete` = 0
+          and u.status = 1
+          and u.`delete` = 0
+    </select>
+
+</mapper>

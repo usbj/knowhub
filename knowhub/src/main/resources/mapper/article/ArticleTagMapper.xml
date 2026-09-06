@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.knowhub.mapper.article.ArticleTagMapper">
+
+    <resultMap id="ArticleTagResultMap" type="com.knowhub.pojo.article.entity.ArticleTag">
+        <id property="articleId" column="article_id"/>
+        <id property="tagId" column="tag_id"/>
+        <result property="createTime" column="create_time"/>
+    </resultMap>
+
+    <insert id="insertArticleTags">
+        insert into article_tag(article_id, tag_id) values
+        <foreach collection="list" item="item" separator=",">
+            (#{item.articleId}, #{item.tagId})
+        </foreach>
+    </insert>
+
+    <delete id="deleteArticleTagByArticleId" parameterType="long">
+        delete from article_tag where article_id = #{articleId}
+    </delete>
+
+    <delete id="deleteArticleTagByTagId" parameterType="long">
+        delete from article_tag where tag_id = #{tagId}
+    </delete>
+
+    <select id="getTagIdsByArticleId" parameterType="long" resultType="long">
+        select tag_id from article_tag where article_id = #{articleId}
+    </select>
+
+    <select id="getArticleTagsByArticleIds" resultMap="ArticleTagResultMap">
+        select * from article_tag where article_id in
+        <foreach collection="articleIds" item="aid" open="(" separator="," close=")">#{aid}</foreach>
+    </select>
+
+</mapper>

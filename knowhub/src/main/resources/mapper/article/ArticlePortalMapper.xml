@@ -1,0 +1,301 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.knowhub.mapper.article.ArticlePortalMapper">
+
+    <!--
+      前台文章列表 VO 结果映射（含 authorNickname join 带出）。
+      coverUrl 由 SQL 用 file_object ARTICLE_COVER 反查 object_id 后 concat 成 /file/resolve/{objectId}
+      （resolve 接口按访问模式 302 跳转，对齐 FileService 落库稳定引用语义；无封面→null）。
+      chapterCount/matchedChapters/tagIds/tagNames 由 service 层批量回填（防 N+1，列表 SQL 不 join 这些）。
+    -->
+    <resultMap id="ArticlePortalVoMap" type="com.knowhub.pojo.article.vo.ArticlePortalVo">
+        <id property="articleId" column="article_id"/>
+        <result property="authorId" column="author_id"/>
+        <result property="authorNickname" column="author_nickname"/>
+        <result property="authorAvatar" column="author_avatar"/>
+        <result property="title" column="title"/>
+        <result property="summary" column="summary"/>
+        <result property="coverUrl" column="cover_url"/>
+        <result property="level" column="level"/>
+        <result property="publishTime" column="publish_time"/>
+        <result property="viewCount" column="view_count"/>
+        <result property="likeCount" column="like_count"/>
+        <result property="collectCount" column="collect_count"/>
+    </resultMap>
+
+    <!-- 详情 VO 结果映射（继承列表字段，无 content：文章正文在 chapter，详情仅给章节大纲） -->
+    <resultMap id="ArticlePortalDetailVoMap" type="com.knowhub.pojo.article.vo.ArticlePortalDetailVo">
+        <id property="articleId" column="article_id"/>
+        <result property="authorId" column="author_id"/>
+        <result property="authorNickname" column="author_nickname"/>
+        <result property="authorAvatar" column="author_avatar"/>
+        <result property="title" column="title"/>
+        <result property="summary" column="summary"/>
+        <result property="coverUrl" column="cover_url"/>
+        <result property="level" column="level"/>
+        <result property="visibility" column="visibility"/>
+        <result property="publishTime" column="publish_time"/>
+        <result property="viewCount" column="view_count"/>
+        <result property="likeCount" column="like_count"/>
+        <result property="collectCount" column="collect_count"/>
+        <result property="commentEnabled" column="comment_enabled"/>
+        <result property="commentCurated" column="comment_curated"/>
+    </resultMap>
+
+    <!--
+      公共 where 片段：前台可见口径 = deleted=0 AND status='PUBLISHED' AND level<=userViewLevel+1。
+      2026-08-18 权限大修搜索范围 +1：越级作品（level=userViewLevel+1）进列表带 locked=true 标记、摘要可见，
+      点进详情才锁章节大纲/正文。L3 用户 level=3→<=4 搜全部；L2→<=3 搜全部（L3 带 locked）；L1→<=2 搜 L1+L2（L2 带 locked）。
+      分级开关关时 userViewLevel 恒 1 → level<=2（L1+L2，L2 带 locked）。前台不看作者归属（访客不靠作者身份看草稿）。
+      visibility 不参与前台可见性（仅决定章节提交审不审，与等级正交），故前台一律不按 visibility 过滤。
+    -->
+    <sql id="portalArticleWhere">
+        a.deleted = 0 and a.status = 'PUBLISHED' and a.level &lt;= #{userViewLevel} + 1
+    </sql>
+
+    <!-- 文章列表公共字段。coverUrl 直读 a.cover_object_key 列（与后台一致：上传后存 /file/resolve/{objectId} 稳定引用字符串） -->
+    <sql id="articlePortalColumns">
+        a.article_id, a.author_id, u.nick_name as author_nickname, u.avatar as author_avatar,
+        a.title, a.summary, a.cover_object_key as cover_url,
+        a.level, a.visibility, a.publish_time,
+        a.view_count, a.like_count, a.collect_count,
+        a.comment_enabled, a.comment_curated
+    </sql>
+
+    <sql id="articlePortalJoins">
+        from article a
+            left join sys_user u on a.author_id = u.user_id
+    </sql>
+
+    <!--
+      搜索：全文(标题/简介)+章节正文命中+标签/作者复合过滤，分页由 PageHelper 接管。
+      - keyword 命中 article 标题/简介（ft_article_title_summary ngram）
+        OR 命中任一 PUBLISHED 章节正文（ft_chapter_content ngram，走 EXISTS 子查询避免 join chapter 撑爆分页）。
+      - tagIds 非空走 article_tag join + GROUP BY HAVING COUNT（同时命中全部所选标签）。
+      - 排序：HOT=热度, LATEST=最新, 其它/RELEVANCE=全文相关度（有 keyword 走 fulltext 自然语言模式，无则 publish_time）。
+      列表不 select chapter.content。
+    -->
+    <select id="searchArticles" parameterType="com.knowhub.pojo.article.quarry.ArticlePortalSearchQuarry" resultMap="ArticlePortalVoMap">
+        select <include refid="articlePortalColumns"/>
+        <include refid="articlePortalJoins"/>
+        <if test="tagIds != null and tagIds.size() > 0">
+            inner join article_tag art2 on art2.article_id = a.article_id
+        </if>
+        where <include refid="portalArticleWhere"/>
+        <if test="keyword != null and keyword != ''">
+            and (
+                MATCH(a.title, a.summary) AGAINST(#{keyword} IN BOOLEAN MODE)
+                or exists (
+                    select 1 from chapter c
+                    where c.article_id = a.article_id and c.deleted = 0 and c.status = 'PUBLISHED'
+                      and MATCH(c.content) AGAINST(#{keyword} IN BOOLEAN MODE)
+                )
+            )
+        </if>
+        <if test="authorId != null">and a.author_id = #{authorId}</if>
+        <if test="tagIds != null and tagIds.size() > 0">
+            and art2.tag_id in
+            <foreach collection="tagIds" item="tid" open="(" separator="," close=")">#{tid}</foreach>
+            group by a.article_id
+            having count(distinct art2.tag_id) = #{tagCount}
+        </if>
+        <choose>
+            <when test="sort == 'HOT'">
+                order by (a.like_count * 2 + a.collect_count * 3 + a.view_count) desc, a.publish_time desc, a.article_id desc
+            </when>
+            <when test="sort == 'LATEST'">
+                order by a.publish_time desc, a.article_id desc
+            </when>
+            <otherwise>
+                <choose>
+                    <when test="keyword != null and keyword != ''">
+                        <!-- 全文相关度：文章标题/简介自然语言模式为主，章节命中作次因素由 matchedChapters 体现 -->
+                        order by MATCH(a.title, a.summary) AGAINST(#{keyword} IN NATURAL LANGUAGE MODE) desc,
+                                 a.publish_time desc, a.article_id desc
+                    </when>
+                    <otherwise>
+                        order by a.publish_time desc, a.article_id desc
+                    </otherwise>
+                </choose>
+            </otherwise>
+        </choose>
+    </select>
+
+    <!--
+      推荐：按偏好 tag 召回同 tag 公开文章（排除 excludeArticleId、排除已浏览 viewedArticleIds）。
+      tagIds 为空时本查询不召回（service 走兜底）。列表回 Service 层算 hotScore。
+    -->
+    <select id="recommendByTags" resultMap="ArticlePortalVoMap">
+        select <include refid="articlePortalColumns"/>
+        <include refid="articlePortalJoins"/>
+            inner join article_tag art2 on art2.article_id = a.article_id
+        where <include refid="portalArticleWhere"/>
+        and art2.tag_id in
+        <foreach collection="tagIds" item="tid" open="(" separator="," close=")">#{tid}</foreach>
+        <if test="excludeArticleId != null">and a.article_id &lt;&gt; #{excludeArticleId}</if>
+        <if test="viewedArticleIds != null and viewedArticleIds.size() > 0">
+            and a.article_id not in
+            <foreach collection="viewedArticleIds" item="vid" open="(" separator="," close=")">#{vid}</foreach>
+        </if>
+        group by a.article_id
+        order by (a.like_count * 2 + a.collect_count * 3 + a.view_count) desc, a.publish_time desc
+        limit #{size}
+    </select>
+
+    <!-- 兜底全局热门（按 like*2+collect*3+view desc, publish_time desc），排除已召回的 excludeArticleIds -->
+    <select id="recommendHot" resultMap="ArticlePortalVoMap">
+        select <include refid="articlePortalColumns"/>
+        <include refid="articlePortalJoins"/>
+        where <include refid="portalArticleWhere"/>
+        <if test="excludeArticleId != null">and a.article_id &lt;&gt; #{excludeArticleId}</if>
+        <if test="excludeArticleIds != null and excludeArticleIds.size() > 0">
+            and a.article_id not in
+            <foreach collection="excludeArticleIds" item="eid" open="(" separator="," close=")">#{eid}</foreach>
+        </if>
+        order by (a.like_count * 2 + a.collect_count * 3 + a.view_count) desc, a.publish_time desc
+        limit #{size}
+    </select>
+
+    <!--
+      按 ID 集合取前台可见文章 VO（"我的收藏"列表用）。
+      照前台铁律过滤未发布/越级文章，IN 给定的 articleIds。不排序——service 按收藏时间倒序的 articleIds 顺序拼装。
+    -->
+    <select id="listByIds" resultMap="ArticlePortalVoMap">
+        select <include refid="articlePortalColumns"/>
+        <include refid="articlePortalJoins"/>
+        where <include refid="portalArticleWhere"/>
+          and a.article_id in
+          <foreach collection="articleIds" item="aid" open="(" separator="," close=")">#{aid}</foreach>
+    </select>
+
+    <!-- 相关推荐：同 tag（命中任一所选 tag 即可），排除自身，按热度，limit size -->
+    <select id="relatedArticles" resultMap="ArticlePortalVoMap">
+        select <include refid="articlePortalColumns"/>
+        <include refid="articlePortalJoins"/>
+            inner join article_tag art2 on art2.article_id = a.article_id
+        where <include refid="portalArticleWhere"/>
+        and art2.tag_id in (select tag_id from article_tag where article_id = #{articleId})
+        and a.article_id &lt;&gt; #{articleId}
+        group by a.article_id
+        order by (a.like_count * 2 + a.collect_count * 3 + a.view_count) desc, a.publish_time desc
+        limit #{size}
+    </select>
+
+    <!--
+      详情元数据（含 level，不含正文/章节，无 level 过滤）。
+      service 取 meta 后判越级：level<=userViewLevel→达权补章节大纲+计浏览量；level>userViewLevel→锁态。
+      仅限 PUBLISHED 公开文章；非 PUBLISHED 前台根本不下发，meta 也查不到。
+    -->
+    <select id="getPortalArticleMeta" resultMap="ArticlePortalDetailVoMap">
+        select <include refid="articlePortalColumns"/>
+        <include refid="articlePortalJoins"/>
+        where a.deleted = 0 and a.status = 'PUBLISHED' and a.article_id = #{articleId}
+    </select>
+
+    <!-- 文章章节大纲（点章节跳阅读页；不含正文；仅 PUBLISHED 章节） -->
+    <select id="listChapterOutline" parameterType="long" resultType="com.knowhub.pojo.article.vo.ChapterOutlineVo">
+        select c.chapter_id as chapterId, c.chapter_name as chapterName, c.sort_order as sortOrder
+        from chapter c
+        where c.deleted = 0 and c.status = 'PUBLISHED' and c.article_id = #{articleId}
+        order by c.sort_order asc, c.chapter_id asc
+    </select>
+
+    <!--
+      章节正文查询：校验 article PUBLISHED + chapter PUBLISHED + chapter 归属该文章。
+      带 article level 供 service 判越级（level 列映射不到 ChapterContentVo，service 另走 meta 查 level）。
+      此处只在 article 达权且章节 PUBLISHED 时返回 content；越级由 service 先查文章 meta 判定后置空 content。
+    -->
+    <select id="getChapterContent" resultType="com.knowhub.pojo.article.vo.ChapterContentVo">
+        select c.chapter_id as chapterId, c.article_id as articleId,
+               c.chapter_name as chapterName, c.sort_order as sortOrder,
+               c.content as content
+        from chapter c
+                 inner join article a on a.article_id = c.article_id
+        where c.deleted = 0 and c.status = 'PUBLISHED'
+          and a.deleted = 0 and a.status = 'PUBLISHED'
+          and c.chapter_id = #{chapterId} and c.article_id = #{articleId}
+    </select>
+
+    <!--
+      搜索命中章节：对给定的 articleId 集合，查 keyword 在 chapter.content 命中的 PUBLISHED 章节，
+      按 article 聚合返回（service 层按 articleId 分组拼 matchedChapters）。每个文章至多取前若干命中章节。
+    -->
+    <select id="matchedChapters" resultType="com.knowhub.pojo.article.vo.MatchedChapterVo">
+        select c.chapter_id as chapterId, c.article_id as articleId,
+               c.chapter_name as chapterName, c.sort_order as sortOrder
+        from chapter c
+        where c.deleted = 0 and c.status = 'PUBLISHED'
+          and c.article_id in
+          <foreach collection="articleIds" item="aid" open="(" separator="," close=")">#{aid}</foreach>
+          and MATCH(c.content) AGAINST(#{keyword} IN BOOLEAN MODE)
+        order by c.article_id, c.sort_order asc, c.chapter_id asc
+    </select>
+
+    <!-- 批量回填列表标签 id（防 N+1，返回 {article_id, tag_id} 列表，service 层分组拼 tagIds/tagNames） -->
+    <select id="getTagIdsByArticleIds" resultType="java.util.Map">
+        select article_id as articleId, tag_id as tagId from article_tag where article_id in
+        <foreach collection="articleIds" item="aid" open="(" separator="," close=")">#{aid}</foreach>
+    </select>
+
+    <!-- 批量回填章节数量（防 N+1，返回 {article_id, cnt} 列表，service 分组；只统计 PUBLISHED 章节） -->
+    <select id="getChapterCountByArticleIds" resultType="java.util.Map">
+        select article_id as articleId, count(*) as cnt from chapter
+        where deleted = 0 and status = 'PUBLISHED'
+          and article_id in
+          <foreach collection="articleIds" item="aid" open="(" separator="," close=")">#{aid}</foreach>
+        group by article_id
+    </select>
+
+    <!--
+      用户偏好 tag：article_collect(×3)+article_like(×1)+浏览过的文章 tag(×1) 反推 Top-N tagId。
+      合并按权重排序取 Top-N tagId。未登录 userId=null 不应调用（service 已挡）。
+    -->
+    <select id="preferTagsByUser" resultType="long">
+        select tag_id from (
+            select at2.tag_id, sum(w) as weight from (
+                select at2.tag_id, 3 as w
+                from article_collect ac inner join article_tag at2 on at2.article_id = ac.article_id
+                where ac.user_id = #{userId}
+                union all
+                select at2.tag_id, 1 as w
+                from article_like al inner join article_tag at2 on at2.article_id = al.article_id
+                where al.user_id = #{userId}
+                union all
+                select at2.tag_id, 1 as w
+                from user_view_history h inner join article_tag at2 on at2.article_id = h.biz_id
+                where h.user_id = #{userId} and h.biz_type = 'ARTICLE'
+            ) at2 group by at2.tag_id
+        ) merged
+        group by tag_id
+        order by weight desc
+        limit #{topN}
+    </select>
+
+    <!-- 用户浏览过的文章ID（推荐召回排除已浏览；未登录 userId=null 不应调用） -->
+    <select id="viewedArticleIdsByUser" resultType="long">
+        select biz_id from user_view_history where user_id = #{userId} and biz_type = 'ARTICLE'
+    </select>
+
+    <!--
+      前台文库全量统计（/portal/article/stats）：三段独立 count 子查询一次返回。
+      - publishedDocCount：article 前台可见口径（deleted=0 AND status='PUBLISHED' AND level<=userViewLevel+1，
+        与搜索/列表口径一致——越级作品进列表带 locked 也计入统计）。
+      - totalChapters：chapter join article 应用文章可见口径（chapter 自身 deleted=0 AND status='PUBLISHED'），
+        即只数"当前用户可见文章下的已发布章节"
+      - tagCount：tag deleted=0 AND status=1 全量启用标签数（与 /portal/tag/hot 的 tag 过滤口径一致，
+        hot 只回有关联内容的 Top-N，全量数在此给）
+      固定口径，与搜索/翻页/标签过滤互不影响——统计是"全库当前可见数"而非"当前筛选结果数"。
+    -->
+    <select id="getPortalStats" parameterType="int" resultType="com.knowhub.pojo.article.vo.PortalArticleStatsVo">
+        select
+            (select count(*) from article a
+                where a.deleted = 0 and a.status = 'PUBLISHED' and a.level &lt;= #{userViewLevel} + 1) as publishedDocCount,
+            (select count(*) from chapter c inner join article a on a.article_id = c.article_id
+                where c.deleted = 0 and c.status = 'PUBLISHED'
+                  and a.deleted = 0 and a.status = 'PUBLISHED' and a.level &lt;= #{userViewLevel} + 1) as totalChapters,
+            (select count(*) from tag t where t.deleted = 0 and t.status = 1) as tagCount
+    </select>
+
+</mapper>

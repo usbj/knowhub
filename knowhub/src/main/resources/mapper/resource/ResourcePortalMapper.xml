@@ -1,0 +1,274 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.knowhub.mapper.resource.ResourcePortalMapper">
+
+    <!--
+      前台资源列表 VO 结果映射。
+      含 join 带出的展示字段 + inline 子查询回填的互动计数：
+      - authorNickname：join sys_user on user_id=author_id
+      - categoryName：join resource_category on resource_category_id=category_id；-1=其他时为 null
+      - originalName/contentLength/contentType：join file_object on file_object_id=object_id（FILE 才有意义）
+      - viewCount/downloadCount：直接读主表冗余列（已被统一浏览历史/下载接口回写）
+      - likeCount/collectCount：资源主表刻意不冗余互动计数，列表用 inline 子查询回填（资源量级可接受）
+      - ratingAvg/ratingCount：评分均值与计数 inline 子查询回填（无评分资源为 0/null 由 XML coalesce 兜底）
+    -->
+    <resultMap id="ResourcePortalVoMap" type="com.knowhub.pojo.resource.vo.ResourcePortalVo">
+        <id property="resourceId" column="resource_id"/>
+        <result property="authorId" column="author_id"/>
+        <result property="authorNickname" column="author_nickname"/>
+        <result property="authorAvatar" column="author_avatar"/>
+        <result property="resourceType" column="resource_type"/>
+        <result property="resourceCategoryId" column="resource_category_id"/>
+        <result property="categoryName" column="category_name"/>
+        <result property="title" column="title"/>
+        <result property="summary" column="summary"/>
+        <result property="level" column="level"/>
+        <result property="linkUrl" column="link_url"/>
+        <result property="linkIcon" column="link_icon"/>
+        <result property="fileObjectId" column="file_object_id"/>
+        <result property="originalName" column="original_name"/>
+        <result property="contentLength" column="content_length"/>
+        <result property="contentType" column="content_type"/>
+        <result property="publishTime" column="publish_time"/>
+        <result property="viewCount" column="view_count"/>
+        <result property="downloadCount" column="download_count"/>
+        <result property="likeCount" column="like_count"/>
+        <result property="collectCount" column="collect_count"/>
+        <result property="ratingAvg" column="rating_avg"/>
+        <result property="ratingCount" column="rating_count"/>
+    </resultMap>
+
+    <!--
+      详情 VO 结果映射：继承列表字段 + description。
+      description 仅详情接口下发（列表/搜索 SQL 不查此大字段）。
+    -->
+    <resultMap id="ResourcePortalDetailVoMap" type="com.knowhub.pojo.resource.vo.ResourcePortalDetailVo">
+        <id property="resourceId" column="resource_id"/>
+        <result property="authorId" column="author_id"/>
+        <result property="authorNickname" column="author_nickname"/>
+        <result property="authorAvatar" column="author_avatar"/>
+        <result property="resourceType" column="resource_type"/>
+        <result property="resourceCategoryId" column="resource_category_id"/>
+        <result property="categoryName" column="category_name"/>
+        <result property="title" column="title"/>
+        <result property="summary" column="summary"/>
+        <result property="description" column="description"/>
+        <result property="level" column="level"/>
+        <result property="linkUrl" column="link_url"/>
+        <result property="linkIcon" column="link_icon"/>
+        <result property="fileObjectId" column="file_object_id"/>
+        <result property="originalName" column="original_name"/>
+        <result property="contentLength" column="content_length"/>
+        <result property="contentType" column="content_type"/>
+        <result property="publishTime" column="publish_time"/>
+        <result property="viewCount" column="view_count"/>
+        <result property="downloadCount" column="download_count"/>
+        <result property="likeCount" column="like_count"/>
+        <result property="collectCount" column="collect_count"/>
+        <result property="ratingAvg" column="rating_avg"/>
+        <result property="ratingCount" column="rating_count"/>
+        <result property="commentEnabled" column="comment_enabled"/>
+        <result property="commentCurated" column="comment_curated"/>
+    </resultMap>
+
+    <!--
+      公共 where 片段：前台铁律 = deleted=0 AND status='PUBLISHED'。
+      2026-08-18 权限大修：资源引入 level 分级，搜索范围放宽到 level <= userViewLevel + 1
+      （L1 搜 L1+L2 带 lock、L2 搜全部 L3 带 lock、L3 搜全部无锁），越级作品进列表带 locked 标记由 service 层回填。
+      分级开关关时 userViewLevel=1 → <=2 搜 L1+L2（L2 带锁），比现状"L2 根本搜不到"更符合"能搜到但锁"。
+      详情 meta 查询（getPortalResourceDetail）也复用本片段——详情走 level 过滤会让越级作品 404 而非锁态，
+      但 getDetail 语义是"取 meta 后判越级给锁态 VO"，故详情查询应**不带 level 过滤**。
+      此处片段被详情复用会导致越级详情 404——故 getPortalResourceDetail 用独立 where（见下方），不复用本片段。
+    -->
+    <sql id="portalResourceWhere">
+        r.deleted = 0 and r.status = 'PUBLISHED' and r.level &lt;= #{userViewLevel} + 1
+    </sql>
+
+    <!--
+      搜索：全文+类型+分类复合过滤+排序，分页由 PageHelper 接管。
+      keyword 命中 MATCH(r.title,r.summary,r.description) AGAINST IN BOOLEAN MODE（ft_resource_title_summary_desc 全文索引）。
+      排序：HOT=热度(download_count*3 + view_count + like_count*2 + collect_count*2) desc,
+            LATEST=publish_time desc, RELEVANCE/缺省=有 keyword 走全文相关度(NATURAL LANGUAGE MODE)、无 keyword 退化 publish_time desc。
+      列表不 select description（大字段，避免污染分页）。
+      likeCount/collectCount/ratingAvg/ratingCount 用 inline 子查询回填（资源主表不冗余互动计数，与下载/浏览量读冗余列正交）。
+    -->
+    <select id="searchResources" parameterType="com.knowhub.pojo.resource.quarry.ResourcePortalSearchQuarry" resultMap="ResourcePortalVoMap">
+        select r.resource_id, r.author_id, u.nick_name as author_nickname, u.avatar as author_avatar,
+               r.resource_type, r.resource_category_id, c.category_name as category_name,
+               r.title, r.summary, r.level, r.link_url, r.link_icon, r.file_object_id,
+               f.original_name as original_name, f.content_length as content_length, f.content_type as content_type,
+               r.publish_time, r.view_count, r.download_count,
+               (select count(*) from resource_like rl where rl.resource_id = r.resource_id) as like_count,
+               (select count(*) from resource_collect rc where rc.resource_id = r.resource_id) as collect_count,
+               (select coalesce(round(avg(rating.score), 2), 0) from resource_rating rating where rating.resource_id = r.resource_id) as rating_avg,
+               (select count(*) from resource_rating rating where rating.resource_id = r.resource_id) as rating_count
+        from resource r
+                left join sys_user u on r.author_id = u.user_id
+                left join resource_category c on r.resource_category_id = c.category_id and c.deleted = 0
+                left join file_object f on r.file_object_id = f.object_id and f.deleted = 0
+        where <include refid="portalResourceWhere"/>
+        <if test="keyword != null and keyword != ''">
+            and MATCH(r.title, r.summary, r.description) AGAINST(#{keyword} IN BOOLEAN MODE)
+        </if>
+        <if test="resourceType != null and resourceType != ''">and r.resource_type = #{resourceType}</if>
+        <!-- 分类过滤：resourceCategoryIds 多选优先（IN 自然 OR 语义，单资源只属一个分类）；
+             退而求其次走 resourceCategoryId 单值（向后兼容），两者都空则不过滤。-1=其他 作为合法元素参与 IN。 -->
+        <if test="resourceCategoryIds != null and resourceCategoryIds.size() > 0">
+            and r.resource_category_id in
+            <foreach collection="resourceCategoryIds" item="rcid" open="(" separator="," close=")">#{rcid}</foreach>
+        </if>
+        <if test="resourceCategoryIds == null and resourceCategoryId != null">
+            and r.resource_category_id = #{resourceCategoryId}
+        </if>
+        <if test="authorId != null">and r.author_id = #{authorId}</if>
+        <choose>
+            <when test="sort == 'LATEST'">
+                order by r.publish_time desc, r.resource_id desc
+            </when>
+            <when test="sort == 'RELEVANCE'">
+                <choose>
+                    <when test="keyword != null and keyword != ''">
+                        order by MATCH(r.title, r.summary, r.description) AGAINST(#{keyword} IN NATURAL LANGUAGE MODE) desc,
+                                 r.publish_time desc, r.resource_id desc
+                    </when>
+                    <otherwise>
+                        order by r.publish_time desc, r.resource_id desc
+                    </otherwise>
+                </choose>
+            </when>
+            <otherwise>
+                <!-- HOT（缺省）+ 其它兜底全走热度排序：资源推荐是主用例。
+                     注意资源主表不冗余 like_count/collect_count（事实表聚合），排序用 inline 子查询；
+                     download_count/view_count 是主表冗余列直接用 r. 列。 -->
+                order by (r.download_count * 3
+                          + r.view_count
+                          + (select count(*) from resource_like rl where rl.resource_id = r.resource_id) * 2
+                          + (select count(*) from resource_collect rc where rc.resource_id = r.resource_id) * 2) desc,
+                         r.publish_time desc, r.resource_id desc
+            </otherwise>
+        </choose>
+    </select>
+
+    <!--
+      推荐/热度榜：全局热门兜底（资源无标签、无用户偏好源，推荐 feed 等价热度榜口径）。
+      按 (download_count*3 + view_count + like_count*2 + collect_count*2) desc, publish_time desc，
+      排除 excludeResourceId + excludeIds（service 去重用），limit size。
+      列表不带 keyword/分类过滤——纯热度 feed。
+    -->
+    <select id="recommendHot" resultMap="ResourcePortalVoMap">
+        select r.resource_id, r.author_id, u.nick_name as author_nickname, u.avatar as author_avatar,
+               r.resource_type, r.resource_category_id, c.category_name as category_name,
+               r.title, r.summary, r.level, r.link_url, r.link_icon, r.file_object_id,
+               f.original_name as original_name, f.content_length as content_length, f.content_type as content_type,
+               r.publish_time, r.view_count, r.download_count,
+               (select count(*) from resource_like rl where rl.resource_id = r.resource_id) as like_count,
+               (select count(*) from resource_collect rc where rc.resource_id = r.resource_id) as collect_count,
+               (select coalesce(round(avg(rating.score), 2), 0) from resource_rating rating where rating.resource_id = r.resource_id) as rating_avg,
+               (select count(*) from resource_rating rating where rating.resource_id = r.resource_id) as rating_count
+        from resource r
+                left join sys_user u on r.author_id = u.user_id
+                left join resource_category c on r.resource_category_id = c.category_id and c.deleted = 0
+                left join file_object f on r.file_object_id = f.object_id and f.deleted = 0
+        where <include refid="portalResourceWhere"/>
+        <if test="excludeResourceId != null">and r.resource_id &lt;&gt; #{excludeResourceId}</if>
+        <if test="excludeIds != null and excludeIds.size() > 0">
+            and r.resource_id not in
+            <foreach collection="excludeIds" item="eid" open="(" separator="," close=")">#{eid}</foreach>
+        </if>
+        order by (r.download_count * 3
+                 + r.view_count
+                 + (select count(*) from resource_like rl where rl.resource_id = r.resource_id) * 2
+                 + (select count(*) from resource_collect rc where rc.resource_id = r.resource_id) * 2) desc,
+                 r.publish_time desc, r.resource_id desc
+        limit #{size}
+    </select>
+
+    <!--
+      按 ID 集合取前台可见资源 VO（"我的收藏"列表用）。
+      照前台铁律 deleted=0 AND status='PUBLISHED' 过滤（资源无 level 等级概念），IN 给定的 resourceIds。
+      复用列表 VO 全字段 + inline 互动计数（与 recommendHot 同口径）。
+      不排序——service 拿到后按收藏时间倒序的 resourceIds 顺序拼装，保留"最近收藏在前"语义。
+    -->
+    <select id="listByIds" resultMap="ResourcePortalVoMap">
+        select r.resource_id, r.author_id, u.nick_name as author_nickname, u.avatar as author_avatar,
+               r.resource_type, r.resource_category_id, c.category_name as category_name,
+               r.title, r.summary, r.level, r.link_url, r.link_icon, r.file_object_id,
+               f.original_name as original_name, f.content_length as content_length, f.content_type as content_type,
+               r.publish_time, r.view_count, r.download_count,
+               (select count(*) from resource_like rl where rl.resource_id = r.resource_id) as like_count,
+               (select count(*) from resource_collect rc where rc.resource_id = r.resource_id) as collect_count,
+               (select coalesce(round(avg(rating.score), 2), 0) from resource_rating rating where rating.resource_id = r.resource_id) as rating_avg,
+               (select count(*) from resource_rating rating where rating.resource_id = r.resource_id) as rating_count
+        from resource r
+                left join sys_user u on r.author_id = u.user_id
+                left join resource_category c on r.resource_category_id = c.category_id and c.deleted = 0
+                left join file_object f on r.file_object_id = f.object_id and f.deleted = 0
+        where <include refid="portalResourceWhere"/>
+          and r.resource_id in
+          <foreach collection="resourceIds" item="rid" open="(" separator="," close=")">#{rid}</foreach>
+    </select>
+
+    <!--
+      详情：按主键取未删已发布资源，含 description 大字段 + join 带出展示字段 + r.level。
+      非 PUBLISHED（草稿/待审/驳回/撤回）返回 null（controller 404 语义）。
+      不复用 portalResourceWhere（不带 level 过滤）——service 取 meta 后判 level > userViewLevel 给锁态 VO
+      （越级仍下发 description，锁下载/跳转，"能搜到但锁"语义）。带 level 过滤会让越级详情直接 404 而非锁态。
+    -->
+    <select id="getPortalResourceDetail" resultMap="ResourcePortalDetailVoMap">
+        select r.resource_id, r.author_id, u.nick_name as author_nickname, u.avatar as author_avatar,
+               r.resource_type, r.resource_category_id, c.category_name as category_name,
+               r.title, r.summary, r.description, r.level,
+               r.link_url, r.link_icon, r.file_object_id,
+               f.original_name as original_name, f.content_length as content_length, f.content_type as content_type,
+               r.publish_time, r.view_count, r.download_count,
+               r.comment_enabled, r.comment_curated,
+               (select count(*) from resource_like rl where rl.resource_id = r.resource_id) as like_count,
+               (select count(*) from resource_collect rc where rc.resource_id = r.resource_id) as collect_count,
+               (select coalesce(round(avg(rating.score), 2), 0) from resource_rating rating where rating.resource_id = r.resource_id) as rating_avg,
+               (select count(*) from resource_rating rating where rating.resource_id = r.resource_id) as rating_count
+        from resource r
+                left join sys_user u on r.author_id = u.user_id
+                left join resource_category c on r.resource_category_id = c.category_id and c.deleted = 0
+                left join file_object f on r.file_object_id = f.object_id and f.deleted = 0
+        where r.deleted = 0 and r.status = 'PUBLISHED'
+          and r.resource_id = #{resourceId}
+    </select>
+
+    <!--
+      相关推荐：同 resource_category_id 其它公开资源（排除自身），按热度排 limit size。
+      -1=其他类时同分类语义弱：用 (r.resource_category_id = (查当前资源分类) OR r.resource_category_id = -1)
+      让其它"其他"类资源也被召回，避免相关推荐为空；但为保持 SQL 简洁与可走索引，
+      直接按当前资源分类精确匹配——若当前资源分类为 -1，下方 = -1 即召回所有"其他"类已发布资源，
+      量级可控。分类非 -1 时仅召回同分类，最贴合"相关"语义。
+      结果不足以填满 size 时前端不再补（侧栏可空，不影响主用例）。
+    -->
+    <select id="relatedResources" resultMap="ResourcePortalVoMap">
+        select r.resource_id, r.author_id, u.nick_name as author_nickname, u.avatar as author_avatar,
+               r.resource_type, r.resource_category_id, c.category_name as category_name,
+               r.title, r.summary, r.level, r.link_url, r.link_icon, r.file_object_id,
+               f.original_name as original_name, f.content_length as content_length, f.content_type as content_type,
+               r.publish_time, r.view_count, r.download_count,
+               (select count(*) from resource_like rl where rl.resource_id = r.resource_id) as like_count,
+               (select count(*) from resource_collect rc where rc.resource_id = r.resource_id) as collect_count,
+               (select coalesce(round(avg(rating.score), 2), 0) from resource_rating rating where rating.resource_id = r.resource_id) as rating_avg,
+               (select count(*) from resource_rating rating where rating.resource_id = r.resource_id) as rating_count
+        from resource r
+                left join sys_user u on r.author_id = u.user_id
+                left join resource_category c on r.resource_category_id = c.category_id and c.deleted = 0
+                left join file_object f on r.file_object_id = f.object_id and f.deleted = 0
+        where <include refid="portalResourceWhere"/>
+          and r.resource_category_id = (
+              select resource_category_id from resource where resource_id = #{resourceId} and deleted = 0
+          )
+          and r.resource_id &lt;&gt; #{resourceId}
+        order by (r.download_count * 3
+                 + r.view_count
+                 + (select count(*) from resource_like rl where rl.resource_id = r.resource_id) * 2
+                 + (select count(*) from resource_collect rc where rc.resource_id = r.resource_id) * 2) desc,
+                 r.publish_time desc, r.resource_id desc
+        limit #{size}
+    </select>
+
+</mapper>

@@ -1,0 +1,120 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.knowhub.mapper.article.ArticleContributorMapper">
+
+    <resultMap id="ArticleContributorResultMap" type="com.knowhub.pojo.article.entity.ArticleContributor">
+        <id property="contributorId" column="contributor_id"/>
+        <result property="articleId" column="article_id"/>
+        <result property="userId" column="user_id"/>
+        <result property="status" column="status"/>
+        <result property="advice" column="advice"/>
+        <result property="applyBy" column="apply_by"/>
+        <result property="applyTime" column="apply_time"/>
+        <result property="handleBy" column="handle_by"/>
+        <result property="handleTime" column="handle_time"/>
+        <result property="createBy" column="create_by"/>
+        <result property="createTime" column="create_time"/>
+        <result property="updateBy" column="update_by"/>
+        <result property="updateTime" column="update_time"/>
+        <result property="deleted" column="deleted"/>
+        <!-- 非表字段：join 带出 -->
+        <result property="articleTitle" column="article_title"/>
+        <result property="nickname" column="nick_name"/>
+        <result property="articleNickname" column="article_nick_name"/>
+    </resultMap>
+
+    <!-- 提交请一条申请：apply_time/create_time/update_time 由 DB 默认 CURRENT_TIMESTAMP 填充。
+         status 用默认 'PENDING'，advice 仅 REJECTED 才填，此处 insert 不带 advice。 -->
+    <insert id="addContributor" parameterType="com.knowhub.pojo.article.entity.ArticleContributor"
+            useGeneratedKeys="true" keyProperty="contributorId">
+        insert into article_contributor (article_id, user_id, status, apply_by, create_by, update_by)
+        values (#{articleId}, #{userId}, 'PENDING', #{applyBy}, #{createBy}, #{updateBy})
+    </insert>
+
+    <!-- 查 (articleId, userId) 的当前 ACTIVE 行（deleted=0），用于去重与重申检测 -->
+    <select id="getActiveByArticleAndUser" resultMap="ArticleContributorResultMap">
+        select contributor_id, article_id, user_id, status, advice, apply_by, apply_time,
+               handle_by, handle_time, create_by, create_time, update_by, update_time, deleted
+        from article_contributor
+        where article_id = #{articleId} and user_id = #{userId} and deleted = 0
+        limit 1
+    </select>
+
+    <!-- approved 贡献者放行判定：是否存在 status='APPROVED' 且 deleted=0 的行 -->
+    <select id="isApproved" resultType="java.lang.Boolean">
+        select exists(select 1 from article_contributor
+                      where article_id = #{articleId} and user_id = #{userId}
+                        and status = 'APPROVED' and deleted = 0)
+    </select>
+
+    <!-- 按主键查（含 deleted 字段，审批回填 + 防越权校验用） -->
+    <select id="getById" resultMap="ArticleContributorResultMap">
+        select contributor_id, article_id, user_id, status, advice, apply_by, apply_time,
+               handle_by, handle_time, create_by, create_time, update_by, update_time, deleted
+        from article_contributor
+        where contributor_id = #{contributorId}
+    </select>
+
+    <!-- 作者侧：列出该作者所有文章收到的申请（service 注入 articleAuthorId），
+         join article 取文章标题、join sys_user 两次取申请者昵称 + 文章作者昵称。
+         按 apply_time 倒序（最新提交在最前）。LEFT JOIN 不丢用户被删/改名时的行。 -->
+    <select id="listReceived" parameterType="com.knowhub.pojo.article.quarry.ArticleContributorQuarry"
+            resultMap="ArticleContributorResultMap">
+        select c.contributor_id, c.article_id, c.user_id, c.status, c.advice, c.apply_by, c.apply_time,
+               c.handle_by, c.handle_time, c.create_by, c.create_time, c.update_by, c.update_time, c.deleted,
+               a.title as article_title,
+               au.nick_name as nick_name,
+               auu.nick_name as article_nick_name
+        from article_contributor c
+        inner join article a on c.article_id = a.article_id and a.deleted = 0
+        left join sys_user au on c.user_id = au.user_id
+        left join sys_user auu on a.author_id = auu.user_id
+        where c.deleted = 0
+          and a.author_id = #{articleAuthorId}
+        <if test="status != null and status != ''">
+            and c.status = #{status}
+        </if>
+        order by c.apply_time desc, c.contributor_id desc
+    </select>
+
+    <!-- 申请人侧：列出自已发过的申请（service 注入 userId），join 带文章标题 + 文章作者昵称 -->
+    <select id="listMine" parameterType="com.knowhub.pojo.article.quarry.ArticleContributorQuarry"
+            resultMap="ArticleContributorResultMap">
+        select c.contributor_id, c.article_id, c.user_id, c.status, c.advice, c.apply_by, c.apply_time,
+               c.handle_by, c.handle_time, c.create_by, c.create_time, c.update_by, c.update_time, c.deleted,
+               a.title as article_title,
+               au.nick_name as nick_name,
+               auu.nick_name as article_nick_name
+        from article_contributor c
+        inner join article a on c.article_id = a.article_id and a.deleted = 0
+        left join sys_user au on c.user_id = au.user_id
+        left join sys_user auu on a.author_id = auu.user_id
+        where c.deleted = 0
+          and c.user_id = #{userId}
+        <if test="status != null and status != ''">
+            and c.status = #{status}
+        </if>
+        order by c.apply_time desc, c.contributor_id desc
+    </select>
+
+    <!-- accept/reject 改 status + 审计 + advice（仅 REJECT 时带 advice） + handle_by + handle_time -->
+    <update id="updateStatus" parameterType="com.knowhub.pojo.article.entity.ArticleContributor">
+        update article_contributor
+        set status = #{status},
+            handle_by = #{handleBy},
+            handle_time = #{handleTime},
+            update_by = #{updateBy}
+        <if test="advice != null">
+            , advice = #{advice}
+        </if>
+        where contributor_id = #{contributorId} and deleted = 0
+    </update>
+
+    <!-- 软删（重申时把旧 REJECTED 行 deleted=1，避 uk_article_contributor 冲突） -->
+    <update id="softDeleteById">
+        update article_contributor set deleted = 1 where contributor_id = #{contributorId}
+    </update>
+
+</mapper>

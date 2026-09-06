@@ -9,27 +9,30 @@
         <relativePath/> <!-- lookup parent from repository -->
     </parent>
     <groupId>com.rookie</groupId>
-    <artifactId>rookie</artifactId>
-    <version>1.0.1</version>
-    <name>rookie</name>
-    <description>菜鸟框架</description>
+    <artifactId>knowhub</artifactId>
+    <version>1.0.5</version>
+    <name>knowhub</name>
+    <description>知枢 - 知识库博客系统</description>
     <modules>
-        <module>rookie-framework</module>
         <module>rookie-common</module>
+        <module>rookie-framework</module>
         <module>rookie-system</module>
         <module>rookie-admin</module>
+        <module>knowhub</module>
     </modules>
     <packaging>pom</packaging>
 
     <properties>
         <java.version>17</java.version>
-        <rookie.version>1.0.1</rookie.version>
+        <rookie.version>2.0.5</rookie.version>
+        <knowhub.version>1.0.5</knowhub.version>
         <mybatis-starter.version>3.0.4</mybatis-starter.version>
         <pagehelper-start>2.1.0</pagehelper-start>
         <hutool.version>5.8.34</hutool.version>
         <knife4j.version>4.4.0</knife4j.version>
         <lombok.version>1.18.34</lombok.version>
         <jwt.version>4.4.0</jwt.version>
+        <amazon.s3.version>2.25.27</amazon.s3.version>
     </properties>
 
     <dependencyManagement>
@@ -51,6 +54,12 @@
                 <groupId>com.rookie</groupId>
                 <artifactId>rookie-system</artifactId>
                 <version>${rookie.version}</version>
+            </dependency>
+
+            <dependency>
+                <groupId>com.knowhub</groupId>
+                <artifactId>knowhub</artifactId>
+                <version>${knowhub.version}</version>
             </dependency>
 
             <dependency>
@@ -92,6 +101,14 @@
                 <version>${jwt.version}</version>
             </dependency>
 
+            <!--amazon s3依赖版本-->
+            <dependency>
+                <groupId>software.amazon.awssdk</groupId>
+                <artifactId>bom</artifactId>
+                <version>${amazon.s3.version}</version> <!-- 版本只在BOM中定义一次 -->
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
         </dependencies>
     </dependencyManagement>
 
@@ -109,18 +126,7 @@
                     </annotationProcessorPaths>
                 </configuration>
             </plugin>
-            <plugin>
-                <groupId>org.springframework.boot</groupId>
-                <artifactId>spring-boot-maven-plugin</artifactId>
-                <configuration>
-                    <excludes>
-                        <exclude>
-                            <groupId>org.projectlombok</groupId>
-                            <artifactId>lombok</artifactId>
-                        </exclude>
-                    </excludes>
-                </configuration>
-            </plugin>
+
         </plugins>
     </build>
 

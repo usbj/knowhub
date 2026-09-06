@@ -15,6 +15,8 @@ import {
 const DictDataView = () => import('@/views/system/dict-data/index.vue')
 const DashboardView = () => import('@/views/dashboard/index.vue')
 const ProfileView = () => import('@/views/profile/index.vue')
+/** 章节管理二级路由页（无菜单，从文章管理列表"章节"按钮跳转，按 ?articleId= 维度展示该文章的章节） */
+const ArticleChaptersView = () => import('@/views/knowhub/article/chapters/index.vue')
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -23,6 +25,14 @@ const router = createRouter({
       path: '/login',
       name: 'login',
       component: LoginView,
+      meta: {
+        public: true,
+      },
+    },
+    {
+      path: '/register',
+      name: 'register',
+      component: () => import('@/views/register.vue'),
       meta: {
         public: true,
       },
@@ -65,6 +75,17 @@ const router = createRouter({
             title: '字典数据',
           },
         },
+        {
+          // 章节管理二级路由页（无菜单，从文章管理列表"章节"按钮跳转 /knowhub/article/chapters?articleId=）
+          // 静态注册：章节是文章子模块不挂菜单，无法走动态路由注册；权限由后端 @PreAuthorize 把守。
+          path: 'knowhub/article/chapters',
+          name: 'knowhub-article-chapters',
+          component: ArticleChaptersView,
+          meta: {
+            requiresAuth: true,
+            title: '章节管理',
+          },
+        },
       ],
     },
   ],
@@ -96,7 +117,7 @@ router.beforeEach(async (to) => {
   const noticeStore = useNoticeStore()
 
   if (to.meta.public) {
-    if (userStore.isAuthenticated && to.path === '/login') {
+    if (userStore.isAuthenticated && (to.path === '/login' || to.path === '/register')) {
       return '/'
     }
 

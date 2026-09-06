@@ -83,6 +83,7 @@
         <if test="nickName!='' and nickName!=null">nick_name=#{nickName},</if>
         <if test="phoneNumber!='' and phoneNumber!=null">phone_number=#{phoneNumber},</if>
         <if test="sex!='' and sex!=null">sex=#{sex},</if>
+        <if test="avatar!=null and avatar!=''">avatar=#{avatar},</if>
         <if test="status!=null">`status`=#{status},</if>
         update_by = #{updateBy},
         update_time=now()
@@ -135,6 +136,14 @@
     <update id="resetSysUserPassword" parameterType="com.rookie.common.pojo.entity.SysUser">
         update sys_user
         set password = #{password}
+        where user_id = #{userId}
+    </update>
+
+    <update id="updateSysUserAvatar" parameterType="com.rookie.common.pojo.entity.SysUser">
+        update sys_user
+        set avatar = #{avatar},
+            update_by = #{updateBy},
+            update_time = now()
         where user_id = #{userId}
     </update>
 

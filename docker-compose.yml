@@ -1,0 +1,179 @@
+# ===========================================================================
+# knowhub 一体化部署 docker-compose
+# ---------------------------------------------------------------------------
+# RustFS / OSS 已在外部独立部署并运行，本 compose 不再包含 OSS 服务，
+# backend 通过 STORAGE_ENDPOINT 环境变量连外部 RustFS（内网可达地址即可）。
+#
+# 服务拓扑（同一台虚拟机/服务器内，bridge 网络互通）：
+#
+#   浏览器 ──8081──> portal(前台nginx) ──┐
+#   浏览器 ──8082──> admin (后台nginx)  ─┼──> /api /file ──> backend:8080
+#   浏览器 ──8080──> backend(直连调试)   │                        ├─ mysql:3306
+#                                       │                        ├─ redis:6379
+#                                       │                        └─ 外部 RustFS（STORAGE_ENDPOINT）
+#                                       │                              ▲
+#                                       │            DIRECT 直链模式：前端浏览器直连外部 RustFS
+#                                       │            （地址由系统设置 knowhub.file.direct_base_url 配，本 compose 不管）
+#                                       │            ┌─────────────────┘
+#                                       └────────────┘ transfer 中转：backend 拉外部 RustFS 字节流回写前端
+#
+# 两种文件访问模式（后台「系统设置」改 knowhub.file.access_mode，运行时生效无需重启）：
+#   transfer 中转（默认）：前端→backend /file/proxy→backend 拉外部 OSS 字节流回写。OSS 地址走 STORAGE_ENDPOINT。
+#   direct  直链          ：前端浏览器直连外部 RustFS。地址由 knowhub.file.direct_base_url 配（你在系统设置里填路由器内网地址）。
+#                          backend 仍用 STORAGE_ENDPOINT 签预签名，再把 host 改写成 direct_base_url 发前端。
+#   两种模式都不需要本 compose 额外建 OSS 服务 / 网关：RustFS 已在外部就绪。
+#
+# 端口映射（宿主:容器）：
+#   portal       8081:80   前台
+#   admin        8082:80   后台
+#   backend      8080:8080 后端（调试/Swagger；生产可去掉对外映射）
+#   mysql        3306:3306 数据库（调试；生产建议去掉）
+#   redis        6380:6379 缓存（宿主 6379 被占用，换 6380 对外；调试；生产建议去掉对外映射）
+# ===========================================================================
+
+name: knowhub
+
+services:
+  # ---------------------------------------------------------------------------
+  # MySQL 8：首启按依赖拓扑序灌 sql/ 下全部脚本（见 sql/00-init.sh）
+  # ---------------------------------------------------------------------------
+  mysql:
+    image: mysql:8.0
+    container_name: knowhub-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root123}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-knowhub}
+      TZ: Asia/Shanghai
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_0900_ai_ci
+      - --default-authentication-plugin=mysql_native_password
+    ports:
+      - "3306:3306"
+    volumes:
+      - knowhub-mysql-data:/var/lib/mysql
+      - ./sql:/sql:ro
+      - ./sql/00-init.sh:/docker-entrypoint-initdb.d/00-init.sh:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-p${MYSQL_ROOT_PASSWORD:-root123}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    networks:
+      - knowhub-net
+
+  # ---------------------------------------------------------------------------
+  # Redis 7：后端缓存依赖
+  # ---------------------------------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    container_name: knowhub-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "6380:6379"
+    volumes:
+      - knowhub-redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - knowhub-net
+
+  # ---------------------------------------------------------------------------
+  # 后端：Spring Boot fat-jar（纯拷贝预构建 jar，不在镜像内编译）
+  # ---------------------------------------------------------------------------
+  # 环境变量覆盖 application.yml 本地默认值（Spring relaxed binding 自动映射）：
+  #   SPRING_DATASOURCE_URL/USERNAME/PASSWORD → spring.datasource.*
+  #   SPRING_DATA_REDIS_HOST/PORT            → spring.data.redis.*
+  #   STORAGE_ENDPOINT                        → storage.endpoint（外部 RustFS 内网地址，backend 直连）
+  #   STORAGE_ACCESS_KEY/SECRET_KEY/BUCKET    → storage.access-key/secret-key/bucket
+  # ---------------------------------------------------------------------------
+  # ⚠️ STORAGE_ENDPOINT 必须是「backend 容器能访问到外部 RustFS」的地址：
+  #   - 外部 RustFS 在宿主机上：用 http://host.docker.internal:9000（Docker Desktop）或
+  #     http://<宿主内网IP>:9000（Linux 宿主，容器走 bridge 网络经宿主网卡可达）
+  #   - 外部 RustFS 在路由器内网另一台机：http://<那台机的内网IP>:9000
+  #   直链模式给前端用的地址（direct_base_url）与此处不同，它在后台系统设置里配（见下文注释）。
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: knowhub/backend:latest
+    container_name: knowhub-backend
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      TZ: Asia/Shanghai
+      JAVA_OPTS: "-Xms512m -Xmx1024m"
+      # 数据库：走内网，用 compose 服务名 mysql 作主机名
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/${MYSQL_DATABASE:-knowhub}?useUnicode=true&characterEncoding=utf8&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai
+      SPRING_DATASOURCE_USERNAME: root
+      SPRING_DATASOURCE_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root123}
+      # Redis：走内网
+      SPRING_DATA_REDIS_HOST: redis
+      SPRING_DATA_REDIS_PORT: "6379"
+      # 对象存储：连外部已部署的 RustFS（地址按实际内网拓扑填，见上方注释）
+      STORAGE_ENDPOINT: ${STORAGE_ENDPOINT:-http://host.docker.internal:9000}
+      STORAGE_ACCESS_KEY: ${STORAGE_ACCESS_KEY:-minioadmin}
+      STORAGE_SECRET_KEY: ${STORAGE_SECRET_KEY:-minioadmin}
+      STORAGE_BUCKET: ${STORAGE_BUCKET:-knowhub}
+    ports:
+      - "8080:8080"
+    volumes:
+      # 本地存储模式文件落盘（storage.local-base-path=./knowhub-upload 对应容器内 /app/knowhub-upload）
+      - knowhub-upload-data:/app/knowhub-upload
+      - knowhub-rookie-upload:/app/upload
+    networks:
+      - knowhub-net
+
+  # ---------------------------------------------------------------------------
+  # 前台 UI：knowhub-ui 预构建 dist 由 nginx 托管，/api /file 转发到 backend
+  # ---------------------------------------------------------------------------
+  portal:
+    build:
+      context: ./knowhub-ui
+      dockerfile: Dockerfile
+    image: knowhub/portal:latest
+    container_name: knowhub-portal
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "8081:80"
+    networks:
+      - knowhub-net
+
+  # ---------------------------------------------------------------------------
+  # 后台管理 UI：rookie-ui 预构建 dist 由 nginx 托管，/api /file 转发到 backend
+  # ---------------------------------------------------------------------------
+  admin:
+    build:
+      context: ./rookie-ui
+      dockerfile: Dockerfile
+    image: knowhub/admin:latest
+    container_name: knowhub-admin
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "8082:80"
+    networks:
+      - knowhub-net
+
+networks:
+  knowhub-net:
+    driver: bridge
+
+volumes:
+  knowhub-mysql-data:
+  knowhub-redis-data:
+  knowhub-upload-data:
+  knowhub-rookie-upload:

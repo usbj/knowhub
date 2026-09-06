@@ -10,11 +10,22 @@ spring:
     #    password: Ll3193115363@
     password: 07571Xwyt
     #    url: jdbc:mysql://192.168.88.132:3306/big_event
-    url: jdbc:mysql://localhost:3306/rookie
+    url: jdbc:mysql://localhost:3306/knowhub
   data:
     redis:
       #      host: 192.168.88.132
       port: 6379
+  # 文件上传大小限制（默认 1MB 过小，按需放宽；头像另有 2MB 上限在服务层校验）
+  servlet:
+    multipart:
+      max-file-size: 50MB
+      max-request-size: 50MB
+  # Jackson 全局日期格式化：所有 java.util.Date 统一序列化为 yyyy-MM-dd HH:mm:ss
+  # 时区设为东八区，避免按 UTC 输出导致时间偏移 8 小时。
+  # 前端拿到即为格式化字符串，按需用 formatDateTime/formatDate 截断展示。
+  jackson:
+    date-format: yyyy-MM-dd HH:mm:ss
+    time-zone: GMT+8
 logging:
   level:
     com.rookie: debug
@@ -50,3 +61,76 @@ redis:
   base-key: 'rookie:framework:'
   #单位默认为分钟
   expire-time: 30
+
+# 对象存储（RustFS / S3 兼容）配置，见 knowhub-storage 模块设计稿 doc/storage/file-storage-module-design.md
+# 敏感值用 ${ENV:默认} 占位，真实值由环境变量注入，仓库不落明文；缺省值仅本地联调用
+storage:
+  # RustFS S3 兼容端点，末尾不带斜杠
+  endpoint: http://100.82.86.85:9000
+  # region 任意占位值（RustFS 不校验，但 SDK 要求非空）
+  region: ${RUSTFS_REGION:us-east-1}
+  # 访问密钥，本地默认 minioadmin，生产由环境变量覆盖
+  access-key: Ad0LzfJ8tNPtmAcaBxV4
+  secret-key: jdfnZxyviejYUCjR217MDxQbybw5OSOvxUZxdGRm
+  # 桶名，不存在时测试类会自动创建
+  bucket: knowhub
+  # path-style 必须 true（RustFS 默认 path-style，本地单节点无 DNS 通配）
+  path-style-access: true
+  # 预签名有效期（分钟），正式模块用，测试类内部硬编码了 10/5 分钟
+  upload-expire-minutes: 10
+  download-expire-minutes: 5
+  # PENDING 未确认 GC 阈值（分钟），正式模块用
+  pending-ttl-minutes: 30
+  # GC 定时扫描间隔（分钟），正式模块用
+  gc-interval-minutes: 10
+  # PUBLIC 对象是否直拼公开读 URL（false 则也走预签名 GET），取决于 RustFS 桶策略
+  public-bucket-readable: true
+  # 本地存储模式根目录（access_mode=local 时文件落盘于此，objectKey 即相对路径，默认 ./knowhub-upload）
+  # 改需重启；切本地模式前需确保该目录已配且历史 OSS 数据已下载到本地（见系统设置 knowhub.file.access_mode 备注）
+  local-base-path: ./knowhub-upload
+
+# 博客模块配置
+knowhub:
+  blog:
+    # 审核对账定时任务扫描间隔（分钟）：审核开关关闭后，扫描遗留待审文章并放行的频率
+    reconcile-interval-minutes: 5
+  resource:
+    # 资源审核对账定时任务扫描间隔（分钟）：审核开关关闭后，扫描遗留待审资源并放行的频率
+    # 审核开关本身走 sys_config(knowhub.resource.review_enabled)，可后台改即时生效；
+    # 对账间隔走 yml（@Scheduled 注解在 Bean 创建时解析，只能读 yml/环境变量），改需重启
+    reconcile-interval-minutes: 5
+  project:
+    # 项目审核对账定时任务扫描间隔（分钟）：审核开关关闭后，扫描遗留待审项目并放行的频率
+    # 审核开关本身走 sys_config(knowhub.project.review_enabled，默认 true 开启)，可后台改即时生效；
+    # 对账间隔走 yml（@Scheduled 注解在 Bean 创建时解析，只能读 yml/环境变量），改需重启
+    reconcile-interval-minutes: 5
+  article:
+    # 文章审核对账定时任务扫描间隔（分钟）：审核开关关闭后，扫描遗留待审文章并放行的频率
+    # 审核开关本身走 sys_config(knowhub.article.review_enabled，默认 true 开启)，可后台改即时生效；
+    # 对账间隔走 yml（@Scheduled 注解在 Bean 创建时解析，只能读 yml/环境变量），改需重启。
+    # 注意：此开关只管文章系统审核；章节作者审核是 visibility=SEMIPUBLIC 固有机制，不受此开关影响。
+    reconcile-interval-minutes: 5
+  audit:
+    # 借出逾期对账定时任务扫描间隔（分钟）：扫 expected_return_date < now AND status=BORROWED 的借出置 OVERDUE
+    # 频率走 yml（@Scheduled 注解在 Bean 创建时解析，只能读 yml/环境变量），改需重启。
+    # 借出审批/月度周记报表开关本身走 sys_config(knowhub.audit.*，默认关闭），可后台改即时生效
+    overdue-scan-interval-minutes: 30
+
+# 定时任务调度白名单：允许被 sys_job 调度的 Spring Bean 包前缀（rookie SysJobScheduler 安全边界）
+# 默认 com.rookie.system.task；knowhub 扩展 com.knowhub.task，使 knowhub 的 8 个 @Component 任务可纳入后台管理
+# （后台「系统监控→定时任务」注册/启停/立即执行/查日志，cron 走 sys_job 表）
+# 注意：SysJobScheduler 用 @Value 注入 List<String>，@Value 走 SpEL 只认「逗号分隔字符串」拆 List，
+#   不认 YAML 列表语法（- ）；写列表语法会被当单字符串 fallback 到默认值，导致白名单只含 com.rookie.system.task。
+#   故此处必须用逗号分隔单行写法。后续若改用 @ConfigurationProperties 绑定可同时支持两种写法（见 knowhub-job-rookie-changes.md）。
+task:
+  bean-package-prefixes: com.rookie.system.task,com.knowhub.task
+
+# 文件上传配置
+# upload.path：上传根路径（本地路径，可配置；支持相对路径，相对应用工作目录解析；
+#              修改后需重启后端生效）。文件按「根路径/年/月/日」分层存储，
+#              用户头像落在根路径下的 avatar/年/月/日 子目录。
+# system-name：系统名称，作为上传文件名的前缀（文件名 = 系统名称 + 年月日 + 毫秒时间戳 + 扩展名）
+rookie:
+  system-name: rookie
+  upload:
+    path: ./upload

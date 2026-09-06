@@ -1,0 +1,206 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.knowhub.mapper.audit.AuditLoanMapper">
+
+    <!--
+      借出结果映射。
+      含 join 带出的展示字段（非表字段，AuditLoan 实体扩展属性）：
+      - subjectName：join audit_subject on subject_id，LEFT JOIN 防止主体被删时丢行
+      - borrowerName/Phone/Org/Remark：借用人外部人员内联字段，直接投影，不再 join sys_user
+    -->
+    <resultMap id="AuditLoanResultMap" type="com.knowhub.pojo.audit.entity.AuditLoan">
+        <id property="loanId" column="loan_id"/>
+        <result property="subjectId" column="subject_id"/>
+        <result property="itemName" column="item_name"/>
+        <result property="itemType" column="item_type"/>
+        <result property="assetNo" column="asset_no"/>
+        <result property="quantity" column="quantity"/>
+        <result property="borrowerName" column="borrower_name"/>
+        <result property="borrowerPhone" column="borrower_phone"/>
+        <result property="borrowerOrg" column="borrower_org"/>
+        <result property="borrowerRemark" column="borrower_remark"/>
+        <result property="borrowDate" column="borrow_date"/>
+        <result property="expectedReturnDate" column="expected_return_date"/>
+        <result property="actualReturnDate" column="actual_return_date"/>
+        <result property="status" column="status"/>
+        <result property="relatedFlowId" column="related_flow_id"/>
+        <result property="voucherObjectId" column="voucher_object_id"/>
+        <result property="note" column="note"/>
+        <result property="createBy" column="create_by"/>
+        <result property="createTime" column="create_time"/>
+        <result property="updateBy" column="update_by"/>
+        <result property="updateTime" column="update_time"/>
+        <result property="deleted" column="deleted"/>
+        <!-- join 带出的展示字段（非表字段） -->
+        <result property="subjectName" column="subject_name"/>
+    </resultMap>
+
+    <!--
+      审核历史结果映射（直接投影到 VO，join sys_user 带出 operatorNickname）。
+      与 audit_flow_review_log 的 resultMap 同构，仅关联键换 loan_id。
+    -->
+    <resultMap id="AuditLoanReviewLogVoResultMap" type="com.knowhub.pojo.audit.vo.AuditLoanReviewLogVo">
+        <id property="reviewLogId" column="review_log_id"/>
+        <result property="loanId" column="loan_id"/>
+        <result property="action" column="action"/>
+        <result property="operatorId" column="operator_id"/>
+        <result property="operator" column="operator"/>
+        <result property="operatorNickname" column="nick_name"/>
+        <result property="role" column="role"/>
+        <result property="advice" column="advice"/>
+        <result property="createTime" column="create_time"/>
+    </resultMap>
+
+    <!--
+      列表查询：join audit_subject(subject_name)。
+      支持按 subjectName 模糊、itemType、status、borrowerName 模糊、item_name 模糊、borrow_date 区间 过滤。
+      pendingReturn=true 时只看待归还（status IN (BORROWED, OVERDUE)）。
+      按 borrow_date desc, loan_id desc 排序（最近借出在前）。
+    -->
+    <select id="quarryAuditLoan" parameterType="com.knowhub.pojo.audit.quarry.AuditLoanQuarry" resultMap="AuditLoanResultMap">
+        select l.loan_id, l.subject_id, l.item_name, l.item_type, l.asset_no, l.quantity,
+               l.borrower_name, l.borrower_phone, l.borrower_org, l.borrower_remark,
+               l.borrow_date, l.expected_return_date, l.actual_return_date,
+               l.status, l.related_flow_id, l.voucher_object_id, l.note,
+               l.create_by, l.create_time, l.update_by, l.update_time, l.deleted,
+               s.name as subject_name
+        from audit_loan l
+                left join audit_subject s on l.subject_id = s.subject_id
+        where l.deleted = 0
+        <if test="subjectName != null and subjectName != ''">and s.name like concat('%', #{subjectName}, '%')</if>
+        <if test="itemType != null and itemType != ''">and l.item_type = #{itemType}</if>
+        <if test="status != null and status != ''">and l.status = #{status}</if>
+        <if test="borrowerName != null and borrowerName != ''">and l.borrower_name like concat('%', #{borrowerName}, '%')</if>
+        <if test="itemName != null and itemName != ''">and l.item_name like concat('%', #{itemName}, '%')</if>
+        <if test="beginTime != null">and l.borrow_date &gt;= #{beginTime}</if>
+        <if test="endTime != null">and l.borrow_date &lt;= #{endTime}</if>
+        <if test="pendingReturn != null and pendingReturn == true">
+            and l.status in ('BORROWED', 'OVERDUE')
+        </if>
+        order by l.borrow_date desc, l.loan_id desc
+    </select>
+
+    <!-- 详情：按主键取未删除借出，含 subject_name -->
+    <select id="getAuditLoanInfo" parameterType="long" resultMap="AuditLoanResultMap">
+        select l.loan_id, l.subject_id, l.item_name, l.item_type, l.asset_no, l.quantity,
+               l.borrower_name, l.borrower_phone, l.borrower_org, l.borrower_remark,
+               l.borrow_date, l.expected_return_date, l.actual_return_date,
+               l.status, l.related_flow_id, l.voucher_object_id, l.note,
+               l.create_by, l.create_time, l.update_by, l.update_time, l.deleted,
+               s.name as subject_name
+        from audit_loan l
+                left join audit_subject s on l.subject_id = s.subject_id
+        where l.loan_id = #{loanId} and l.deleted = 0
+    </select>
+
+    <!-- 新增借出，动态列（对齐 README.dev「Mapper XML insert 均改为动态列」约定） -->
+    <insert id="insertAuditLoan" parameterType="com.knowhub.pojo.audit.entity.AuditLoan" useGeneratedKeys="true" keyProperty="loanId">
+        insert into audit_loan
+        <trim prefix="(" suffix=")" suffixOverrides=",">
+            <if test="subjectId != null">subject_id,</if>
+            <if test="itemName != null">item_name,</if>
+            <if test="itemType != null">item_type,</if>
+            <if test="assetNo != null">asset_no,</if>
+            <if test="quantity != null">quantity,</if>
+            <if test="borrowerName != null">borrower_name,</if>
+            <if test="borrowerPhone != null">borrower_phone,</if>
+            <if test="borrowerOrg != null">borrower_org,</if>
+            <if test="borrowerRemark != null">borrower_remark,</if>
+            <if test="borrowDate != null">borrow_date,</if>
+            <if test="expectedReturnDate != null">expected_return_date,</if>
+            <if test="actualReturnDate != null">actual_return_date,</if>
+            <if test="status != null">status,</if>
+            <if test="relatedFlowId != null">related_flow_id,</if>
+            <if test="voucherObjectId != null">voucher_object_id,</if>
+            <if test="note != null">note,</if>
+            create_by, create_time, update_by, update_time
+        </trim>
+        values
+        <trim prefix="(" suffix=")" suffixOverrides=",">
+            <if test="subjectId != null">#{subjectId},</if>
+            <if test="itemName != null">#{itemName},</if>
+            <if test="itemType != null">#{itemType},</if>
+            <if test="assetNo != null">#{assetNo},</if>
+            <if test="quantity != null">#{quantity},</if>
+            <if test="borrowerName != null">#{borrowerName},</if>
+            <if test="borrowerPhone != null">#{borrowerPhone},</if>
+            <if test="borrowerOrg != null">#{borrowerOrg},</if>
+            <if test="borrowerRemark != null">#{borrowerRemark},</if>
+            <if test="borrowDate != null">#{borrowDate},</if>
+            <if test="expectedReturnDate != null">#{expectedReturnDate},</if>
+            <if test="actualReturnDate != null">#{actualReturnDate},</if>
+            <if test="status != null">#{status},</if>
+            <if test="relatedFlowId != null">#{relatedFlowId},</if>
+            <if test="voucherObjectId != null">#{voucherObjectId},</if>
+            <if test="note != null">#{note},</if>
+            #{createBy}, now(), #{updateBy}, now()
+        </trim>
+    </insert>
+
+    <!-- 编辑借出（动态列，用于审批改 status / 归还回填 actual_return_date / 损耗回指 related_flow_id 等） -->
+    <update id="updateAuditLoan" parameterType="com.knowhub.pojo.audit.entity.AuditLoan">
+        update audit_loan
+        <set>
+            <if test="subjectId != null">subject_id = #{subjectId},</if>
+            <if test="itemName != null and itemName != ''">item_name = #{itemName},</if>
+            <if test="itemType != null and itemType != ''">item_type = #{itemType},</if>
+            <if test="assetNo != null">asset_no = #{assetNo},</if>
+            <if test="quantity != null">quantity = #{quantity},</if>
+            <if test="borrowerName != null and borrowerName != ''">borrower_name = #{borrowerName},</if>
+            <if test="borrowerPhone != null and borrowerPhone != ''">borrower_phone = #{borrowerPhone},</if>
+            <if test="borrowerOrg != null">borrower_org = #{borrowerOrg},</if>
+            <if test="borrowerRemark != null">borrower_remark = #{borrowerRemark},</if>
+            <if test="borrowDate != null">borrow_date = #{borrowDate},</if>
+            <if test="expectedReturnDate != null">expected_return_date = #{expectedReturnDate},</if>
+            <if test="actualReturnDate != null">actual_return_date = #{actualReturnDate},</if>
+            <if test="status != null and status != ''">status = #{status},</if>
+            <if test="relatedFlowId != null">related_flow_id = #{relatedFlowId},</if>
+            <if test="voucherObjectId != null">voucher_object_id = #{voucherObjectId},</if>
+            <if test="note != null">note = #{note},</if>
+            <if test="deleted != null">deleted = #{deleted},</if>
+            update_by = #{updateBy},
+            update_time = now()
+        </set>
+        where loan_id = #{loanId}
+    </update>
+
+    <!-- 软删借出（deleted=1） -->
+    <update id="deleteAuditLoan" parameterType="long">
+        update audit_loan set deleted = 1, update_time = now() where loan_id = #{loanId}
+    </update>
+
+    <!--
+      按借出ID查审核历史，按动作时间升序还原轨迹（最早→最新）。
+      左 join sys_user 带出操作人昵称(nick_name)，直接投影到 VO。
+    -->
+    <select id="listReviewLogByLoanId" parameterType="long" resultMap="AuditLoanReviewLogVoResultMap">
+        select r.review_log_id, r.loan_id, r.action, r.operator_id, r.operator,
+               r.role, r.advice, r.create_time, u.nick_name
+        from audit_loan_review_log r
+        left join sys_user u on r.operator_id = u.user_id
+        where r.loan_id = #{loanId}
+        order by r.create_time asc, r.review_log_id asc
+    </select>
+
+    <!--
+      逾期对账扫描：status=BORROWED 且 expected_return_date &lt; now 且未删。
+      expected_return_date 为空(null)视为无限期不逾期，故用 expected_return_date is not null 守卫。
+    -->
+    <select id="listOverdueLoans" parameterType="date" resultMap="AuditLoanResultMap">
+        select l.loan_id, l.subject_id, l.item_name, l.item_type, l.asset_no, l.quantity,
+               l.borrower_name, l.borrower_phone, l.borrower_org, l.borrower_remark,
+               l.borrow_date, l.expected_return_date, l.actual_return_date,
+               l.status, l.related_flow_id, l.voucher_object_id, l.note,
+               l.create_by, l.create_time, l.update_by, l.update_time, l.deleted,
+               s.name as subject_name
+        from audit_loan l
+                left join audit_subject s on l.subject_id = s.subject_id
+        where l.deleted = 0
+          and l.status = 'BORROWED'
+          and l.expected_return_date is not null
+          and l.expected_return_date &lt; #{now}
+    </select>
+
+</mapper>

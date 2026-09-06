@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/png" href="/logo.png" />
+    <link rel="apple-touch-icon" href="/logo.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!--
+      字体策略：标题 Space Grotesk / 正文 DM Sans / 等宽 JetBrains Mono。
+      原外链 google fonts 国内被墙会阻塞首屏 >10s，故移除外链。
+      等宽 JetBrains Mono 已改 @fontsource 自托管（main.ts 引 latin-400/500/700 三字重，
+      woff2 经 Vite 构建自动 hash 纳入产物，font-display:swap 走 FOUT 不阻塞首屏，加载期系统等宽回退）。
+      标题/正文字体仍走 design-tokens.css 系统字体兜底（DM Sans 不可达时回退 -apple-system 等）。
+    -->
+    <title>知枢 knowhub · 知识沉淀与项目展示</title>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

@@ -1,0 +1,282 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.knowhub.mapper.blog.BlogPortalMapper">
+
+    <!-- 前台博客列表 VO 结果映射（含 authorNickname/authorAvatar join 带出） -->
+    <resultMap id="BlogPortalVoMap" type="com.knowhub.pojo.blog.vo.BlogPortalVo">
+        <id property="blogId" column="blog_id"/>
+        <result property="authorId" column="author_id"/>
+        <result property="authorNickname" column="author_nickname"/>
+        <result property="authorAvatar" column="author_avatar"/>
+        <result property="title" column="title"/>
+        <result property="summary" column="summary"/>
+        <result property="coverUrl" column="cover_url"/>
+        <result property="level" column="level"/>
+        <result property="publishTime" column="publish_time"/>
+        <result property="viewCount" column="view_count"/>
+        <result property="likeCount" column="like_count"/>
+        <result property="collectCount" column="collect_count"/>
+    </resultMap>
+
+    <!-- 详情 VO 结果映射（继承列表字段 + content） -->
+    <resultMap id="BlogPortalDetailVoMap" type="com.knowhub.pojo.blog.vo.BlogPortalDetailVo">
+        <id property="blogId" column="blog_id"/>
+        <result property="authorId" column="author_id"/>
+        <result property="authorNickname" column="author_nickname"/>
+        <result property="authorAvatar" column="author_avatar"/>
+        <result property="title" column="title"/>
+        <result property="summary" column="summary"/>
+        <result property="coverUrl" column="cover_url"/>
+        <result property="publishTime" column="publish_time"/>
+        <result property="viewCount" column="view_count"/>
+        <result property="likeCount" column="like_count"/>
+        <result property="collectCount" column="collect_count"/>
+        <result property="content" column="content"/>
+        <result property="level" column="level"/>
+        <result property="commentEnabled" column="comment_enabled"/>
+        <result property="commentCurated" column="comment_curated"/>
+    </resultMap>
+
+    <!--
+      公共 where 片段：前台可见口径 = deleted=0 AND status='PUBLISHED' AND level<=userViewLevel+1。
+      2026-08-18 权限大修搜索范围 +1：越级作品（level=userViewLevel+1）进列表带 locked=true 标记、summary 可见，
+      点进详情才锁正文 content。L3 用户 level=3→<=4 搜全部；L2→<=3 搜全部（L3 带 locked）；L1→<=2 搜 L1+L2（L2 带 locked）。
+      分级开关关时 userViewLevel 恒 1 → level<=2（L1+L2，L2 带 locked）。前台不看作者归属（访客不靠作者身份看草稿）。
+    -->
+    <sql id="portalBlogWhere">
+        b.deleted = 0 and b.status = 'PUBLISHED' and b.level &lt;= #{userViewLevel} + 1
+    </sql>
+
+    <!--
+      搜索：全文+标签+作者复合过滤+排序，分页由 PageHelper 接管。
+      tagIds 非空走 blog_tag join + GROUP BY HAVING COUNT（同时命中全部所选标签）。
+      排序：HOT=热度, LATEST=最新, 其它/RELEVANCE=全文相关度（有 keyword 走 fulltext，无则 publish_time）。
+      列表不 select content。
+    -->
+    <select id="searchBlogs" parameterType="com.knowhub.pojo.blog.quarry.BlogPortalSearchQuarry" resultMap="BlogPortalVoMap">
+        select b.blog_id, b.author_id, u.nick_name as author_nickname, u.avatar as author_avatar,
+               b.title, b.summary, b.cover_url, b.level, b.publish_time,
+               b.view_count, b.like_count, b.collect_count
+        from blog b
+                left join sys_user u on b.author_id = u.user_id
+        <if test="tagIds != null and tagIds.size() > 0">
+            inner join blog_tag bt on bt.blog_id = b.blog_id
+        </if>
+        where <include refid="portalBlogWhere"/>
+        <if test="keyword != null and keyword != ''">
+            and MATCH(b.title, b.content) AGAINST(#{keyword} IN BOOLEAN MODE)
+        </if>
+        <if test="authorId != null">and b.author_id = #{authorId}</if>
+        <if test="tagIds != null and tagIds.size() > 0">
+            and bt.tag_id in
+            <foreach collection="tagIds" item="tid" open="(" separator="," close=")">#{tid}</foreach>
+            group by b.blog_id
+            having count(distinct bt.tag_id) = #{tagCount}
+        </if>
+        <choose>
+            <when test="sort == 'HOT'">
+                order by (b.like_count * 2 + b.collect_count * 3 + b.view_count) desc, b.publish_time desc, b.blog_id desc
+            </when>
+            <when test="sort == 'LATEST'">
+                order by b.publish_time desc, b.blog_id desc
+            </when>
+            <otherwise>
+                <choose>
+                    <when test="keyword != null and keyword != ''">
+                        <!-- 全文相关度：MySQL fulltext 自然语言模式排序 -->
+                        order by MATCH(b.title, b.content) AGAINST(#{keyword} IN NATURAL LANGUAGE MODE) desc,
+                                 b.publish_time desc, b.blog_id desc
+                    </when>
+                    <otherwise>
+                        order by b.publish_time desc, b.blog_id desc
+                    </otherwise>
+                </choose>
+            </otherwise>
+        </choose>
+    </select>
+
+    <!--
+      推荐：按偏好 tag 召回同 tag 公开博客（排除 excludeBlogId、排除已浏览 viewedBlogIds）。
+      tagIds 为空时本查询不召回（service 走兜底）。列表回 Service 层算 hotScore。
+    -->
+    <select id="recommendByTags" resultMap="BlogPortalVoMap">
+        select b.blog_id, b.author_id, u.nick_name as author_nickname, u.avatar as author_avatar,
+               b.title, b.summary, b.cover_url, b.level, b.publish_time,
+               b.view_count, b.like_count, b.collect_count
+        from blog b
+                left join sys_user u on b.author_id = u.user_id
+                inner join blog_tag bt on bt.blog_id = b.blog_id
+        where <include refid="portalBlogWhere"/>
+        and bt.tag_id in
+        <foreach collection="tagIds" item="tid" open="(" separator="," close=")">#{tid}</foreach>
+        <if test="excludeBlogId != null">and b.blog_id &lt;&gt; #{excludeBlogId}</if>
+        <if test="viewedBlogIds != null and viewedBlogIds.size() > 0">
+            and b.blog_id not in
+            <foreach collection="viewedBlogIds" item="vid" open="(" separator="," close=")">#{vid}</foreach>
+        </if>
+        group by b.blog_id
+        order by (b.like_count * 2 + b.collect_count * 3 + b.view_count) desc, b.publish_time desc
+        limit #{size}
+    </select>
+
+    <!-- 兜底全局热门（按 like*2+collect*3+view desc, publish_time desc），排除已召回的 excludeBlogIds -->
+    <select id="recommendHot" resultMap="BlogPortalVoMap">
+        select b.blog_id, b.author_id, u.nick_name as author_nickname, u.avatar as author_avatar,
+               b.title, b.summary, b.cover_url, b.level, b.publish_time,
+               b.view_count, b.like_count, b.collect_count
+        from blog b
+                left join sys_user u on b.author_id = u.user_id
+        where <include refid="portalBlogWhere"/>
+        <if test="excludeBlogId != null">and b.blog_id &lt;&gt; #{excludeBlogId}</if>
+        <if test="excludeBlogIds != null and excludeBlogIds.size() > 0">
+            and b.blog_id not in
+            <foreach collection="excludeBlogIds" item="eid" open="(" separator="," close=")">#{eid}</foreach>
+        </if>
+        order by (b.like_count * 2 + b.collect_count * 3 + b.view_count) desc, b.publish_time desc
+        limit #{size}
+    </select>
+
+    <!--
+      按 ID 集合取前台可见博客 VO（"我的收藏"列表用）。
+      照前台铁律过滤未发布/越级博客，IN 给定的 blogIds。不排序——service 按收藏时间倒序的 blogIds 顺序拼装。
+    -->
+    <select id="listByIds" resultMap="BlogPortalVoMap">
+        select b.blog_id, b.author_id, u.nick_name as author_nickname, u.avatar as author_avatar,
+               b.title, b.summary, b.cover_url, b.level, b.publish_time,
+               b.view_count, b.like_count, b.collect_count
+        from blog b
+                left join sys_user u on b.author_id = u.user_id
+        where <include refid="portalBlogWhere"/>
+          and b.blog_id in
+          <foreach collection="blogIds" item="bid" open="(" separator="," close=")">#{bid}</foreach>
+    </select>
+
+    <!--
+      详情元数据（含 level，不含 content，无 level 过滤）。
+      service 取 meta 后判越级：level<=userViewLevel→达权，再取 content；level>userViewLevel→锁态（content 置空）。
+      这样越级时仍能带出元数据构造锁态 VO，且不白拉 longtext 正文。
+      仅限 PUBLISHED 公开博客；非 PUBLISHED（草稿/待审/驳回）前台根本不下发，meta 也查不到。
+    -->
+    <select id="getPortalBlogMeta" resultMap="BlogPortalDetailVoMap">
+        select b.blog_id, b.author_id, u.nick_name as author_nickname, u.avatar as author_avatar,
+               b.title, b.summary, b.cover_url, b.level, b.publish_time,
+               b.view_count, b.like_count, b.collect_count, b.level,
+               b.comment_enabled, b.comment_curated
+        from blog b
+                left join sys_user u on b.author_id = u.user_id
+        where b.deleted = 0 and b.status = 'PUBLISHED'
+          and b.blog_id = #{blogId}
+    </select>
+
+    <!-- 取正文（仅达权后调用），单字段返回 -->
+    <select id="getBlogContent" parameterType="long" resultType="string">
+        select content from blog where blog_id = #{blogId}
+    </select>
+
+    <!-- 相关推荐：同 tag（命中任一所选 tag 即可），排除自身，按热度，limit size -->
+    <select id="relatedBlogs" resultMap="BlogPortalVoMap">
+        select b.blog_id, b.author_id, u.nick_name as author_nickname, u.avatar as author_avatar,
+               b.title, b.summary, b.cover_url, b.level, b.publish_time,
+               b.view_count, b.like_count, b.collect_count
+        from blog b
+                left join sys_user u on b.author_id = u.user_id
+                inner join blog_tag bt on bt.blog_id = b.blog_id
+        where <include refid="portalBlogWhere"/>
+        and bt.tag_id in (select tag_id from blog_tag where blog_id = #{blogId})
+        and b.blog_id &lt;&gt; #{blogId}
+        group by b.blog_id
+        order by (b.like_count * 2 + b.collect_count * 3 + b.view_count) desc, b.publish_time desc
+        limit #{size}
+    </select>
+
+    <!-- 批量回填列表标签 id（防 N+1，返回 {blog_id, tag_id} 列表，service 层分组拼 tagIds/tagNames） -->
+    <select id="getTagIdsByBlogIds" resultType="java.util.Map">
+        select blog_id as blogId, tag_id as tagId from blog_tag where blog_id in
+        <foreach collection="blogIds" item="bid" open="(" separator="," close=")">#{bid}</foreach>
+    </select>
+
+    <!--
+      标签热度榜：统计 blog_tag + article_tag 关联的 PUBLISHED+公开内容。
+      - blog 侧：blog status=PUBLISHED + level=1（公开门户，标签榜只数公开内容），score = like*2+collect*3+view
+      - article 侧（2026-07-29 升级维度，与 blog 同维度）：article status=PUBLISHED + visibility=PUBLIC，
+        score = like*2+collect*3+view（文章新增 article_like/article_collect 后维度对齐博客，跨内容可比）
+      hotScore = 关联内容的 score 之和；contentCount = 关联内容数。union 两类后按 tag 聚合，按 hotScore desc。
+    -->
+    <select id="hotTags" resultType="com.knowhub.pojo.tag.vo.HotTagVo">
+        select t.tag_id as tagId, t.tag_name as tagName,
+               sum(cnt) as contentCount, sum(score) as hotScore
+        from (
+            select bt.tag_id, count(distinct b.blog_id) as cnt,
+                   sum(b.like_count * 2 + b.collect_count * 3 + b.view_count) as score
+            from blog_tag bt
+                     inner join blog b on b.blog_id = bt.blog_id
+            where b.deleted = 0 and b.status = 'PUBLISHED' and b.level &lt;= #{userViewLevel} + 1
+            group by bt.tag_id
+            union all
+            select at2.tag_id, count(distinct a.article_id) as cnt,
+                   sum(a.like_count * 2 + a.collect_count * 3 + a.view_count) as score
+            from article_tag at2
+                     inner join article a on a.article_id = at2.article_id
+            where a.deleted = 0 and a.status = 'PUBLISHED' and a.level &lt;= #{userViewLevel} + 1
+            group by at2.tag_id
+        ) merged
+                 inner join tag t on t.tag_id = merged.tag_id
+        where t.deleted = 0 and t.status = 1
+        group by t.tag_id, t.tag_name
+        order by hotScore desc, contentCount desc, t.tag_id asc
+        limit #{size}
+    </select>
+
+    <!--
+      用户偏好 tag：blog_like/blog_collect 反推 tag 频次（collect*3 + like*1）
+      + 浏览过的文章 tag（user_view_history biz_type=ARTICLE 关联 article_tag）。
+      合并按权重排序取 Top-N tagId。未登录 userId=null 不应调用（service 已挡）。
+    -->
+    <select id="preferTagsByUser" resultType="long">
+        select tag_id from (
+            select bt.tag_id, sum(w) as weight from (
+                select bt.tag_id, 1 as w
+                from blog_like bl inner join blog_tag bt on bt.blog_id = bl.blog_id
+                where bl.user_id = #{userId}
+                union all
+                select bt.tag_id, 3 as w
+                from blog_collect bc inner join blog_tag bt on bt.blog_id = bc.blog_id
+                where bc.user_id = #{userId}
+                union all
+                select at2.tag_id, 1 as w
+                from user_view_history h
+                         inner join article_tag at2 on at2.article_id = h.biz_id
+                where h.user_id = #{userId} and h.biz_type = 'ARTICLE'
+            ) bt group by bt.tag_id
+        ) merged
+        group by tag_id
+        order by weight desc
+        limit #{topN}
+    </select>
+
+    <!-- 用户浏览过的博客ID（推荐召回排除已浏览；未登录 userId=null 不应调用） -->
+    <select id="viewedBlogIdsByUser" resultType="long">
+        select biz_id from user_view_history where user_id = #{userId} and biz_type = 'BLOG'
+    </select>
+
+    <!--
+      前台博客全量统计（/portal/blog/stats）：三段独立 count/sum 子查询一次返回。
+      - publishedBlogCount：blog 前台可见口径（deleted=0 AND status='PUBLISHED' AND level<=userViewLevel+1，
+        与搜索/列表口径一致——越级作品进列表带 locked 也计入统计）。
+      - totalReads：sum(view_count) 应用博客可见口径（view_count 主表冗余列，浏览事实表同步累加）
+      - tagCount：tag deleted=0 AND status=1 全量启用标签数（与 /portal/tag/hot 的 tag 过滤口径一致，
+        hot 只回有关联内容的 Top-N，全量数在此给）
+      固定口径，与搜索/翻页/标签过滤互不影响——统计是"全库当前可见数"而非"当前筛选结果数"。
+    -->
+    <select id="getPortalStats" parameterType="int" resultType="com.knowhub.pojo.blog.vo.PortalBlogStatsVo">
+        select
+            (select count(*) from blog b
+                where b.deleted = 0 and b.status = 'PUBLISHED' and b.level &lt;= #{userViewLevel} + 1) as publishedBlogCount,
+            (select cast(coalesce(sum(b.view_count), 0) as unsigned) from blog b
+                where b.deleted = 0 and b.status = 'PUBLISHED' and b.level &lt;= #{userViewLevel} + 1) as totalReads,
+            (select count(*) from tag t where t.deleted = 0 and t.status = 1) as tagCount
+    </select>
+
+</mapper>

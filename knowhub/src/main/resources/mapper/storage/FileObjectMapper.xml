@@ -1,0 +1,132 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.knowhub.mapper.storage.FileObjectMapper">
+
+    <resultMap id="FileObjectResultMap" type="com.knowhub.pojo.storage.entity.FileObject">
+        <id property="objectId" column="object_id"/>
+        <result property="bucket" column="bucket"/>
+        <result property="objectKey" column="object_key"/>
+        <result property="originalName" column="original_name"/>
+        <result property="contentLength" column="content_length"/>
+        <result property="contentType" column="content_type"/>
+        <result property="checksum" column="checksum"/>
+        <result property="businessType" column="business_type"/>
+        <result property="bizRefId" column="biz_ref_id"/>
+        <result property="access" column="access"/>
+        <result property="uploadStatus" column="upload_status"/>
+        <result property="createBy" column="create_by"/>
+        <result property="createTime" column="create_time"/>
+        <result property="updateBy" column="update_by"/>
+        <result property="updateTime" column="update_time"/>
+        <result property="deleted" column="deleted"/>
+    </resultMap>
+
+    <!-- 列表查询：按业务类型/状态/访问语义/上传人/时间区间过滤 -->
+    <select id="quarryFile" parameterType="com.knowhub.pojo.storage.quarry.FileQuarry" resultMap="FileObjectResultMap">
+        select * from file_object
+        where deleted = 0
+        <if test="businessType != null and businessType != ''">and business_type = #{businessType}</if>
+        <if test="uploadStatus != null and uploadStatus != ''">and upload_status = #{uploadStatus}</if>
+        <if test="access != null and access != ''">and access = #{access}</if>
+        <if test="createBy != null and createBy != ''">and create_by = #{createBy}</if>
+        <if test="beginTime != null">and create_time &gt;= #{beginTime}</if>
+        <if test="endTime != null">and create_time &lt;= #{endTime}</if>
+        order by create_time desc, object_id desc
+    </select>
+
+    <select id="getFileObjectById" parameterType="long" resultMap="FileObjectResultMap">
+        select * from file_object where object_id = #{objectId} and deleted = 0
+    </select>
+
+    <insert id="addFileObject" parameterType="com.knowhub.pojo.storage.entity.FileObject" useGeneratedKeys="true" keyProperty="objectId">
+        insert into file_object
+        <trim prefix="(" suffix=")" suffixOverrides=",">
+            <if test="bucket != null">bucket,</if>
+            <if test="objectKey != null">object_key,</if>
+            <if test="originalName != null">original_name,</if>
+            <if test="contentLength != null">content_length,</if>
+            <if test="contentType != null">content_type,</if>
+            <if test="checksum != null">checksum,</if>
+            <if test="businessType != null">business_type,</if>
+            <if test="bizRefId != null">biz_ref_id,</if>
+            <if test="access != null">access,</if>
+            <if test="uploadStatus != null">upload_status,</if>
+            create_by, create_time, update_by, update_time
+        </trim>
+        values
+        <trim prefix="(" suffix=")" suffixOverrides=",">
+            <if test="bucket != null">#{bucket},</if>
+            <if test="objectKey != null">#{objectKey},</if>
+            <if test="originalName != null">#{originalName},</if>
+            <if test="contentLength != null">#{contentLength},</if>
+            <if test="contentType != null">#{contentType},</if>
+            <if test="checksum != null">#{checksum},</if>
+            <if test="businessType != null">#{businessType},</if>
+            <if test="bizRefId != null">#{bizRefId},</if>
+            <if test="access != null">#{access},</if>
+            <if test="uploadStatus != null">#{uploadStatus},</if>
+            #{createBy}, now(), #{updateBy}, now()
+        </trim>
+    </insert>
+
+    <update id="editFileObject" parameterType="com.knowhub.pojo.storage.entity.FileObject">
+        update file_object
+        <set>
+            <if test="bucket != null">bucket = #{bucket},</if>
+            <if test="objectKey != null">object_key = #{objectKey},</if>
+            <if test="originalName != null">original_name = #{originalName},</if>
+            <if test="contentLength != null">content_length = #{contentLength},</if>
+            <if test="contentType != null">content_type = #{contentType},</if>
+            <if test="checksum != null">checksum = #{checksum},</if>
+            <if test="businessType != null">business_type = #{businessType},</if>
+            <if test="bizRefId != null">biz_ref_id = #{bizRefId},</if>
+            <if test="access != null">access = #{access},</if>
+            <if test="uploadStatus != null">upload_status = #{uploadStatus},</if>
+            <if test="deleted != null">deleted = #{deleted},</if>
+            update_by = #{updateBy},
+            update_time = now()
+        </set>
+        where object_id = #{objectId}
+    </update>
+
+    <update id="softDeleteFileObject">
+        update file_object set deleted = 1, update_by = #{updateBy}, update_time = now()
+        where object_id = #{objectId}
+    </update>
+
+    <select id="findExpiredPending" resultMap="FileObjectResultMap">
+        select * from file_object
+        where deleted = 0 and upload_status = 'PENDING' and create_time &lt; #{ttlBefore}
+        order by create_time asc
+    </select>
+
+    <select id="findSoftDeleted" resultMap="FileObjectResultMap">
+        select * from file_object where deleted = 1 order by update_time asc
+    </select>
+
+    <delete id="physicalDeleteFileObject" parameterType="long">
+        delete from file_object where object_id = #{objectId}
+    </delete>
+
+    <update id="softDeleteByBizRef">
+        update file_object set deleted = 1, update_by = #{updateBy}, update_time = now()
+        where business_type = #{businessType} and biz_ref_id = #{bizRefId} and deleted = 0
+    </update>
+
+    <!-- 打包下载：分页查所有未删 + CONFIRMED 行，按 objectId 升序，防一次查十万行 -->
+    <select id="listAllConfirmedForPack" resultMap="FileObjectResultMap">
+        select * from file_object
+        where deleted = 0 and upload_status = 'CONFIRMED'
+        order by object_id asc
+        limit #{offset}, #{size}
+    </select>
+
+    <!-- 打包下载预估总字节数：累加所有未删 + CONFIRMED 的 content_length（NULL 视为 0） -->
+    <select id="sumConfirmedContentLength" resultType="long">
+        select coalesce(sum(content_length), 0) from file_object
+        where deleted = 0 and upload_status = 'CONFIRMED'
+    </select>
+
+</mapper>

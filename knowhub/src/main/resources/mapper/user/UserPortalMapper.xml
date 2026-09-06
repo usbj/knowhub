@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.knowhub.mapper.user.UserPortalMapper">
+
+    <!--
+      用户公开主页 VO 结果映射：仅列 userId/nickName/avatar/username/sex/createTime
+      （与 AuthoringUserVo 区别：去 phoneNumber——手机号属隐私不对游客暴露；
+       status/delete/password 等敏感字段不输出）。
+    -->
+    <resultMap id="UserPortalVoMap" type="com.knowhub.pojo.user.vo.UserPortalVo">
+        <id property="userId" column="user_id"/>
+        <result property="nickName" column="nick_name"/>
+        <result property="avatar" column="avatar"/>
+        <result property="username" column="username"/>
+        <result property="sex" column="sex"/>
+        <result property="createTime" column="create_time"/>
+    </resultMap>
+
+    <!--
+      按 userId 单查公开主页信息：强制 delete=0 AND status=1 过滤已删/停用账号，
+      返回 null 表示用户不存在或不可见。select 列与 resultMap 对齐，不取敏感字段。
+    -->
+    <select id="getPublicUserById" parameterType="long" resultMap="UserPortalVoMap">
+        select user_id, nick_name, avatar, username, sex, create_time
+        from sys_user
+        where `delete` = 0 and status = 1 and user_id = #{userId}
+    </select>
+
+</mapper>
