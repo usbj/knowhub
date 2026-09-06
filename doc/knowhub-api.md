@@ -29,7 +29,7 @@
 
 需认证的接口通过 Spring Security + JWT 拦截，前端需在请求头中携带 `Token: <令牌值>`（无前缀，无 Bearer），由 `TokenVerifyFilter` 校验。业务接口的鉴权沿用上游约定：通过 `@PreAuthorize("hasAuthority('<模块>:<子模块>:<动作>')")`（权限前缀随模块确定，新增模块时与 `sys_menu` 中 `perm_key` 现网数据保持一致），未登录访问由 `AuthenticationEntryPointImpl` 返回 `{code:401}`，无权限访问由 `AccessDeniedHandlerImpl` 返回 `{code:403}`；超级管理员（`role_key='admin'`）直通加载全部按钮权限。
 
-> knowhub 阶段业务接口尚未落地。下方从首个业务模块发布起，按「接口更新日志」+ 各业务模块章节的格式追加。
+> 本文记录当前已经存在的 KnowHub 业务接口及其变更历史。早期日志中仍可能出现 `knowhub-blog` 等历史模块名称，但当前代码模块统一以 `knowhub` 为准；规划中的 `knowhub-agent` 接口不会提前写入本文，待实际实现后再按模块追加。
 
 ---
 

@@ -1,7 +1,7 @@
 > 日期：2026-06-30
 > 状态：思路设计稿（定稿，未落地，未写码）
 > 关联模块：knowhub-storage（`com.knowhub.storage`，待新建 Maven 模块）
-> 关联文档：doc/knowhub-api.md、doc/knowhub-devlog.md、doc/blog/blog-module-design.md、doc/综合知识库管理系统-项目文档初稿.md、README.dev.md §6.1
+> 关联文档：doc/knowhub-api.md、doc/knowhub-devlog.md、doc/blog/blog-module-design.md、doc/knowhub-project-document.md、README.dev.md §6.1
 > 遵守约定：见 doc/README.dev.md「全局开关落地约定」「rookie 框架代码修改禁令」
 
 # knowhub 文件存储模块设计稿（思路版·定稿）
@@ -291,7 +291,7 @@ POST /file/upload-token
 
 - 定时扫描 `upload_status=PENDING AND create_time < now()-TTL` → `DeleteObject` + 置 GC/物理删。
 - 定时扫描 `deleted=1` 的行 → `DeleteObject` + 物理删元数据（或保留审计）。
-- 定时任务用 Spring `@Scheduled`（项目已有异步配置 `rookie-framework`，定时任务扩展点后续插件市场 §10.5 也覆盖）；首版可在本模块写一个 `@Component` + `@Scheduled(fixedDelay=...)` 的 `FileGcTask`，频率默认 10min 可配。
+- 定时任务用 Spring `@Scheduled`（项目已有异步配置 `rookie-framework`，定时任务扩展点后续插件市场 §9.3 也覆盖）；首版可在本模块写一个 `@Component` + `@Scheduled(fixedDelay=...)` 的 `FileGcTask`，频率默认 10min 可配。
 - GC 失败重试：`DeleteObject` 失败则保留行、下次再扫，记日志（对齐错误日志体系）。
 
 ### 3.5 缓存策略（首版可极简）

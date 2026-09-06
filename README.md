@@ -3,7 +3,7 @@
 > 基于 Spring Boot 3 + Vue 3 的前后端分离后台管理基础框架。
 > 围绕「用户 - 角色 - 菜单 - 字典 - 权限」体系展开，提供可复用的后台工作台与权限基础设施。
 
-本项目为同仓库前后端并存工程：后端为 Maven 多模块，前端为独立 Vue 3 工程挂在 `rookie-ui/` 下。
+本项目为同仓库前后端并存工程：后端为 Maven 多模块，前端包含独立的管理端 `rookie-ui/` 和业务端 `knowhub-ui/`。
 
 ---
 
@@ -15,6 +15,7 @@
 - **认证授权**：JWT 鉴权（`Token` 请求头，无 Bearer 前缀）、Spring Security 方法级权限
 - **消息通知**：通知全生命周期管理、分组投递、我的通知、已读 / 确认
 - **日志管理**：操作日志（@Log 切面采集，含设备 / IP / 耗时）、错误日志（多来源：请求 / 异步 / 定时等）、操作-错误日志关联跳转
+- **KnowHub 业务**：博客、文章/章节、项目、资源、评论、审核、历史、文件和审计模块
 - **基础设施**：统一返回结构、全局异常处理、PageHelper 分页、Redis 缓存、请求体可缓存包装
 
 ## 🧰 技术栈
@@ -37,14 +38,16 @@ rookie/
 ├─ rookie-common/      公共基础能力：工具类、缓存、实体、统一返回、异常、分页、JWT
 ├─ rookie-framework/   框架层：Security 配置、鉴权衔接、AOP、日志切面、异步配置
 ├─ rookie-system/      系统业务：用户/角色/菜单/字典/通知/日志的 Service、Mapper、Controller
-├─ rookie-ui/          Vue 3 前端工程（独立于 Maven 多模块）
-├─ sql/                数据库脚本（单文件 rookie.sql：建表 + 关键数据初始化）
+├─ knowhub/            KnowHub 业务后端：博客/文章/项目/资源/审核/文件等
+├─ rookie-ui/          Vue 3 管理端前端工程（独立于 Maven 多模块）
+├─ knowhub-ui/         Vue 3 业务端前端工程（独立于 Maven 多模块）
+├─ sql/                KnowHub 与 rookie 数据库脚本及增量脚本
 ├─ pom.xml             Maven 聚合配置
 └─ README.dev.md       面向开发者的详细文档（协作约定、模块边界、主题适配清单等）
 ```
 
 > 各模块的职责边界、协作约定、前端主题适配清单等开发细节，见 [`README.dev.md`](./README.dev.md)；
-> 前端工程的目录结构与实现约定见 [`rookie-ui/README.dev.md`](./rookie-ui/README.dev.md)。
+> 产品总览和当前实现状态见 [`doc/knowhub-project-document.md`](./doc/knowhub-project-document.md)，第三阶段任务见 [`doc/knowhub-agent三阶段建设任务规划.md`](./doc/knowhub-agent三阶段建设任务规划.md)。
 
 ## 🚀 快速开始
 
@@ -58,7 +61,7 @@ rookie/
 ### 后端
 
 ```bash
-# 1. 初始化数据库（在 MySQL 中执行 sql/rookie.sql，含建库 + 14 张表 + 菜单/字典/角色等关键数据）
+# 1. 初始化数据库（按顺序执行 sql/knowhub.sql 及需要的增量脚本）
 # 2. 按需修改 rookie-admin/src/main/resources/application.yml 的数据源与 Redis 配置
 # 3. 编译并启动
 ./mvnw clean install -DskipTests
@@ -66,7 +69,7 @@ cd rookie-admin && ../mvnw spring-boot:run
 # 默认监听 http://localhost:8080
 ```
 
-> 注：前端开发联调时通过 Vite 代理把 `/api` 转发到 `http://localhost:8080`（见 `rookie-ui/vite.config.ts`）。
+> 注：管理端和业务端前端分别通过 Vite 代理把 `/api` 转发到 `http://localhost:8080`，具体以各自 `vite.config.ts` 为准。
 
 ### 前端
 
@@ -76,6 +79,11 @@ npm install
 npm run dev          # 开发
 npm run build        # 构建产物
 npm run type-check   # 类型检查
+
+# 业务端另行启动
+cd ../knowhub-ui
+npm install
+npm run dev
 ```
 
 ## 🔐 鉴权约定

@@ -1,7 +1,7 @@
 > 日期：2026-06-30
 > 状态：思路设计稿（已定稿，未落地，未写码）
 > 关联模块：knowhub-blog（`com.knowhub.blog`，当前为空架子）
-> 关联文档：doc/knowhub-api.md、doc/knowhub-devlog.md、doc/综合知识库管理系统-项目文档初稿.md、doc/README.dev.md
+> 关联文档：doc/knowhub-api.md、doc/knowhub-devlog.md、doc/knowhub-project-document.md、doc/README.dev.md
 > 遵守约定：见 doc/README.dev.md「全局开关落地约定」「rookie 框架代码修改禁令」
 
 # knowhub 博客模块设计稿（思路版·定稿）

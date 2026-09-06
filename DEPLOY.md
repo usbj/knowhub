@@ -9,7 +9,7 @@
 ```bash
 # 后端 fat-jar（Maven 多模块，根目录执行）
 mvn clean package -DskipTests
-ls rookie-admin/target/rookie-admin-*.jar   # 应看到 rookie-admin-1.0.1.jar
+ls rookie-admin/target/rookie-admin-*.jar   # 应看到 rookie-admin-1.0.5.jar
 
 # 前台 dist
 cd knowhub-ui && npm run build && cd ..      # 产物在 knowhub-ui/dist/
