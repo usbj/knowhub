@@ -1,0 +1,148 @@
+name: Build and deploy develop
+
+on:
+  pull_request:
+    branches:
+      - develop
+    types:
+      - closed
+
+concurrency:
+  group: knowhub-develop-deploy
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  # 当前 GitHub 主仓库为 usbj/knowhub；Gitee 保留为镜像，不作为本流水线触发源。
+  IMAGE_PREFIX: ghcr.io/usbj/knowhub
+  IMAGE_TAG: ${{ github.event.pull_request.merge_commit_sha }}
+
+jobs:
+  build-and-push:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout merged commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.merge_commit_sha }}
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+
+      - name: Build Java backend and run tests
+        run: |
+          chmod +x mvnw
+          ./mvnw -B package
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.18.0'
+          cache: npm
+          cache-dependency-path: |
+            knowhub-ui/package-lock.json
+            rookie-ui/package-lock.json
+
+      - name: Check and build knowhub-ui
+        working-directory: knowhub-ui
+        run: |
+          npm ci
+          npm run type-check
+          npm run build-only
+
+      - name: Check and build rookie-ui
+        working-directory: rookie-ui
+        run: |
+          npm ci
+          npm run type-check
+          npm run build-only
+
+      - name: Set up QEMU for NAS architectures
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push backend image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            ${{ env.IMAGE_PREFIX }}/backend:${{ env.IMAGE_TAG }}
+            ${{ env.IMAGE_PREFIX }}/backend:latest
+
+      - name: Build and push portal image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./knowhub-ui
+          file: ./knowhub-ui/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            ${{ env.IMAGE_PREFIX }}/portal:${{ env.IMAGE_TAG }}
+            ${{ env.IMAGE_PREFIX }}/portal:latest
+
+      - name: Build and push admin image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./rookie-ui
+          file: ./rookie-ui/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            ${{ env.IMAGE_PREFIX }}/admin:${{ env.IMAGE_TAG }}
+            ${{ env.IMAGE_PREFIX }}/admin:latest
+
+  deploy-to-nas:
+    needs: build-and-push
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout deployment script
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.merge_commit_sha }}
+          sparse-checkout: |
+            deploy/deploy-compose.sh
+
+      - name: Deploy to UGREEN NAS over SSH
+        env:
+          NAS_HOST: ${{ secrets.NAS_HOST }}
+          NAS_PORT: ${{ secrets.NAS_PORT }}
+          NAS_USER: ${{ secrets.NAS_USER }}
+          NAS_SSH_KEY: ${{ secrets.NAS_SSH_KEY }}
+          NAS_KNOWN_HOSTS: ${{ secrets.NAS_KNOWN_HOSTS }}
+          NAS_DEPLOY_PATH: ${{ secrets.NAS_DEPLOY_PATH }}
+          GHCR_USERNAME: ${{ secrets.GHCR_USERNAME }}
+          GHCR_READ_TOKEN: ${{ secrets.GHCR_READ_TOKEN }}
+        run: |
+          set -euo pipefail
+          key_file="$RUNNER_TEMP/knowhub-nas-key"
+          printf '%s\n' "$NAS_SSH_KEY" > "$key_file"
+          chmod 600 "$key_file"
+          mkdir -p "$HOME/.ssh"
+          printf '%s\n' "$NAS_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          ssh_opts=(-i "$key_file" -o IdentitiesOnly=yes -o BatchMode=yes -p "${NAS_PORT:-22}")
+
+          ssh "${ssh_opts[@]}" "$NAS_USER@$NAS_HOST" "mkdir -p '$NAS_DEPLOY_PATH'"
+          ssh "${ssh_opts[@]}" "$NAS_USER@$NAS_HOST" "cat > '$NAS_DEPLOY_PATH/deploy-compose.sh' && chmod 700 '$NAS_DEPLOY_PATH/deploy-compose.sh'" < deploy/deploy-compose.sh
+          printf '%s' "$GHCR_READ_TOKEN" | ssh "${ssh_opts[@]}" "$NAS_USER@$NAS_HOST" "docker login ghcr.io -u '$GHCR_USERNAME' --password-stdin"
+          ssh "${ssh_opts[@]}" "$NAS_USER@$NAS_HOST" "DEPLOY_DIR='$NAS_DEPLOY_PATH' IMAGE_PREFIX='$IMAGE_PREFIX' IMAGE_TAG='$IMAGE_TAG' sh '$NAS_DEPLOY_PATH/deploy-compose.sh'"

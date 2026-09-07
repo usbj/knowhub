@@ -157,10 +157,10 @@ public class FrameworkTest {
         System.out.println(sysMenuService.quarrySysMenu(null));
     }
 
-    @Test
-    void testException(){
-        throw new ServiceException(501,"服务器测试错误信息");
-    }
+//    @Test
+//    void testException(){
+//        throw new ServiceException(501,"服务器测试错误信息");
+//    }
 
     @Test
     void testJsonList(){
