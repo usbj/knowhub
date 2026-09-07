@@ -108,6 +108,139 @@ Java 后端仍然是面向前端的业务入口和身份边界；Python 服务�
 
 **交付与验收：** `knowhub-agent` 可以独立启动、健康检查和部署；生产环境只允许 Java 通过内部网络访问；Agent 相关代码、依赖和运行日志不会混入现有 Java 构建链。
 
+### `knowhub-agent` 建议工程结构（设计建议，非强制规范）
+
+以下结构用于帮助设计阶段拆分服务职责、确定依赖方向和安排后续任务，不是对最终代码目录的强制要求。实际实现时，可以根据团队规模、Python 依赖管理方式、任务队列选型、部署方式、数据存储方案和运行时复杂度进行调整；只要仍然满足服务边界、数据所有权、权限校验、可测试性和可观测性要求，不必机械地照搬下列目录。
+
+建议把 `knowhub-agent` 放在仓库根目录下，作为与 Java `knowhub` 模块并列的独立 Python 服务。第一阶段可以采用单仓库多服务方式，后续如果 Agent 服务需要独立发布、独立权限或独立团队维护，再拆分为单独仓库，不改变内部协议和数据所有权设计。
+
+```text
+knowhub-agent/
+├── pyproject.toml
+├── uv.lock 或其他依赖锁定文件
+├── Dockerfile
+├── .env.example
+├── README.md
+├── src/
+│   └── knowhub_agent/
+│       ├── main.py                         # FastAPI 启动入口
+│       ├── bootstrap.py                    # 配置、日志、依赖和路由初始化
+│       ├── api/                            # 内部 HTTP/SSE 接口层
+│       │   ├── deps.py
+│       │   └── v1/
+│       │       ├── router.py
+│       │       ├── runs.py                  # Run 创建、查询、取消
+│       │       ├── conversations.py         # 会话和流式输出
+│       │       ├── indexes.py               # 解析、切片、索引任务
+│       │       ├── memories.py              # 记忆查询、删除和维护
+│       │       ├── jobs.py                  # 异步任务状态
+│       │       └── health.py                # 健康检查和就绪检查
+│       ├── contracts/                       # Java-Python 内部协议模型
+│       │   ├── auth_context.py
+│       │   ├── run.py
+│       │   ├── stream_event.py
+│       │   ├── index_task.py
+│       │   └── error.py
+│       ├── application/                     # 用例编排层
+│       │   ├── run_service.py
+│       │   ├── conversation_service.py
+│       │   ├── index_service.py
+│       │   ├── memory_service.py
+│       │   ├── interview_service.py
+│       │   ├── daily_report_service.py
+│       │   └── cicd_service.py
+│       ├── domain/                          # Agent 核心领域逻辑
+│       │   ├── agents/
+│       │   │   ├── base.py
+│       │   │   ├── rag_agent.py
+│       │   │   ├── interview_agent.py
+│       │   │   └── custom_agent.py
+│       │   ├── memory/
+│       │   │   ├── models.py
+│       │   │   ├── extractor.py
+│       │   │   ├── consolidator.py
+│       │   │   ├── retriever.py
+│       │   │   ├── injector.py
+│       │   │   └── policies/
+│       │   │       ├── base.py
+│       │   │       ├── rag_policy.py
+│       │   │       └── interview_policy.py
+│       │   ├── retrieval/
+│       │   │   ├── hybrid_retriever.py
+│       │   │   ├── vector_retriever.py
+│       │   │   ├── java_search_retriever.py
+│       │   │   └── reranker.py
+│       │   ├── models/                      # Model Gateway 抽象
+│       │   ├── tools/                       # Tool、Schema、权限和注册表
+│       │   ├── skills/                      # Skill 解析、校验和挂载
+│       │   └── workflows/                   # 自定义 Agent 工作流
+│       ├── infrastructure/                 # 外部技术实现和适配器
+│       │   ├── config/
+│       │   ├── database/
+│       │   ├── redis/
+│       │   ├── queue/
+│       │   ├── vectorstore/
+│       │   ├── embeddings/
+│       │   ├── providers/                   # 各模型供应商适配器
+│       │   ├── java_client/                 # 调用 Java 内部业务接口
+│       │   ├── secrets/                     # Credential Ref 解析
+│       │   └── observability/               # 日志、指标、Trace
+│       ├── workers/                         # 长任务 Worker
+│       │   ├── run_worker.py
+│       │   ├── index_worker.py
+│       │   ├── interview_worker.py
+│       │   ├── daily_report_worker.py
+│       │   └── cicd_sync_worker.py
+│       └── prompts/                         # Prompt 模板和版本
+│           ├── common/
+│           ├── rag/
+│           ├── interview/
+│           ├── daily_report/
+│           └── custom/
+├── migrations/                             # Agent 自有数据迁移
+├── tests/
+│   ├── unit/
+│   ├── integration/
+│   ├── contract/                            # Java-Python 协议测试
+│   └── evaluation/                          # RAG/面试效果评测
+├── scripts/
+└── deploy/
+    ├── docker-compose.agent.yml
+    └── application.example.yml
+```
+
+#### 结构中的职责约束
+
+- `api` 和 `workers` 只负责接收请求、转换协议和触发用例，不直接编写完整 Agent 业务逻辑；
+- `application` 负责组织一次具体用例，例如创建 Run、执行索引、生成日报或完成面试报告；
+- `domain` 负责 Agent、记忆、检索、工具、Skill 和工作流的核心规则，不直接依赖 FastAPI、具体数据库或某个模型供应商 SDK；
+- `infrastructure` 负责 Redis、队列、向量数据库、模型供应商、Java 内部 API 和密钥解析等外部实现；
+- `workers` 负责长时间执行，不能让 Embedding、批量索引、日报生成或 CI/CD 同步长期占用 FastAPI 请求线程；
+- `prompts` 只保存 Prompt 模板及其变量定义，Prompt 的版本和配置快照需要进入 Run 或业务结果记录；
+- `contracts` 保存 Java-Python 双方共同理解的请求、事件、错误和状态模型，协议变更需要兼容窗口和契约测试。
+
+建议的依赖方向为：
+
+```text
+api / workers → application → domain
+                      ↓
+              infrastructure adapters
+```
+
+实际项目可以将目录合并或拆分。例如小规模初期可以把 `application` 与 `domain` 的部分文件合并，也可以暂时不单独建立 `migrations` 或某些 Worker 目录；但不应因此让浏览器直接访问 Python、让 Python 直接修改 Java 业务表，或让 RAG-Agent、面试 Agent 各自复制一套 Model Gateway、记忆和权限实现。
+
+#### Agent 类型与共用底座
+
+知枢 RAG-Agent、面试 Agent 和自定义 Agent 建议实现统一的运行接口，例如 `AgentRunner` 或等价抽象，由不同 Agent 提供自己的 Prompt、MemoryPolicy、RetrievalPolicy、个性化参数和工具白名单。共用底座包括：
+
+- Model Gateway、模型供应商适配和凭据引用；
+- 短期上下文、长期记忆存储、抽取、合并、召回和注入；
+- 工具注册、Schema、权限、超时、取消、步数和人工确认；
+- 流式事件、异步 Run、失败恢复、用量统计和审计；
+- Java 内部 API 调用、请求追踪和错误映射。
+
+因此，该结构的目标是帮助复用底座，而不是要求每种 Agent 都必须对应固定的目录或类名。最终实现可以采用其他经过评估的 Python Web 框架、任务队列或 Agent 编排库，但必须说明替代方案对协议、流式输出、任务恢复、测试和运维的影响。
+
 ### P3-02 定义 Java 与 Python 的内部调用协议
 
 **前置条件：** P3-01。

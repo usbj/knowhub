@@ -15,6 +15,8 @@
 
 FROM nginx:1.27-alpine
 
+LABEL org.opencontainers.image.source="https://github.com/usbj/knowhub"
+
 # 清默认 server 块，换 knowhub 前台专用配置
 RUN rm -f /etc/nginx/conf.d/default.conf
 COPY nginx-portal.conf /etc/nginx/conf.d/knowhub-portal.conf
