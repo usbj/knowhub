@@ -116,7 +116,7 @@ services:
       # 数据库：走内网，用 compose 服务名 mysql 作主机名
       SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/knowhub?useUnicode=true&characterEncoding=utf8&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai
       SPRING_DATASOURCE_USERNAME: root
-      SPRING_DATASOURCE_PASSWORD: 07571Xwyt
+      SPRING_DATASOURCE_PASSWORD: root123
       # Redis：走内网
       SPRING_DATA_REDIS_HOST: redis
       SPRING_DATA_REDIS_PORT: "6379"
