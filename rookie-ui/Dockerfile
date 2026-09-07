@@ -14,6 +14,8 @@
 
 FROM nginx:1.27-alpine
 
+LABEL org.opencontainers.image.source="https://github.com/usbj/knowhub"
+
 RUN rm -f /etc/nginx/conf.d/default.conf
 COPY nginx-admin.conf /etc/nginx/conf.d/knowhub-admin.conf
 

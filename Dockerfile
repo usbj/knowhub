@@ -10,6 +10,8 @@
 
 FROM eclipse-temurin:17-jre-jammy
 
+LABEL org.opencontainers.image.source="https://github.com/usbj/knowhub"
+
 WORKDIR /app
 
 # 时区东八区，与 application.yml jackson time-zone: GMT+8 对齐
@@ -20,8 +22,8 @@ ENV TZ=Asia/Shanghai \
 # 与 application.yml storage.local-base-path 默认 ./knowhub-upload 对应；挂卷持久化
 RUN mkdir -p /app/knowhub-upload /app/upload
 
-# 拷入预构建 fat-jar（构建上下文需能访问到该路径，见 docker-compose build.context）
-COPY knowhub-admin-*.jar /app/app.jar
+# 拷入预构建 fat-jar（构建上下文为仓库根，见 docker-compose build.context）
+COPY rookie-admin/target/rookie-admin-*.jar /app/app.jar
 
 # 8080 为后端服务端口（application.yml server.port）
 EXPOSE 8080
