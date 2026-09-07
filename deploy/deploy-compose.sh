@@ -9,8 +9,25 @@ IMAGE_PREFIX=${IMAGE_PREFIX:?IMAGE_PREFIX is required}
 IMAGE_TAG=${IMAGE_TAG:?IMAGE_TAG is required}
 
 cd "$DEPLOY_DIR"
-test -f docker-compose.yml
-test -f .env
+
+# UGREEN Docker may generate docker-compose.yaml, while other environments
+# use docker-compose.yml. Keep both names supported without changing the
+# compose file managed by the NAS application.
+if [ -f docker-compose.yml ]; then
+    COMPOSE_FILE=docker-compose.yml
+elif [ -f docker-compose.yaml ]; then
+    COMPOSE_FILE=docker-compose.yaml
+else
+    echo "Neither docker-compose.yml nor docker-compose.yaml was found in $DEPLOY_DIR" >&2
+    exit 1
+fi
+
+if [ ! -f .env ]; then
+    echo "Missing .env in $DEPLOY_DIR" >&2
+    exit 1
+fi
+
+echo "Using Compose file: $COMPOSE_FILE"
 
 ENV_BACKUP=$(mktemp .knowhub-env-backup.XXXXXX)
 chmod 600 "$ENV_BACKUP"
@@ -77,18 +94,18 @@ restore_previous() {
     cp "$ENV_BACKUP" .env
     if [ "$rollback_available" = yes ]; then
         export KNOWHUB_IMAGE_TAG=rollback
-        docker compose up -d --no-build backend portal admin || true
+        docker compose -f "$COMPOSE_FILE" up -d --no-build backend portal admin || true
     else
         echo "No previous application images were available for automatic rollback." >&2
     fi
 }
 
-if ! docker compose pull backend portal admin; then
+if ! docker compose -f "$COMPOSE_FILE" pull backend portal admin; then
     restore_previous
     exit 1
 fi
 
-if ! docker compose up -d --no-build backend portal admin; then
+if ! docker compose -f "$COMPOSE_FILE" up -d --no-build backend portal admin; then
     restore_previous
     exit 1
 fi
@@ -100,5 +117,5 @@ if ! wait_for_url "http://127.0.0.1:5070/api/portal/blog/stats" \
     exit 1
 fi
 
-docker compose ps backend portal admin
+docker compose -f "$COMPOSE_FILE" ps backend portal admin
 echo "knowhub deployment succeeded: $IMAGE_TAG"
