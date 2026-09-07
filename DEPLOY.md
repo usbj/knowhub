@@ -95,7 +95,7 @@ OSS（RustFS）已在外部独立部署并运行。后台「系统设置」里�
 
 `docker-compose.yml` 里 mysql / redis / backend 的 `ports` 对外映射是调试方便，生产建议去掉这三个，只留 portal / admin 对外，后端走内网被 nginx 反代。
 
-## 八、自动 CI/CD（GitHub Actions → GHCR → UGREEN NAS）
+## 八、自动 CI/CD（GitHub Actions → GHCR → Tailscale → UGREEN NAS）
 
 当前自动发布以 GitHub 仓库 `usbj/knowhub` 为主仓库，Gitee 保留为代码镜像。只有 Pull Request **合并到 `develop`** 才触发 `.github/workflows/deploy-develop.yml`；直接 push 到 `develop` 不会自动部署。
 
@@ -104,9 +104,9 @@ OSS（RustFS）已在外部独立部署并运行。后台「系统设置」里�
 流水线顺序如下：
 
 1. 检出合并后的 Commit。
-2. 使用 Java 17 构建后端并运行 Maven 测试；分别对 `knowhub-ui`、`rookie-ui` 执行 `npm ci`、类型检查和生产构建。
+2. 使用 Java 17 构建并打包后端（当前阶段使用 `-DskipTests`，因为现有测试依赖外部 MySQL、Redis、RustFS）；分别对 `knowhub-ui`、`rookie-ui` 执行 `npm ci`、类型检查和生产构建。
 3. 构建后端、前台、后台三个多架构 Docker 镜像，推送到 GHCR；每个镜像同时带合并 Commit 标签和 `latest` 标签。
-4. 通过 SSH 将 `deploy/deploy-compose.sh` 发送到 NAS。NAS 登录 GHCR 后按 Commit 标签执行 `docker compose pull` 和 `docker compose up -d --no-build`。
+4. GitHub Actions 通过 Tailscale 临时加入 Tailnet，并先检查 NAS 的 Tailscale 地址可达；随后通过 SSH 将 `deploy/deploy-compose.sh` 发送到 NAS。NAS 登录 GHCR 后按 Commit 标签执行 `docker compose pull` 和 `docker compose up -d --no-build`。
 5. 检查前台公开 API、前台和后台入口；检查失败时保留当前 Compose 配置并尝试恢复上一个本地镜像版本。
 
 ### NAS 首次配置
@@ -115,7 +115,9 @@ OSS（RustFS）已在外部独立部署并运行。后台「系统设置」里�
 
 - 安装并确认 Docker Engine 与 Docker Compose v2 可用；部署目录中放置 `docker-compose.yml`、`sql/`、三个 nginx 配置文件和生产 `.env`。
 - 建立专用部署用户，允许该用户执行 Docker；启用 SSH，并将 GitHub Actions 使用的公钥加入该用户的 `~/.ssh/authorized_keys`。
-- 确保 GitHub 托管 Runner 能访问 NAS 的 SSH 地址和端口。若 NAS 位于内网，不要直接暴露管理面板，优先使用 VPN/内网穿透；也可以改成 NAS 上的 GitHub self-hosted runner。
+- NAS 安装并登录 Tailscale，并给 NAS 添加 `tag:nas`；GitHub Actions 使用 Tailscale OAuth Client 创建带 `tag:github-actions` 的临时节点。Tailscale Policy 只允许该标签访问 `tag:nas` 的 TCP 22 端口。
+- 当前 workflow 使用普通 SSH over Tailscale，并通过 `NAS_SSH_KEY` 登录；请关闭 NAS 上的 Tailscale SSH 功能，保留 NAS 普通 SSH 服务，并允许专用部署用户使用 SSH 公钥登录。若要保留 Tailscale SSH，则需要另行改造 workflow，不能继续直接复用当前普通 SSH 私钥流程。
+- 不要直接暴露 NAS 管理面板或 SSH 到公网；`NAS_HOST` 使用 NAS 的 Tailscale IP 或 MagicDNS 名称。
 - 确认 NAS 的 CPU 架构。流水线已发布 `linux/amd64` 和 `linux/arm64` 镜像；若设备是其他架构，需要调整 workflow 的 `platforms`。
 - 生产 `.env` 必须保留数据库、Redis、RustFS 等真实配置；流水线会在其中维护 `KNOWHUB_IMAGE_TAG`，镜像前缀已固定为 `ghcr.io/usbj/knowhub`，不要把 `.env` 提交到仓库。
 
@@ -125,16 +127,18 @@ OSS（RustFS）已在外部独立部署并运行。后台「系统设置」里�
 
 | Secret | 内容 |
 |---|---|
-| `NAS_HOST` | NAS SSH 地址或域名 |
+| `TS_OAUTH_CLIENT_ID` | Tailscale OAuth Client ID；仅授予 `auth_keys` 写权限并绑定 `tag:github-actions` |
+| `TS_OAUTH_SECRET` | Tailscale OAuth Client Secret |
+| `NAS_HOST` | NAS 的 Tailscale IP 或 MagicDNS 名称 |
 | `NAS_PORT` | SSH 端口，不填时 workflow 使用 `22` |
 | `NAS_USER` | 专用部署用户 |
 | `NAS_SSH_KEY` | 该用户对应的 SSH 私钥，多行原文 |
-| `NAS_KNOWN_HOSTS` | 经人工核验后的 `ssh-keyscan` 公钥行，不能留空绕过主机校验 |
+| `NAS_KNOWN_HOSTS` | 针对 NAS Tailscale IP/MagicDNS 名称、经人工核验后的 `ssh-keyscan` 公钥行，不能留空绕过主机校验 |
 | `NAS_DEPLOY_PATH` | NAS 上 Compose 项目目录的绝对路径，路径不要包含空格 |
 | `GHCR_USERNAME` | 能读取 GHCR 包的 GitHub 用户名 |
 | `GHCR_READ_TOKEN` | GitHub classic PAT，仅授予 `read:packages`，供 NAS 拉取私有镜像 |
 
-首次部署前，在 NAS 的 `.env` 中确认数据库/RustFS配置正确，并保证当前运行版本的三个应用镜像已存在；这样第一次自动发布失败时才具备本地回滚基础。第一次成功发布后，后续部署会按 Commit 标签自动保留可回滚版本。
+首次部署前，在 NAS 的 `.env` 中确认数据库/RustFS配置正确，并保证当前运行版本的三个应用镜像已存在；这样第一次自动发布失败时才具备本地回滚基础。第一次成功发布后，后续部署会按 Commit 标签自动保留可回滚版本。Tailscale OAuth Client 的 Secret 只放在 GitHub Actions Secrets 中，不要提交到仓库。
 
 GitHub Actions 构建阶段使用工作流内置的 `GITHUB_TOKEN` 推送 GHCR；NAS 拉取私有包需要单独的最小权限 `GHCR_READ_TOKEN`。GHCR 包也可以改为公开，此时 NAS 可移除 registry 登录，但不建议因此暴露生产镜像。
 
